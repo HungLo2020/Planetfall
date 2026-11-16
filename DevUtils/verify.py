@@ -22,8 +22,8 @@ SHOTS = {
     "ftl": 300,
     "descent": 660,
     "surface": 2400,
-    "debrief": 3247,
-    "construct": 3395,
+    "debrief": 3060,
+    "construct": 3165,
     "build": 5470,
 }
 
@@ -66,6 +66,12 @@ def main() -> None:
                 f"screenshot {name}",
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks", str(ticks),
                  "--screenshot", str(shots / f"{name}.png")],
+            )
+        for menu in ["main", "saves", "settings"]:
+            step(
+                f"screenshot menu-{menu}",
+                ["cargo", "run", "--release", "--locked", "--", "--headless", "--ticks", "10", "--menu", menu,
+                 "--screenshot", str(shots / f"menu-{menu}.png")],
             )
         step("cover", ["cargo", "run", "--release", "--locked", "--", "--cover", str(shots / "cover.png")])
         print(f"screenshots in {shots.relative_to(REPO)}")

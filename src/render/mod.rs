@@ -69,6 +69,7 @@ pub struct Graphics {
     voxels: voxels::VoxelWorld,
     rig: CameraRig,
     pub shadows_enabled: bool,
+    pub bloom_enabled: bool,
 }
 
 impl Graphics {
@@ -113,6 +114,7 @@ impl Graphics {
             voxels: voxels::VoxelWorld::new(),
             rig: CameraRig::default(),
             shadows_enabled: true,
+            bloom_enabled: true,
         })
     }
 
@@ -147,6 +149,9 @@ impl Graphics {
             (_, None) => scene::ship(&mut painter, game),
         };
         drop(painter);
+        if !self.bloom_enabled {
+            out.post.bloom.enabled = false;
+        }
         // Characters: pose on the GPU, then draw like any other surface.
         let (skinning, skinned) = self.skins.prepare(gal, &self.models, &out.skinned)?;
         out.draws.extend(skinned);
@@ -337,6 +342,13 @@ impl Graphics {
     /// Rasterise every glyph the layers will draw. quasar-ui 0.2.24 warms
     /// glyphs from unwrapped layouts, so wrapped lines would otherwise appear
     /// one frame late; offscreen renders only get one frame.
+    /// The game was replaced: re-mesh the voxel world from scratch and cut
+    /// the camera instead of easing from the old game's framing.
+    pub fn reset_world(&mut self) {
+        self.voxels.invalidate();
+        self.rig = CameraRig::default();
+    }
+
     pub fn warm_text(&mut self, gal: &Gpu, layers: &[&Layer]) -> GraphicsResult<()> {
         let mut scratch = Canvas::new(16, 16).map_err(|e| error(e.to_string()))?;
         for layer in layers {

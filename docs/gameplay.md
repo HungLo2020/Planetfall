@@ -1,5 +1,15 @@
 # Gameplay
 
+## Menus and saves
+
+The game opens on the main menu with the ship behind it. **Continue** resumes
+the last slot played, **New game** starts a commander in any of five slots
+(asking before overwriting one), **Load game** lists the slots with their
+location, progress and play time (and can delete one), and **Settings** holds
+volumes, fullscreen, shadows, bloom and screen shake. Esc / Start pauses;
+from the pause menu you can open settings, abandon a drop, or save and quit to
+the main menu. A drop in progress is saved too and resumes where you left it.
+
 ## The loop
 
 1. **Ship.** Walk the ship. The **Navigation Console** plots FTL jumps, the
@@ -90,7 +100,7 @@ Repair (+1 HP/s).
 
 The first purchase of each constructs a new room on the ship: its blocks
 drop into place over a second and a half, and the room joins the walkable
-hull when complete. Costs are in `crates/planetfall-sim/src/content.rs`.
+hull when complete. Costs are in `assets/data/upgrades.toml`.
 
 ## Building the ship
 
@@ -99,7 +109,7 @@ in front of you is outlined (green: placeable, red: not, with the reason in
 the hint). E / (A) places the selected block, Space / (B) removes the one in
 front, F / (Y) cycles blocks, and B / (X) leaves build mode.
 
-| Block | Cost | Notes |
+| Block | Cost (`tuning.toml` `[blocks]`) | Notes |
 |---|---|---|
 | Deck plating | 2 ferrite | Extends the hull; must touch existing deck |
 | Hull wall | 2 ferrite | Cut-away height like the original walls |
@@ -113,10 +123,29 @@ hull stays in one piece; the original room floors stay. Blocks you placed are
 refunded when removed; original hull walls can be knocked out (for free, no
 refund) to open rooms or build outward. Edits are saved with the profile.
 
-## Tuning
+## Tuning and adding content
 
-All numbers live in `content.rs` (planets, weapons, enemies, upgrades),
-`run.rs` (spawn pacing, dash, extraction timings) and `terrain.rs` (cave
-generation, ore toughness). `cargo run --release -- --headless --autoplay
---ticks 90000` is a quick balance smoke test: the autopilot should extract
-far more often than it dies.
+Content and balance are TOML in `assets/data/` (shipped as
+`app/assets/data/`); each file starts with a comment describing its fields.
+
+| File | Holds |
+|---|---|
+| `weapons.toml` | Behaviour archetype, five levels of stats, held model, sound, colour, starter flag |
+| `enemies.toml` | Behaviour archetype, stats, spawn rules (weight, group size, first minute, late or tutorial), drops, model, blood colour, sounds |
+| `planets.toml` | Unlock level, hazard, objective, ore chances, voxel palette, per-enemy spawn weights |
+| `perks.toml` | Field perks: effect, amount, weight, optional cap |
+| `upgrades.toml` | Ship modules: effect, per-level amount, costs, room rectangle, station model and light |
+| `tuning.toml` | Player, weapon, XP, horde, extraction, tutorial and build-block numbers |
+| `models.toml` | Model names for files outside `assets/models` (Kenney props) |
+
+To add content that fits an existing archetype, add an entry with a new `id`
+and refer to models and sounds by name (generate new ones with the
+`regenerate-assets` skill). New behaviour needs a new archetype variant in
+`crates/planetfall-sim/src/content/defs.rs` and its system in `run/`.
+Content is validated on load, so a bad file stops the game with a message
+naming it. Terrain generation and ore toughness remain in `terrain.rs`.
+
+`cargo test` checks the data (every model and sound it names exists, every
+enemy can spawn on every planet), and `cargo run --release -- --headless
+--autoplay --ticks 90000` is a quick balance smoke test: the autopilot should
+extract far more often than it dies.

@@ -12,6 +12,7 @@ quasar-math = { workspace = true, features = ["serde"] }
 quasar-sim.workspace = true
 quasar-nav = { workspace = true, features = ["voxel"] }
 quasar-voxel.workspace = true
+quasar-config = { workspace = true, features = ["toml"] }
 quasar-spatial.workspace = true
 serde.workspace = true
 

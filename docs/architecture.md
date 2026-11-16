@@ -10,13 +10,14 @@ Planetfall/
 ├── src/                     the `planetfall` binary: presentation + platform
 │   ├── main.rs              entry: desktop, headless sim, offscreen renders
 │   ├── settings.rs          CLI (quasar-config CommonArgs + game flags)
-│   ├── storage.rs           Basalt data layout + atomic JSON (quasar-storage)
+│   ├── storage.rs           Basalt data layout: save slots, TOML settings
 │   ├── desktop.rs           quasar-app runner: window, ticks, menus, saving
 │   ├── bindings.rs          action bindings + device-aware button prompts
 │   ├── controls.rs          keyboard/mouse + gilrs controllers → GameInput
 │   ├── audio.rs             quasar-audio buses, spatial SFX, music loops
-│   ├── render/              frame pipeline, voxels, skinning, scene building
+│   ├── render/              frame pipeline, voxels, skinning, scene/ building
 │   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay
+├── assets/data/             content and tuning as TOML (weapons, enemies, ...)
 ├── assets/                  models, sounds, fonts, Basalt artwork
 ├── DevUtils/                generators, verification and packaging scripts
 └── planetfall.json          Basalt catalog entry
@@ -28,18 +29,19 @@ All gameplay is plain Rust data advanced by fixed 60 Hz ticks of a
 device-independent `GameInput` (movement vector, edge-triggered interact /
 dash / call-extraction / build, and an optional `Command` such as `TravelTo`,
 `Purchase` or `ChoosePerk`). The crate depends only on `serde` and Quasar's
-headless crates.
+headless crates (`quasar-config` parses the content TOML from strings).
 
 | Module | Responsibility |
 |---|---|
 | `game` | Top-level state machine: `Ship → Ftl → Ship (orbit) → Descent → Surface → Ascent/Lost → Ship (debrief)`; terminals; build mode; tutorial driver; banking cargo; `quasar_sim::Simulation` impl |
 | `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations, module assembly, free-form building rules |
-| `run` | One drop: player, auto-firing weapons, horde AI, mining, pickups, caches, level-up perks, extraction |
+| `run` | One drop, split by system: `player` (movement, dash, mining), `weapons`, `enemies`, `spawner` (weighted spawn tables), `loot` (pickups, caches, perks), `extraction`; `tests` |
 | `terrain` | Cave generation into a voxel volume, mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one `TILE` per voxel; ground at `y = -1`, walls at `y = 0`) |
-| `profile` | Persistent save data (including ship edits), purchase rules and versioned migration |
+| `profile` | Persistent progress (including ship edits), purchase rules, module bonuses and versioned migration |
+| `save` | `SaveGame`: a profile plus the resumable `Session` (tick, RNG, tutorial, ship position, a suspended drop) and slot metadata |
 | `tutorial` | Step definitions and prompt text |
-| `content` | Static tuning tables: planets, weapons, enemies, upgrades, ship blocks, perks |
+| `content` | The content registry: definitions parsed and validated from `assets/data/*.toml`, string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`) |
 | `autoplay` | An autopilot that plays the entire loop, including building (headless runs, soak tests, CI) |
 | `math` | Ground-plane conventions (`V2` = glam `Vec2`, +Z-facing yaw) over `quasar-math` |
 | `events` | `GameEvent`s emitted per tick for sound, effects and saving |
@@ -70,11 +72,44 @@ headless crates.
 
 The simulation never reads the clock, filesystem or devices.
 
+### Content
+
+Weapons, enemies, planets, perks, ship modules and global tuning are data in
+`assets/data/` (see [Gameplay](gameplay.md#adding-content)). The binary reads
+the files at startup and passes their text to `content::install`, which
+parses, validates (unique IDs, five weapon levels, known models are checked by
+the renderer's tests, every planet has a spawn table) and stores one
+immutable `Content` in a global `OnceLock`. `content()` falls back to the
+copy compiled into the sim crate (`include_str!`), which tests, the headless
+CLI and a missing data folder use.
+
+Behaviour stays in code as small archetype enums: `WeaponBehavior` (bolt,
+scatter, arc, mortar, orbit), `EnemyBehavior` (walker, lunger, exploder),
+`PerkEffect` and `UpgradeEffect`. A new weapon that fits an archetype is a
+TOML entry; a new kind of behaviour is a new variant plus its system code.
+
+IDs are `u16` indices but serialize as their string keys, so saves survive
+reordering, and unknown keys (removed content) are dropped on load.
+
+### Saves
+
+`SaveGame::capture` snapshots a `Game` into a slot: the profile plus a
+`Session`. Transitional phases (FTL, descent, ascent, a lost signal) are
+settled on a clone first, so a save always resumes on the ship or on the
+surface. A drop in progress is saved whole: the run serializes everything
+except derived state (the flow field and spatial index are rebuilt), and the
+terrain saves only its planet, seed and the blocks broken or damaged since
+generation (`TerrainSave`), regenerating the rest on load. A test checks a
+resumed drop hashes and plays identically to one never interrupted.
+
 ## Presentation (`planetfall` binary)
 
 `desktop.rs` implements `quasar_app::Application`: `frame_update` handles
 menus, pause and input latching once per frame; `tick` advances the game at a
 fixed 60 Hz (deferred while a menu pauses play); `render` submits one frame.
+The game opens on the main menu (continue, new game, load, settings) with the
+ship idling behind it; the active slot autosaves every minute of play, when
+the profile changes, and on pause-quit, suspend and exit.
 
 | Quasar crate | Use |
 |---|---|
@@ -88,8 +123,8 @@ fixed 60 Hz (deferred while a menu pauses play); `render` submits one frame.
 | quasar-render-2d | HUD canvas: markers, bars, fades |
 | quasar-ui + quasar-text | Retained menus/terminals/HUD with anchored layout, `NodeStyle` cards and wrapped labels; shaped DejaVu fonts |
 | quasar-audio | WAV clips, music/effects buses, spatial panning, per-play pitch/gain `Variation`, looping music and ambience |
-| quasar-config | Common CLI flags (`--resolution`, `--headless`, `--no-audio`, ...) |
-| quasar-storage | Basalt `GamePaths` discovery and atomic JSON writes |
+| quasar-config | Common CLI flags (`--resolution`, `--headless`, `--no-audio`, ...); TOML content parsing; settings read and written with `load_file_typed`/`save_file_typed` |
+| quasar-storage | Basalt `GamePaths` discovery and atomic JSON writes for save slots |
 | quasar-diagnostics | `--log-level` structured logging (startup paths, phases, save errors) |
 
 ### Rendering
@@ -99,7 +134,7 @@ Each frame:
 
 1. `render/camera.rs` eases a top-down follow camera (cinematic framings for
    FTL, descent, ascent and death).
-2. `render/scene.rs` turns game state into mesh draws, transparent draws,
+2. `render/scene/` (`ship`, `space`, `surface`, `characters`, `effects`) turns game state into mesh draws, transparent draws,
    lights, skinned-character requests, a `VoxelScene` (which world, overlays,
    fog) and per-phase post settings (damage reddens and darkens the edges;
    losing the signal drains colour).
@@ -115,7 +150,10 @@ Each frame:
    post chain onto the output; the 2D overlay and UI layers.
 
 Characters are skinned; props with moving parts (pod door, drone rotor,
-holograms) turn named glTF nodes.
+holograms) turn named glTF nodes. Models and sounds are looked up by name:
+every `assets/models/*.glb` and `assets/sounds/*.wav` loads under its file
+stem, plus the aliases in `assets/data/models.toml`, and content data refers
+to those names. Any model with a skin is a character.
 
 ### UI
 
@@ -132,6 +170,9 @@ device family the player last used.
 - `--headless [--autoplay] --ticks N` runs only the simulation and prints a
   summary (with `--no-default-features` the binary has no graphics code).
 - `--screenshot FILE` renders the final state, HUD, open terminal or
-  level-up menu with a headless GPU.
+  level-up menu with a headless GPU; `--menu main|saves|settings|pause`
+  renders that menu instead (with sample slots; nothing is read from disk).
+- Headless runs always use a fresh in-memory profile; `--slot N` picks the
+  save slot a windowed session opens.
 - `--cover FILE` stages a fight on Cinder Reach and renders the 900x1200
   Basalt cover with the title.

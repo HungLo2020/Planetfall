@@ -346,6 +346,13 @@ impl VoxelWorld {
         }
     }
 
+    /// Forget the uploaded world. Call when the game is replaced (new game or
+    /// a loaded slot): a fresh ship or terrain restarts its chunk revisions,
+    /// so stale meshes with matching revisions would otherwise survive.
+    pub fn invalidate(&mut self) {
+        self.key = None;
+    }
+
     /// Point the grid at `key`'s blocks and re-mesh changed chunks.
     pub fn sync(
         &mut self,
@@ -359,7 +366,7 @@ impl VoxelWorld {
         let wanted = match palette {
             Some(p) => Some(p),
             None if self.renderer.is_none() => {
-                Some((PlanetId::Verdant, PlanetId::Verdant.info().palette))
+                Some((PlanetId::first(), PlanetId::first().info().palette))
             }
             None => None,
         };

@@ -1,5 +1,10 @@
 //! Model registry: GLB files decoded by `quasar-assets` and uploaded with
-//! `quasar-render-3d`'s model adapter.
+//! `quasar-render-3d`'s model adapter, looked up by name.
+//!
+//! Every `assets/models/<name>.glb` is loaded under its file stem, plus the
+//! named entries in `assets/data/models.toml` (Kenney props). Content data
+//! refers to models by these names, so new content needs no code here.
+//! Models that carry a skin are characters (see `skins`).
 
 use quasar_assets::model::Model3D;
 use quasar_assets::{AssetServer, CacheBudget, GltfLoader};
@@ -8,81 +13,126 @@ use quasar_render_3d::{
     MaterialConversion, ModelUploadOptions, ShadowRenderState3D, SurfaceRenderState3D,
     UploadedModel,
 };
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-macro_rules! models {
-    ($($id:ident => $file:literal,)*) => {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-        pub enum ModelId { $($id,)* }
-        impl ModelId {
-            pub const ALL: &'static [ModelId] = &[$(ModelId::$id,)*];
-            pub fn file(self) -> &'static str {
-                match self { $(ModelId::$id => $file,)* }
-            }
-        }
-    };
+/// Prop models the scenes draw directly (content models come from data).
+pub mod names {
+    pub const ASTRONAUT: &str = "astronaut";
+    pub const DROP_POD: &str = "drop-pod";
+    pub const DRONE: &str = "drone";
+    pub const PLANET: &str = "planet";
+    pub const SHIP_EXTERIOR: &str = "ship-exterior";
+    pub const NAV_CONSOLE: &str = "nav-console";
+    pub const POD_CRADLE: &str = "pod-cradle";
+    pub const WORKBENCH: &str = "workbench";
+    pub const METAL_PANEL: &str = "metal-panel";
+    pub const CRATE_MEDIUM: &str = "crate-medium";
+    pub const CRATE_WIDE: &str = "crate-wide";
+    pub const BARREL: &str = "barrel";
+    pub const XP_SHARD: &str = "xp-shard";
+    pub const FERRITE_ORE: &str = "ferrite-ore";
+    pub const LUMITE_ORE: &str = "lumite-ore";
+    pub const VOIDSTONE_ORE: &str = "voidstone-ore";
+    pub const FERRITE_CHUNK: &str = "ferrite-chunk";
+    pub const LUMITE_CHUNK: &str = "lumite-chunk";
+    pub const VOIDSTONE_CHUNK: &str = "voidstone-chunk";
+
+    pub const ALL: [&str; 19] = [
+        ASTRONAUT,
+        DROP_POD,
+        DRONE,
+        PLANET,
+        SHIP_EXTERIOR,
+        NAV_CONSOLE,
+        POD_CRADLE,
+        WORKBENCH,
+        METAL_PANEL,
+        CRATE_MEDIUM,
+        CRATE_WIDE,
+        BARREL,
+        XP_SHARD,
+        FERRITE_ORE,
+        LUMITE_ORE,
+        VOIDSTONE_ORE,
+        FERRITE_CHUNK,
+        LUMITE_CHUNK,
+        VOIDSTONE_CHUNK,
+    ];
 }
 
-models! {
-    Astronaut => "models/astronaut.glb",
-    Husk => "models/husk.glb",
-    Brute => "models/brute.glb",
-    Skitter => "models/skitter.glb",
-    Bloater => "models/bloater.glb",
-    DropPod => "models/drop-pod.glb",
-    ArcCaster => "models/arc-caster.glb",
-    PlasmaMortar => "models/plasma-mortar.glb",
-    Drone => "models/drone.glb",
-    FerriteOre => "models/ferrite-ore.glb",
-    LumiteOre => "models/lumite-ore.glb",
-    VoidstoneOre => "models/voidstone-ore.glb",
-    XpShard => "models/xp-shard.glb",
-    FerriteChunk => "models/ferrite-chunk.glb",
-    LumiteChunk => "models/lumite-chunk.glb",
-    VoidstoneChunk => "models/voidstone-chunk.glb",
-    Beacon => "models/beacon.glb",
-    NavConsole => "models/nav-console.glb",
-    PodCradle => "models/pod-cradle.glb",
-    ReactorCore => "models/reactor-core.glb",
-    MedBay => "models/med-bay.glb",
-    WeaponRack => "models/weapon-rack.glb",
-    DrillRig => "models/drill-rig.glb",
-    ShipExterior => "models/ship-exterior.glb",
-    Planet => "models/planet.glb",
-    Blaster => "kenney/blaster-kit/blaster-d.glb",
-    Scattergun => "kenney/blaster-kit/blaster-f.glb",
-    CrateMedium => "kenney/blaster-kit/crate-medium.glb",
-    CrateWide => "kenney/blaster-kit/crate-wide.glb",
-    Barrel => "kenney/survival-kit/barrel.glb",
-    Workbench => "kenney/survival-kit/workbench.glb",
-    MetalPanel => "kenney/survival-kit/metal-panel.glb",
+#[derive(Deserialize)]
+struct ModelsFile {
+    models: BTreeMap<String, String>,
+}
+
+/// Every model name and its file, relative to the asset root.
+pub fn catalog(root: &Path) -> Result<BTreeMap<String, String>, String> {
+    let mut files = BTreeMap::new();
+    let dir = root.join("models");
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "glb")
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            files.insert(stem.to_owned(), format!("models/{stem}.glb"));
+        }
+    }
+    let aliases = root.join("data/models.toml");
+    let named: ModelsFile = quasar_config::load_file_typed(&aliases)
+        .map_err(|e| format!("{}: {e}", aliases.display()))?;
+    files.extend(named.models);
+    Ok(files)
+}
+
+/// Model names referenced by content data and the scenes.
+pub fn required() -> Vec<String> {
+    use planetfall_sim::content::{EnemyId, UpgradeId, WeaponId};
+    let mut names: Vec<String> = names::ALL.iter().map(|s| (*s).to_owned()).collect();
+    names.extend(EnemyId::all().map(|e| e.info().model.clone()));
+    names.extend(WeaponId::all().map(|w| w.info().model.clone()));
+    names.extend(UpgradeId::all().map(|u| u.info().station.clone()));
+    names
 }
 
 pub struct Models {
-    gpu: BTreeMap<ModelId, UploadedModel>,
+    gpu: BTreeMap<String, UploadedModel>,
     /// Decoded skinned characters, kept for their skins and clips.
-    sources: BTreeMap<ModelId, Model3D>,
+    sources: BTreeMap<String, Model3D>,
+}
+
+fn loader() -> GltfLoader {
+    // Characters carry skins and clips; Kenney crates ship opening clips
+    // that are imported but never played.
+    GltfLoader {
+        allow_animation_default_pose: true,
+        ..GltfLoader::animated()
+    }
 }
 
 impl Models {
     pub fn load(gal: &Gpu, root: &Path) -> GraphicsResult<Self> {
+        let catalog = catalog(root).map_err(error)?;
+        let missing: Vec<String> = required()
+            .into_iter()
+            .filter(|name| !catalog.contains_key(name))
+            .collect();
+        if !missing.is_empty() {
+            return Err(error(format!("models not found: {}", missing.join(", "))));
+        }
         let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
         server
             .mount_file("", root)
             .map_err(|e| error(format!("mount {}: {e}", root.display())))?;
-        // Characters carry skins and clips; Kenney crates ship opening clips
-        // that are imported but never played.
-        server.register(GltfLoader {
-            allow_animation_default_pose: true,
-            ..GltfLoader::animated()
-        });
+        server.register(loader());
         let mut gpu = BTreeMap::new();
         let mut sources = BTreeMap::new();
-        for &id in ModelId::ALL {
+        for (name, file) in catalog {
             let model = server
-                .load::<GltfLoader>(id.file())
-                .map_err(|e| error(format!("load {}: {e}", id.file())))?;
+                .load::<GltfLoader>(&file)
+                .map_err(|e| error(format!("load {file}: {e}")))?;
             let uploaded = UploadedModel::upload(
                 gal,
                 &model,
@@ -91,21 +141,25 @@ impl Models {
                     ..ModelUploadOptions::default()
                 },
             )?;
-            gpu.insert(id, uploaded);
-            if super::skins::CHARACTERS.contains(&id) {
-                sources.insert(id, (*model).clone());
+            gpu.insert(name.clone(), uploaded);
+            if !model.skins.is_empty() {
+                sources.insert(name, (*model).clone());
             }
         }
         Ok(Self { gpu, sources })
     }
 
-    pub fn get(&self, id: ModelId) -> &UploadedModel {
-        &self.gpu[&id]
+    /// A model by name. Names are checked at load (`required`), so a miss
+    /// here is a scene bug.
+    pub fn get(&self, name: &str) -> &UploadedModel {
+        self.gpu
+            .get(name)
+            .unwrap_or_else(|| panic!("model {name:?} is not loaded"))
     }
 
-    /// The decoded glTF of a skinned character.
-    pub fn source(&self, id: ModelId) -> &Model3D {
-        &self.sources[&id]
+    /// Decoded skinned characters by name.
+    pub fn characters(&self) -> impl Iterator<Item = (&str, &Model3D)> {
+        self.sources.iter().map(|(n, m)| (n.as_str(), m))
     }
 
     /// Samplers must be installed on each renderer before drawing.
@@ -135,30 +189,31 @@ impl Models {
 mod tests {
     use super::*;
 
-    /// Every model decodes on the CPU (no GPU needed) and has drawable parts.
+    fn root() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets")
+    }
+
     fn server() -> AssetServer {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
-        server.mount_file("", &root).unwrap();
-        server.register(GltfLoader {
-            allow_animation_default_pose: true,
-            ..GltfLoader::animated()
-        });
+        server.mount_file("", root()).unwrap();
+        server.register(loader());
         server
     }
 
+    /// Every catalogued model decodes on the CPU, and every model the
+    /// content data names exists.
     #[test]
-    fn all_models_decode() {
+    fn all_models_decode_and_content_models_exist() {
+        let catalog = catalog(&root()).unwrap();
+        for name in required() {
+            assert!(catalog.contains_key(&name), "missing model {name:?}");
+        }
         let mut server = server();
-        for &id in ModelId::ALL {
+        for (name, file) in &catalog {
             let model = server
-                .load::<GltfLoader>(id.file())
-                .unwrap_or_else(|e| panic!("{}: {e}", id.file()));
-            assert!(
-                !model.instances.is_empty(),
-                "{} has no instances",
-                id.file()
-            );
+                .load::<GltfLoader>(file)
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert!(!model.instances.is_empty(), "{name} has no instances");
         }
     }
 
@@ -168,39 +223,39 @@ mod tests {
     fn rigs_expose_their_joints_and_clips() {
         use quasar_animation::model::{clips_from_model, skeleton_from_model};
         let mut server = server();
-        for (id, joints, clips) in [
+        for (file, joints, clips) in [
             (
-                ModelId::Astronaut,
+                "models/astronaut.glb",
                 &["leg_l", "leg_r", "arm_l", "arm_r", "head", "torso"][..],
                 &["idle", "walk", "aim"][..],
             ),
             (
-                ModelId::Husk,
+                "models/husk.glb",
                 &["leg_l", "arm_r", "head"][..],
                 &["idle", "walk", "attack"][..],
             ),
             (
-                ModelId::Brute,
+                "models/brute.glb",
                 &["leg_r", "arm_l"][..],
                 &["idle", "walk", "attack"][..],
             ),
             (
-                ModelId::Skitter,
+                "models/skitter.glb",
                 &["leg_l0", "leg_r2", "head"][..],
                 &["idle", "walk", "attack"][..],
             ),
             (
-                ModelId::Bloater,
+                "models/bloater.glb",
                 &["body", "leg_l"][..],
                 &["walk", "pulse"][..],
             ),
         ] {
-            let model = server.load::<GltfLoader>(id.file()).unwrap();
+            let model = server.load::<GltfLoader>(file).unwrap();
             let (skeleton, binding) = skeleton_from_model(&model, 0).unwrap();
             for joint in joints {
                 assert!(
                     skeleton.bones().iter().any(|b| b.name == *joint),
-                    "{id:?} missing joint {joint}"
+                    "{file} missing joint {joint}"
                 );
             }
             assert_eq!(binding.inverse_bind_matrices.len(), skeleton.bones().len());
@@ -212,12 +267,12 @@ mod tests {
             for clip in clips {
                 assert!(
                     names.iter().any(|n| n == clip),
-                    "{id:?} missing clip {clip}"
+                    "{file} missing clip {clip}"
                 );
             }
             assert!(model.primitives.iter().all(|p| p.skin.is_some()));
         }
-        let pod = server.load::<GltfLoader>(ModelId::DropPod.file()).unwrap();
+        let pod = server.load::<GltfLoader>("models/drop-pod.glb").unwrap();
         for joint in ["door", "thruster"] {
             assert!(pod.instances.iter().any(|i| i.name == joint));
         }

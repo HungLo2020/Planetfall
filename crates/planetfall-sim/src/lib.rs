@@ -15,6 +15,7 @@ pub mod input;
 pub mod math;
 pub mod profile;
 pub mod run;
+pub mod save;
 pub mod ship;
 pub mod terrain;
 pub mod tutorial;
@@ -31,6 +32,33 @@ mod tests {
     use crate::events::GameEvent;
     use crate::math::V2;
     use crate::tutorial::TutorialStep;
+
+    /// The tutorial finishes on its first extraction whatever the seed, even
+    /// when the drop ends before a level-up or cache has been taught.
+    #[test]
+    fn tutorial_finishes_for_every_seed() {
+        for seed in 0..12 {
+            let mut game = Game::new(Profile::default(), seed);
+            let mut pilot = Autopilot::new();
+            for _ in 0..60 * 60 * 6 {
+                if let Some(run) = &mut game.run {
+                    run.invulnerable = true;
+                }
+                let input = pilot.input(&game);
+                game.update(&input);
+                if game.profile.tutorial_complete {
+                    break;
+                }
+            }
+            assert!(
+                game.profile.tutorial_complete,
+                "seed {seed}: tutorial stuck at {:?} after {} extractions",
+                game.tutorial_step(),
+                game.profile.stats.extractions
+            );
+            assert_eq!(game.profile.stats.extractions, 1, "seed {seed}");
+        }
+    }
 
     /// Play the full loop from a fresh profile: tutorial, drops and upgrades.
     #[test]
@@ -145,7 +173,7 @@ mod tests {
     fn death_loses_carried_materials() {
         let profile = Profile {
             tutorial_complete: true,
-            orbiting: Some(content::PlanetId::Verdant),
+            orbiting: Some(content::PlanetId::first()),
             ..Profile::default()
         };
         let mut game = Game::new(profile, 5);

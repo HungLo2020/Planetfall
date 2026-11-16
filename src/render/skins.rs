@@ -10,7 +10,7 @@
 //! and draws the posed vertices through the ordinary surface and shadow
 //! passes.
 
-use super::models::{ModelId, Models};
+use super::models::Models;
 use quasar_animation::model::{SkinBinding, clips_from_model, skeleton_from_model};
 use quasar_animation::{Clip, Pose, Skeleton};
 use quasar_assets::model::Model3D;
@@ -18,15 +18,6 @@ use quasar_frame::{Gpu, GraphicsResult, error};
 use quasar_render_3d::{Mat4, ShadingModel, SkinnedMesh, SkinningPass, SurfaceDraw3D};
 use std::collections::BTreeMap;
 use vulkanic_gal::CommandBuffer;
-
-/// Characters drawn with skins, in `ModelId` order.
-pub const CHARACTERS: [ModelId; 5] = [
-    ModelId::Astronaut,
-    ModelId::Husk,
-    ModelId::Brute,
-    ModelId::Skitter,
-    ModelId::Bloater,
-];
 
 /// Upper bound on simultaneously posed instances of one character.
 const MAX_INSTANCES: usize = 160;
@@ -87,6 +78,10 @@ impl Character {
         })
     }
 
+    pub fn has(&self, clip: &str) -> bool {
+        self.clips.contains_key(clip)
+    }
+
     /// Sample and combine `layers` into a skeleton pose; returns the joint
     /// palette and each bone's model-space matrix.
     pub fn pose(&self, layers: &[Layer]) -> Posed {
@@ -139,7 +134,8 @@ impl Posed {
 
 /// A skinned draw requested by the painter.
 pub struct SkinRequest {
-    pub id: ModelId,
+    /// Character model name.
+    pub id: &'static str,
     pub palette: Vec<Mat4>,
     pub root: Mat4,
     /// Added red-white emission (hit flash).
@@ -148,17 +144,17 @@ pub struct SkinRequest {
 
 /// Rigs plus the per-instance GPU meshes they pose into.
 pub struct Skins {
-    characters: BTreeMap<ModelId, Character>,
+    characters: BTreeMap<String, Character>,
     /// Per character: pooled instances, each one mesh per skinned primitive.
-    pool: BTreeMap<ModelId, Vec<Vec<SkinnedMesh>>>,
+    pool: BTreeMap<&'static str, Vec<Vec<SkinnedMesh>>>,
     pass: SkinningPass,
 }
 
 impl Skins {
     pub fn new(gal: &Gpu, models: &Models) -> GraphicsResult<Self> {
         let mut characters = BTreeMap::new();
-        for id in CHARACTERS {
-            characters.insert(id, Character::load(models.source(id).clone())?);
+        for (name, model) in models.characters() {
+            characters.insert(name.to_owned(), Character::load(model.clone())?);
         }
         Ok(Self {
             characters,
@@ -167,8 +163,10 @@ impl Skins {
         })
     }
 
-    pub fn character(&self, id: ModelId) -> &Character {
-        &self.characters[&id]
+    pub fn character(&self, name: &str) -> &Character {
+        self.characters
+            .get(name)
+            .unwrap_or_else(|| panic!("{name:?} is not a skinned character"))
     }
 
     /// Pose every request on the GPU and return the command buffer to submit
@@ -183,7 +181,7 @@ impl Skins {
             return Ok((None, Vec::new()));
         }
         // Grow pools to this frame's counts, then record one dispatch per mesh.
-        let mut counts: BTreeMap<ModelId, usize> = BTreeMap::new();
+        let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
         let mut slots = Vec::with_capacity(requests.len());
         for request in requests {
             let n = counts.entry(request.id).or_default();
@@ -191,7 +189,7 @@ impl Skins {
             *n += 1;
         }
         for (&id, &count) in &counts {
-            let character = &self.characters[&id];
+            let character = &self.characters[id];
             let pool = self.pool.entry(id).or_default();
             while pool.len() < count.min(MAX_INSTANCES) {
                 let meshes = character
@@ -211,7 +209,7 @@ impl Skins {
         let mut encoder = gal.encoder("character skinning");
         for (request, slot) in requests.iter().zip(&slots) {
             let Some(slot) = slot else { continue };
-            for mesh in &mut self.pool.get_mut(&request.id).expect("grown above")[*slot] {
+            for mesh in &mut self.pool.get_mut(request.id).expect("grown above")[*slot] {
                 self.pass
                     .record(gal, &mut encoder, mesh, &request.palette)?;
             }
@@ -221,9 +219,9 @@ impl Skins {
         let mut draws = Vec::new();
         for (request, slot) in requests.iter().zip(slots) {
             let Some(slot) = slot else { continue };
-            let character = &self.characters[&request.id];
+            let character = &self.characters[request.id];
             let uploaded = models.get(request.id);
-            for (mesh, &primitive) in self.pool[&request.id][slot]
+            for (mesh, &primitive) in self.pool[request.id][slot]
                 .iter()
                 .zip(&character.primitives)
             {

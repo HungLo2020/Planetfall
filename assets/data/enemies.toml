@@ -1,0 +1,77 @@
+# Enemies: behaviour archetypes are code; numbers, drops, spawning, model and
+# sounds are data.
+#
+# behavior: "walker" (steady melee), "lunger" (speeds up when close),
+#           "exploder" (detonates on contact or death).
+# spawn: weight relative to other enemies, group size range, the minute a
+#        drop must reach first, and whether it waits for late game (2.5 min
+#        or extraction) or skips the tutorial. Planets scale weights.
+# drops: rolled on death; amount of a material with a chance (1 = always).
+
+[[enemy]]
+id = "husk"
+name = "Husk"
+behavior = "walker"
+health = 26.0
+speed = 2.7
+damage = 9.0
+radius = 0.45
+xp = 2
+model = "husk"
+blood = [0.35, 0.65, 0.2]
+death_sound = "enemy_die"
+alert_sound = "husk_groan"
+alert_chance = 0.35
+spawn = { weight = 0.5, count = [2, 4] }
+drops = [{ material = "ferrite", amount = 1, chance = 0.04 }]
+
+[[enemy]]
+id = "skitter"
+name = "Skitter"
+behavior = "lunger"
+health = 10.0
+speed = 5.0
+damage = 5.0
+radius = 0.4
+xp = 1
+model = "skitter"
+blood = [0.45, 0.25, 0.55]
+death_sound = "skitter_die"
+lunge = { range = 5.0, speed = 1.35 }
+spawn = { weight = 0.3, count = [3, 5] }
+drops = [{ material = "ferrite", amount = 1, chance = 0.04 }]
+
+[[enemy]]
+id = "bloater"
+name = "Bloater"
+behavior = "exploder"
+health = 42.0
+speed = 1.9
+damage = 22.0
+radius = 0.7
+xp = 4
+model = "bloater"
+blood = [0.6, 0.7, 0.2]
+death_sound = "enemy_die"
+explosion = { radius = 3.0, enemy_damage = 30.0 }
+spawn = { weight = 0.14, count = [1, 2], after_minutes = 1.0 }
+
+[[enemy]]
+id = "brute"
+name = "Brute"
+behavior = "walker"
+health = 320.0
+speed = 2.1
+damage = 24.0
+radius = 0.95
+xp = 20
+model = "brute"
+blood = [0.3, 0.5, 0.2]
+death_sound = "enemy_die"
+alert_sound = "brute_roar"
+alert_chance = 0.35
+spawn = { weight = 0.06, count = [1, 1], late = true, tutorial = false }
+drops = [
+  { material = "voidstone", amount = 1, chance = 1.0 },
+  { material = "ferrite", amount = 3, chance = 1.0 },
+]

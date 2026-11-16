@@ -6,11 +6,12 @@ use crate::bindings;
 use crate::controls::Controls;
 use crate::render::{Frame, Graphics, camera::Camera};
 use crate::settings::Settings;
-use crate::storage::{Display, Preferences, Storage};
-use crate::ui::menu::{Content, Menu, MenuAction, OptionsState, Screen};
+use crate::storage::{Display, Preferences, SlotState, Storage, new_meta, unix_time};
+use crate::ui::menu::{Content, Menu, MenuAction, MenuContext, SavesMode, Screen, SettingsState};
 use crate::ui::{Layer, build_text, hud, overlay};
 use planetfall_sim::autoplay::Autopilot;
 use planetfall_sim::events::GameEvent;
+use planetfall_sim::save::{SaveGame, SlotMeta};
 use planetfall_sim::{Command, Game, Phase, Profile};
 use quasar_app::{
     AppConfig, AppContext, Application, DesktopApplication, Flow, RenderPolicy, TimingConfig,
@@ -28,10 +29,11 @@ use vulkanic_gal::PresentMode;
 pub struct Launch {
     pub settings: Settings,
     pub storage: Storage,
-    pub profile: Profile,
-    pub warning: Option<String>,
     pub asset_root: PathBuf,
 }
+
+/// Seconds of play between autosaves.
+const AUTOSAVE_SECONDS: u32 = 60;
 
 pub fn run(launch: Launch) -> Result<(), String> {
     let display = launch.storage.load_display();
@@ -75,35 +77,54 @@ pub fn run(launch: Launch) -> Result<(), String> {
         ],
     );
     let (measure, text) = build_text(&launch.asset_root)?;
-    let mut game = Game::new(launch.profile, launch.settings.seed);
-    if let Some(w) = &launch.warning {
+    // The main menu shows a fresh ship behind it; `--slot`, `--fresh` and
+    // `--autoplay` skip straight into a game.
+    let mut game = Game::new(Profile::default(), launch.settings.seed);
+    let mut slot = None;
+    let mut meta = SlotMeta::default();
+    let mut warning = None;
+    if let Some(chosen) = launch.settings.slot {
+        match launch.storage.load_slot(chosen) {
+            Ok(save) => {
+                meta = save.meta.clone();
+                game = save.restore(launch.settings.seed);
+                slot = Some(chosen);
+            }
+            Err(e) => warning = Some(format!("slot {chosen}: {e}")),
+        }
+    }
+    if let Some(w) = &warning {
         diagnostics.event_with(
             Level::Warn,
             "planetfall.save",
-            "profile_warning",
+            "load_failed",
             [Field::new("detail", w.clone())],
         );
-        game.notice = Some(planetfall_sim::game::Notice {
-            text: w.clone(),
-            ticks: 600,
-        });
     }
-    let interactive = !launch.settings.autoplay;
-    let options = OptionsState {
+    let skip_menu = launch.settings.autoplay || launch.settings.fresh || slot.is_some();
+    let settings_state = SettingsState {
         fullscreen,
+        shadows: display.shadows,
+        bloom: display.bloom,
         master: prefs.master_volume,
         music: prefs.music_volume,
         effects: prefs.effects_volume,
         shake: prefs.screen_shake,
     };
+    let slots = launch.storage.slots();
     let app = App {
         autopilot: launch.settings.autoplay.then(Autopilot::new),
-        screens: if interactive {
-            vec![Screen::Title]
-        } else {
+        screens: if skip_menu {
             Vec::new()
+        } else {
+            vec![Screen::Main]
         },
-        menu: Menu::new(options),
+        menu: Menu::new(settings_state),
+        slot,
+        meta,
+        slots,
+        load_error: warning,
+        tick_count: 0,
         settings: launch.settings,
         storage: launch.storage,
         asset_root: launch.asset_root,
@@ -136,6 +157,14 @@ pub fn run(launch: Launch) -> Result<(), String> {
 }
 
 struct App {
+    /// The save slot being played; None at the main menu or when unsaved.
+    slot: Option<usize>,
+    meta: SlotMeta,
+    /// Slot summaries for the menus (refreshed when they change).
+    slots: Vec<(usize, SlotState)>,
+    load_error: Option<String>,
+    /// Ticks played since the last save, for play time and autosave.
+    tick_count: u32,
     settings: Settings,
     storage: Storage,
     asset_root: PathBuf,
@@ -143,7 +172,7 @@ struct App {
     display: Display,
     game: Game,
     autopilot: Option<Autopilot>,
-    /// Stack of open app-level screens (title, pause, options, confirmations).
+    /// Stack of open app-level screens (main menu, saves, settings, pause, confirmations).
     screens: Vec<Screen>,
     menu: Menu,
     measure: ShapedTextMeasure,
@@ -182,10 +211,11 @@ impl App {
             Some(t) => t,
             None => build_text(&self.asset_root)?.1,
         };
-        self.graphics = Some(
-            Graphics::new(&gal, &self.asset_root, Some(text))
-                .map_err(|e| format!("create renderer: {e}"))?,
-        );
+        let mut graphics = Graphics::new(&gal, &self.asset_root, Some(text))
+            .map_err(|e| format!("create renderer: {e}"))?;
+        graphics.shadows_enabled = self.display.shadows;
+        graphics.bloom_enabled = self.display.bloom;
+        self.graphics = Some(graphics);
         self.surface = Some(surface);
         self.gal = Some(gal);
         if self.settings.audio && self.audio.is_none() {
@@ -210,18 +240,84 @@ impl App {
         Ok(())
     }
 
-    fn save_profile(&mut self) {
-        if let Err(e) = self.storage.save_profile(&self.game.profile) {
+    /// Write the game to its slot (no-op when unsaved).
+    fn save_game(&mut self) {
+        let Some(slot) = self.slot else { return };
+        self.meta.play_seconds += u64::from(self.tick_count / 60);
+        self.tick_count %= 60;
+        self.meta.saved = unix_time();
+        let save = SaveGame::capture(&self.game, self.meta.clone());
+        if let Err(e) = self.storage.save_slot(slot, &save) {
             self.diagnostics.event_with(
                 Level::Error,
                 "planetfall.save",
-                "profile_save_failed",
-                [Field::new("error", e.to_string())],
+                "save_failed",
+                [
+                    Field::new("slot", slot as u64),
+                    Field::new("error", e.to_string()),
+                ],
             );
             self.game.notice = Some(planetfall_sim::game::Notice {
-                text: format!("Could not save progress: {e}"),
+                text: format!("Could not save slot {slot}: {e}"),
                 ticks: 400,
             });
+        }
+    }
+
+    fn refresh_slots(&mut self) {
+        self.slots = self.storage.slots();
+    }
+
+    fn remember_slot(&mut self, slot: Option<usize>) {
+        self.prefs.last_slot = slot;
+        let _ = self.storage.save_preferences(&self.prefs);
+    }
+
+    /// Swap in a different game (new or loaded); cached render state from
+    /// the old one must not leak into the new one.
+    fn replace_game(&mut self, game: Game) {
+        self.game = game;
+        if let Some(graphics) = &mut self.graphics {
+            graphics.reset_world();
+        }
+    }
+
+    /// Start a new commander in `slot`.
+    fn start_new(&mut self, slot: usize) {
+        self.replace_game(Game::new(Profile::default(), unix_time()));
+        self.meta = new_meta();
+        self.tick_count = 0;
+        self.slot = Some(slot);
+        self.save_game();
+        self.remember_slot(Some(slot));
+        self.screens.clear();
+    }
+
+    /// Load `slot`, or stay on the menu with the error shown.
+    fn load(&mut self, slot: usize) {
+        match self.storage.load_slot(slot) {
+            Ok(save) => {
+                self.meta = save.meta.clone();
+                self.replace_game(save.restore(unix_time()));
+                self.tick_count = 0;
+                self.slot = Some(slot);
+                self.load_error = None;
+                self.remember_slot(Some(slot));
+                self.screens.clear();
+            }
+            Err(e) => {
+                self.load_error = Some(e);
+                self.refresh_slots();
+            }
+        }
+    }
+
+    fn menu_context(&self) -> MenuContext {
+        MenuContext {
+            slots: self.slots.clone(),
+            continue_slot: self.prefs.last_slot,
+            active_slot: self.slot,
+            error: self.load_error.clone(),
         }
     }
 
@@ -253,24 +349,72 @@ impl App {
         {
             audio.ui("ui_confirm");
         }
-        let on_surface = self.game.phase == Phase::Surface;
         match action {
             MenuAction::None => {}
-            MenuAction::Launch | MenuAction::Resume => self.screens.clear(),
-            MenuAction::OpenOptions => {
-                let from_title = self.screens.last() == Some(&Screen::Title);
-                self.menu.options.fullscreen = self.display.fullscreen;
-                self.screens.push(Screen::Options { from_title });
+            MenuAction::Resume => self.screens.clear(),
+            MenuAction::Continue => {
+                if let Some(slot) = self.prefs.last_slot {
+                    self.load(slot);
+                }
+            }
+            MenuAction::OpenSaves(mode) => {
+                self.load_error = None;
+                self.refresh_slots();
+                if mode == SavesMode::Delete {
+                    self.screens.pop();
+                }
+                self.screens.push(Screen::Saves(mode));
+            }
+            MenuAction::PickSlot(slot) => {
+                let state = self
+                    .slots
+                    .iter()
+                    .find(|(s, _)| *s == slot)
+                    .map(|(_, state)| state.clone());
+                match (self.screens.last(), state) {
+                    (Some(Screen::Saves(SavesMode::New)), Some(SlotState::Saved(_))) => {
+                        self.screens.push(Screen::ConfirmOverwrite(slot));
+                    }
+                    (Some(Screen::Saves(SavesMode::New)), _) => self.start_new(slot),
+                    (Some(Screen::Saves(SavesMode::Load)), _) => self.load(slot),
+                    (Some(Screen::Saves(SavesMode::Delete)), _) => {
+                        self.screens.push(Screen::ConfirmDelete(slot));
+                    }
+                    _ => {}
+                }
+            }
+            MenuAction::Overwrite(slot) => self.start_new(slot),
+            MenuAction::DeleteSlot(slot) => {
+                let _ = self.storage.delete_slot(slot);
+                if self.prefs.last_slot == Some(slot) {
+                    self.remember_slot(None);
+                }
+                self.refresh_slots();
+                self.screens.pop();
+            }
+            MenuAction::OpenSettings => {
+                self.menu.settings = SettingsState {
+                    fullscreen: self.display.fullscreen,
+                    shadows: self.display.shadows,
+                    bloom: self.display.bloom,
+                    master: self.prefs.master_volume,
+                    music: self.prefs.music_volume,
+                    effects: self.prefs.effects_volume,
+                    shake: self.prefs.screen_shake,
+                };
+                self.screens.push(Screen::Settings);
             }
             MenuAction::Back => {
                 self.screens.pop();
             }
-            MenuAction::Apply(_) => {
-                let o = self.menu.options.clone();
+            MenuAction::ApplySettings => {
+                let o = self.menu.settings.clone();
                 self.prefs.master_volume = o.master;
                 self.prefs.music_volume = o.music;
                 self.prefs.effects_volume = o.effects;
                 self.prefs.screen_shake = o.shake;
+                self.display.shadows = o.shadows;
+                self.display.bloom = o.bloom;
                 if o.fullscreen != self.display.fullscreen {
                     self.display.fullscreen = o.fullscreen;
                     if let Some(w) = c.window {
@@ -280,33 +424,39 @@ impl App {
                 if let Some(audio) = &self.audio {
                     audio.apply(&self.prefs);
                 }
-                let _ = self.storage.save_preferences(&self.prefs);
-                let _ = self.storage.save_display(&self.display);
+                if let Some(graphics) = &mut self.graphics {
+                    graphics.shadows_enabled = self.display.shadows;
+                    graphics.bloom_enabled = self.display.bloom;
+                }
+                for result in [
+                    self.storage.save_preferences(&self.prefs),
+                    self.storage.save_display(&self.display),
+                ] {
+                    if let Err(e) = result {
+                        self.diagnostics.event_with(
+                            Level::Error,
+                            "planetfall.settings",
+                            "save_failed",
+                            [Field::new("error", e)],
+                        );
+                    }
+                }
                 self.screens.pop();
-            }
-            MenuAction::AskReset => self.screens.push(Screen::ConfirmReset),
-            MenuAction::ResetProgress => {
-                self.game = Game::new(Profile::default(), self.settings.seed.wrapping_add(1));
-                self.save_profile();
-                self.screens = vec![Screen::Title];
             }
             MenuAction::AskAbandon => self.screens.push(Screen::ConfirmAbandon),
             MenuAction::Abandon => {
                 self.screens.clear();
                 self.controls.command = Some(Command::Abandon);
             }
-            MenuAction::QuitToTitle => {
-                self.save_profile();
-                self.screens = vec![Screen::Title];
+            MenuAction::SaveAndQuit => {
+                self.save_game();
+                self.slot = None;
+                self.refresh_slots();
+                self.screens = vec![Screen::Main];
             }
-            MenuAction::AskQuit => {
-                let from_title = self.screens.last() == Some(&Screen::Title);
-                self.screens.push(Screen::ConfirmQuit { from_title });
-            }
+            MenuAction::AskQuit => self.screens.push(Screen::ConfirmQuit),
             MenuAction::Quit => {
-                if !on_surface {
-                    self.save_profile();
-                }
+                self.save_game();
                 return Some(Flow::Exit);
             }
             MenuAction::Game(command) => self.controls.command = Some(command),
@@ -332,7 +482,7 @@ impl App {
             audio.handle(&self.game.events);
         }
         if save {
-            self.save_profile();
+            self.save_game();
         }
     }
 
@@ -400,6 +550,7 @@ impl Application for App {
             &self.measure,
             self.scale,
             &self.controls.prompts,
+            &self.menu_context(),
         );
         if self.menu.is_open() {
             let input = self.controls.ui_input(c.input);
@@ -421,7 +572,7 @@ impl Application for App {
             self.controls.latch_gameplay(c.input);
         }
         self.controls.end_frame();
-        let title = self.screens.first() == Some(&Screen::Title);
+        let title = self.screens.first() == Some(&Screen::Main);
         if let Some(audio) = &mut self.audio {
             audio.set_scene(self.game.phase, title);
             let focus = match (&self.game.run, self.game.phase) {
@@ -442,6 +593,10 @@ impl Application for App {
             None => self.controls.take_game_input(c.input),
         };
         self.game.update(&input);
+        self.tick_count += 1;
+        if self.tick_count >= AUTOSAVE_SECONDS * 60 {
+            self.save_game();
+        }
         let phase = std::mem::discriminant(&self.game.phase);
         if self.last_phase != Some(phase) {
             self.last_phase = Some(phase);
@@ -468,7 +623,7 @@ impl Application for App {
             return Ok(Flow::Continue);
         };
         let mut layers: Vec<&Layer> = Vec::with_capacity(2);
-        let show_hud = !matches!(self.screens.first(), Some(Screen::Title));
+        let show_hud = !matches!(self.screens.first(), Some(Screen::Main));
         if show_hud {
             layers.push(&hud);
         }
@@ -511,6 +666,7 @@ impl Application for App {
     }
 
     fn suspended(&mut self, _c: &mut AppContext<'_>) -> Result<(), AppError> {
+        self.save_game();
         if self.screens.is_empty() && self.autopilot.is_none() {
             self.screens.push(Screen::Pause {
                 surface: self.game.phase == Phase::Surface,
@@ -522,8 +678,8 @@ impl Application for App {
     fn shutdown(&mut self, _c: &mut AppContext<'_>) -> Result<(), AppError> {
         self.release()?;
         self.audio.take();
-        // Mid-drop progress is never banked; the profile is already saved at every change.
-        self.save_profile();
+        // The slot keeps the whole session, including a drop in progress.
+        self.save_game();
         let _ = self.storage.save_display(&self.display);
         println!(
             "planetfall frames={} ticks={} phase={:?} drops={} extractions={} materials={:?}",

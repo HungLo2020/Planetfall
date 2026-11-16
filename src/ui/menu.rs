@@ -1,10 +1,12 @@
-//! Interactive screens: title, pause, options, confirmations, and the
-//! in-world terminals (navigation, fabricator, level-up, debrief).
+//! Interactive screens: the main menu, save slots, settings, pause and
+//! confirmations, and the in-world terminals (navigation, fabricator,
+//! level-up, debrief).
 //! Keyboard, mouse and gamepad all navigate through `quasar-ui` focus.
 
 use super::{Builder, Layer, format_cost, format_materials, hud::roman};
 use crate::bindings::Prompts;
-use planetfall_sim::content::{PlanetId, ShipUpgrade};
+use crate::storage::{SlotState, SlotSummary};
+use planetfall_sim::content::{PlanetId, UpgradeId};
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
 use quasar_ui::{
@@ -14,17 +16,33 @@ use quasar_ui::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
-    Title,
-    Pause { surface: bool },
-    Options { from_title: bool },
+    /// The main menu: continue, new game, load, settings, quit.
+    Main,
+    /// The five save slots, for starting, loading or deleting a game.
+    Saves(SavesMode),
+    ConfirmOverwrite(usize),
+    ConfirmDelete(usize),
+    Settings,
+    Pause {
+        surface: bool,
+    },
     ConfirmAbandon,
-    ConfirmReset,
-    ConfirmQuit { from_title: bool },
+    ConfirmQuit,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SavesMode {
+    New,
+    Load,
+    Delete,
+}
+
+/// Settings as edited on the Settings screen.
 #[derive(Clone, Debug, PartialEq)]
-pub struct OptionsState {
+pub struct SettingsState {
     pub fullscreen: bool,
+    pub shadows: bool,
+    pub bloom: bool,
     pub master: f32,
     pub music: f32,
     pub effects: f32,
@@ -34,19 +52,35 @@ pub struct OptionsState {
 #[derive(Clone, Debug, PartialEq)]
 pub enum MenuAction {
     None,
-    Launch,
-    Resume,
-    OpenOptions,
+    /// Load the most recent slot.
+    Continue,
+    OpenSaves(SavesMode),
+    /// A slot chosen on the saves screen (meaning depends on the mode).
+    PickSlot(usize),
+    Overwrite(usize),
+    DeleteSlot(usize),
+    OpenSettings,
     Back,
-    Apply(OptionsState),
-    AskReset,
-    ResetProgress,
+    ApplySettings,
+    Resume,
     AskAbandon,
     Abandon,
-    QuitToTitle,
+    SaveAndQuit,
     AskQuit,
     Quit,
     Game(Command),
+}
+
+/// App facts the menus show beyond the game itself.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MenuContext {
+    pub slots: Vec<(usize, SlotState)>,
+    /// The slot Continue loads.
+    pub continue_slot: Option<usize>,
+    /// The slot being played (None at the main menu).
+    pub active_slot: Option<usize>,
+    /// Shown on the saves screen after a failed load.
+    pub error: Option<String>,
 }
 
 /// What the menu should currently show.
@@ -62,22 +96,25 @@ pub struct Menu {
     signature: String,
     actions: Vec<MenuAction>,
     cancel: MenuAction,
-    sliders: Vec<(NodeId, Slot)>,
-    checks: Vec<(NodeId, Slot)>,
-    pub options: OptionsState,
+    sliders: Vec<(NodeId, Field)>,
+    checks: Vec<(NodeId, Field)>,
+    pub settings: SettingsState,
 }
 
+/// A settings control.
 #[derive(Clone, Copy, Debug)]
-enum Slot {
+enum Field {
     Master,
     Music,
     Effects,
     Fullscreen,
+    Shadows,
+    Bloom,
     Shake,
 }
 
 impl Menu {
-    pub fn new(options: OptionsState) -> Self {
+    pub fn new(settings: SettingsState) -> Self {
         Self {
             layer: None,
             signature: String::new(),
@@ -85,7 +122,7 @@ impl Menu {
             cancel: MenuAction::None,
             sliders: Vec::new(),
             checks: Vec::new(),
-            options,
+            settings,
         }
     }
 
@@ -111,13 +148,14 @@ impl Menu {
         measure: &dyn TextMeasure,
         scale: f32,
         prompts: &Prompts,
+        context: &MenuContext,
     ) {
         let Some(content) = content else {
             self.layer = None;
             self.signature.clear();
             return;
         };
-        let signature = signature(content, game, prompts);
+        let signature = signature(content, game, prompts, context);
         if self.layer.is_some() && signature == self.signature {
             return;
         }
@@ -132,7 +170,7 @@ impl Menu {
         self.sliders.clear();
         self.checks.clear();
         self.cancel = MenuAction::None;
-        self.build(&mut b, content, game, prompts);
+        self.build(&mut b, content, game, prompts, context);
         let mut layer = b.finish();
         if same_screen && let Some(i) = focus_index {
             // Keep the cursor in place when only numbers changed (e.g. after a purchase).
@@ -165,9 +203,9 @@ impl Menu {
                 && let Widget::Slider { value, .. } = node.widget
             {
                 match slot {
-                    Slot::Master => self.options.master = value,
-                    Slot::Music => self.options.music = value,
-                    Slot::Effects => self.options.effects = value,
+                    Field::Master => self.settings.master = value,
+                    Field::Music => self.settings.music = value,
+                    Field::Effects => self.settings.effects = value,
                     _ => {}
                 }
             }
@@ -177,8 +215,10 @@ impl Menu {
                 && let Widget::Checkbox { checked, .. } = node.widget
             {
                 match slot {
-                    Slot::Fullscreen => self.options.fullscreen = checked,
-                    Slot::Shake => self.options.shake = checked,
+                    Field::Fullscreen => self.settings.fullscreen = checked,
+                    Field::Shadows => self.settings.shadows = checked,
+                    Field::Bloom => self.settings.bloom = checked,
+                    Field::Shake => self.settings.shake = checked,
                     _ => {}
                 }
             }
@@ -224,9 +264,16 @@ impl Menu {
         b.button(parent, text, id, enabled);
     }
 
-    fn build(&mut self, b: &mut Builder, content: Content, game: &Game, prompts: &Prompts) {
+    fn build(
+        &mut self,
+        b: &mut Builder,
+        content: Content,
+        game: &Game,
+        prompts: &Prompts,
+        context: &MenuContext,
+    ) {
         match content {
-            Content::Screen(screen) => self.build_screen(b, screen, game, prompts),
+            Content::Screen(screen) => self.build_screen(b, screen, prompts, context),
             Content::LevelUp => {
                 let card = Self::card(b, 560.0);
                 let level = game.run.as_ref().map_or(1, |r| r.player.level);
@@ -340,7 +387,7 @@ impl Menu {
                         ),
                         TextStyle::Body,
                     );
-                    b.label(card, upgrade.effect(), TextStyle::Small);
+                    b.label(card, upgrade.info().description.as_str(), TextStyle::Small);
                     b.label(
                         card,
                         "Upgrade this module at the Fabricator.",
@@ -362,7 +409,7 @@ impl Menu {
             "Plot an FTL jump. Dangerous worlds pay better.",
             TextStyle::Small,
         );
-        for planet in PlanetId::ALL {
+        for planet in PlanetId::all() {
             let info = planet.info();
             let unlocked = game.profile.unlocked(planet);
             let here = game.profile.orbiting == Some(planet);
@@ -408,7 +455,7 @@ impl Menu {
             format!("Hold: {}", format_materials(&game.profile.materials)),
             TextStyle::Body,
         );
-        for upgrade in ShipUpgrade::ALL {
+        for upgrade in UpgradeId::all() {
             let level = game.profile.level(upgrade);
             let label = match game.profile.next_cost(upgrade) {
                 None => format!(
@@ -439,15 +486,21 @@ impl Menu {
                 MenuAction::Game(Command::Purchase(upgrade)),
                 affordable,
             );
-            b.label(card, upgrade.effect(), TextStyle::Small);
+            b.label(card, upgrade.info().description.as_str(), TextStyle::Small);
         }
         self.cancel = MenuAction::Game(Command::Close);
         self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
     }
 
-    fn build_screen(&mut self, b: &mut Builder, screen: Screen, game: &Game, prompts: &Prompts) {
+    fn build_screen(
+        &mut self,
+        b: &mut Builder,
+        screen: Screen,
+        prompts: &Prompts,
+        context: &MenuContext,
+    ) {
         match screen {
-            Screen::Title => {
+            Screen::Main => {
                 let card = Self::card(b, 520.0);
                 b.label(card, "PLANETFALL", TextStyle::Heading);
                 b.label(
@@ -455,26 +508,46 @@ impl Menu {
                     "Build your ship. Drop. Mine. Survive. Extract.",
                     TextStyle::Small,
                 );
-                let s = &game.profile.stats;
-                let progress = if s.drops == 0 {
-                    "New commander".to_string()
-                } else {
-                    format!(
-                        "{} drops · {} extractions · {}",
-                        s.drops,
-                        s.extractions,
-                        format_materials(&game.profile.materials)
-                    )
-                };
-                b.label(card, progress, TextStyle::Small);
+                let resume = context.continue_slot.and_then(|slot| {
+                    context.slots.iter().find_map(|(s, state)| match state {
+                        SlotState::Saved(summary) if *s == slot => Some((slot, summary)),
+                        _ => None,
+                    })
+                });
+                match resume {
+                    Some((slot, summary)) => {
+                        self.button(b, card, "CONTINUE", MenuAction::Continue, true);
+                        b.label(
+                            card,
+                            format!(
+                                "Slot {slot} · {} · {}",
+                                summary.location,
+                                play_time(summary.meta.play_seconds)
+                            ),
+                            TextStyle::Small,
+                        );
+                    }
+                    None => self.button(b, card, "CONTINUE", MenuAction::Continue, false),
+                }
                 self.button(
                     b,
                     card,
-                    if s.drops == 0 { "BEGIN" } else { "CONTINUE" },
-                    MenuAction::Launch,
+                    "NEW GAME",
+                    MenuAction::OpenSaves(SavesMode::New),
                     true,
                 );
-                self.button(b, card, "OPTIONS", MenuAction::OpenOptions, true);
+                let any = context
+                    .slots
+                    .iter()
+                    .any(|(_, s)| matches!(s, SlotState::Saved(_)));
+                self.button(
+                    b,
+                    card,
+                    "LOAD GAME",
+                    MenuAction::OpenSaves(SavesMode::Load),
+                    any,
+                );
+                self.button(b, card, "SETTINGS", MenuAction::OpenSettings, true);
                 self.button(b, card, "QUIT", MenuAction::AskQuit, true);
                 b.paragraph(
                     card,
@@ -486,35 +559,81 @@ impl Menu {
                 );
                 self.cancel = MenuAction::AskQuit;
             }
-            Screen::Pause { surface } => {
-                let card = Self::card(b, 460.0);
-                b.label(card, "PAUSED", TextStyle::Heading);
-                self.button(b, card, "RESUME", MenuAction::Resume, true);
-                self.button(b, card, "OPTIONS", MenuAction::OpenOptions, true);
-                if surface {
-                    self.button(b, card, "ABANDON DROP", MenuAction::AskAbandon, true);
-                }
-                self.button(b, card, "QUIT TO TITLE", MenuAction::QuitToTitle, true);
-                self.button(b, card, "QUIT GAME", MenuAction::AskQuit, true);
-                if surface {
-                    b.label(
+            Screen::Saves(mode) => {
+                let card = Self::card(b, 640.0);
+                let (title, hint) = match mode {
+                    SavesMode::New => ("NEW GAME", "Choose a slot for the new commander."),
+                    SavesMode::Load => ("LOAD GAME", "Continue a saved commander."),
+                    SavesMode::Delete => ("DELETE A SAVE", "Choose a save to delete."),
+                };
+                b.label(card, title, TextStyle::Heading);
+                b.label(card, hint, TextStyle::Small);
+                if let Some(error) = &context.error {
+                    b.paragraph(
                         card,
-                        "Quitting the game mid-drop forfeits the cargo you carry.",
+                        &format!("Could not load: {error}"),
                         TextStyle::Small,
+                        596.0,
                     );
                 }
-                self.cancel = MenuAction::Resume;
+                for (slot, state) in &context.slots {
+                    let (label, enabled) = match state {
+                        SlotState::Empty => {
+                            (format!("SLOT {slot} — Empty"), mode == SavesMode::New)
+                        }
+                        SlotState::Saved(s) => (format!("SLOT {slot} — {}", slot_line(s)), true),
+                        SlotState::Unusable(reason) => (
+                            format!("SLOT {slot} — Unusable ({reason})"),
+                            mode != SavesMode::Load,
+                        ),
+                    };
+                    self.button(b, card, label, MenuAction::PickSlot(*slot), enabled);
+                }
+                if mode == SavesMode::Load {
+                    self.button(
+                        b,
+                        card,
+                        "DELETE A SAVE…",
+                        MenuAction::OpenSaves(SavesMode::Delete),
+                        true,
+                    );
+                }
+                self.button(b, card, "BACK", MenuAction::Back, true);
+                self.cancel = MenuAction::Back;
             }
-            Screen::Options { from_title } => {
+            Screen::ConfirmOverwrite(slot) => {
+                let card = Self::card(b, 520.0);
+                b.label(card, format!("OVERWRITE SLOT {slot}?"), TextStyle::Heading);
+                b.label(
+                    card,
+                    "The commander in this slot is replaced by a new game.",
+                    TextStyle::Small,
+                );
+                self.button(b, card, "START NEW GAME", MenuAction::Overwrite(slot), true);
+                self.button(b, card, "CANCEL", MenuAction::Back, true);
+                self.cancel = MenuAction::Back;
+            }
+            Screen::ConfirmDelete(slot) => {
+                let card = Self::card(b, 520.0);
+                b.label(card, format!("DELETE SLOT {slot}?"), TextStyle::Heading);
+                b.label(
+                    card,
+                    "This commander's ship and progress are erased.",
+                    TextStyle::Small,
+                );
+                self.button(b, card, "DELETE", MenuAction::DeleteSlot(slot), true);
+                self.button(b, card, "CANCEL", MenuAction::Back, true);
+                self.cancel = MenuAction::Back;
+            }
+            Screen::Settings => {
                 let card = Self::card(b, 560.0);
-                b.label(card, "OPTIONS", TextStyle::Heading);
-                let o = self.options.clone();
-                let fullscreen = self.check(b, card, "Fullscreen", o.fullscreen);
-                self.checks.push((fullscreen, Slot::Fullscreen));
-                for (label, value, slot) in [
-                    ("Master volume", o.master, Slot::Master),
-                    ("Music volume", o.music, Slot::Music),
-                    ("Effects volume", o.effects, Slot::Effects),
+                b.label(card, "SETTINGS", TextStyle::Heading);
+                let o = self.settings.clone();
+                b.label(card, "AUDIO", TextStyle::Small);
+                for (label, value, field) in [
+                    ("Master volume", o.master, Field::Master),
+                    ("Music volume", o.music, Field::Music),
+                    ("Effects volume", o.effects, Field::Effects),
                 ] {
                     let id =
                         b.ui.add_child(
@@ -530,16 +649,49 @@ impl Menu {
                             LayoutItem::size(Length::Fill, Length::fixed(32.0)),
                         )
                         .expect("valid parent");
-                    self.sliders.push((id, slot));
+                    self.sliders.push((id, field));
                 }
+                b.label(card, "DISPLAY", TextStyle::Small);
+                for (label, value, field) in [
+                    ("Fullscreen", o.fullscreen, Field::Fullscreen),
+                    ("Shadows", o.shadows, Field::Shadows),
+                    ("Bloom", o.bloom, Field::Bloom),
+                ] {
+                    let id = self.check(b, card, label, value);
+                    self.checks.push((id, field));
+                }
+                b.label(card, "GAMEPLAY", TextStyle::Small);
                 let shake = self.check(b, card, "Screen shake", o.shake);
-                self.checks.push((shake, Slot::Shake));
-                self.button(b, card, "APPLY", MenuAction::Apply(o), true);
-                if from_title {
-                    self.button(b, card, "RESET ALL PROGRESS", MenuAction::AskReset, true);
-                }
+                self.checks.push((shake, Field::Shake));
+                self.button(b, card, "APPLY", MenuAction::ApplySettings, true);
                 self.button(b, card, "BACK", MenuAction::Back, true);
                 self.cancel = MenuAction::Back;
+            }
+            Screen::Pause { surface } => {
+                let card = Self::card(b, 460.0);
+                b.label(card, "PAUSED", TextStyle::Heading);
+                self.button(b, card, "RESUME", MenuAction::Resume, true);
+                self.button(b, card, "SETTINGS", MenuAction::OpenSettings, true);
+                if surface {
+                    self.button(b, card, "ABANDON DROP", MenuAction::AskAbandon, true);
+                }
+                let saving = context.active_slot.is_some();
+                let label = if saving {
+                    "SAVE & QUIT TO MENU"
+                } else {
+                    "QUIT TO MENU"
+                };
+                self.button(b, card, label, MenuAction::SaveAndQuit, true);
+                self.button(b, card, "QUIT GAME", MenuAction::AskQuit, true);
+                let note = match (context.active_slot, surface) {
+                    (Some(slot), true) => {
+                        format!("Slot {slot} saves this drop; it resumes where you left off.")
+                    }
+                    (Some(slot), false) => format!("Progress saves to slot {slot}."),
+                    (None, _) => "This game is not being saved.".to_owned(),
+                };
+                b.label(card, note, TextStyle::Small);
+                self.cancel = MenuAction::Resume;
             }
             Screen::ConfirmAbandon => {
                 let card = Self::card(b, 500.0);
@@ -553,21 +705,16 @@ impl Menu {
                 self.button(b, card, "KEEP FIGHTING", MenuAction::Back, true);
                 self.cancel = MenuAction::Back;
             }
-            Screen::ConfirmReset => {
-                let card = Self::card(b, 520.0);
-                b.label(card, "RESET ALL PROGRESS?", TextStyle::Heading);
-                b.label(
-                    card,
-                    "Your ship, materials and stats are erased. The tutorial restarts.",
-                    TextStyle::Small,
-                );
-                self.button(b, card, "ERASE EVERYTHING", MenuAction::ResetProgress, true);
-                self.button(b, card, "CANCEL", MenuAction::Back, true);
-                self.cancel = MenuAction::Back;
-            }
-            Screen::ConfirmQuit { .. } => {
+            Screen::ConfirmQuit => {
                 let card = Self::card(b, 460.0);
                 b.label(card, "QUIT PLANETFALL?", TextStyle::Heading);
+                if let Some(slot) = context.active_slot {
+                    b.label(
+                        card,
+                        format!("Your game is saved to slot {slot}."),
+                        TextStyle::Small,
+                    );
+                }
                 self.button(b, card, "QUIT", MenuAction::Quit, true);
                 self.button(b, card, "CANCEL", MenuAction::Back, true);
                 self.cancel = MenuAction::Back;
@@ -590,7 +737,7 @@ impl Menu {
 }
 
 /// Everything a screen displays; a change triggers a rebuild.
-fn signature(content: Content, game: &Game, prompts: &Prompts) -> String {
+fn signature(content: Content, game: &Game, prompts: &Prompts, context: &MenuContext) -> String {
     let mut s = format!("{content:?}|{:?}", prompts.family);
     match content {
         Content::Terminal => {
@@ -607,8 +754,32 @@ fn signature(content: Content, game: &Game, prompts: &Prompts) -> String {
                     .and_then(|r| r.level_up_choices().map(|c| c.to_vec()))
             ));
         }
-        Content::Screen(Screen::Title) => s.push_str(&format!("|{:?}", game.profile.stats)),
-        Content::Screen(_) => {}
+        Content::Screen(_) => s.push_str(&format!("|{context:?}")),
     }
     s
+}
+
+/// "1h 05m" / "12m".
+fn play_time(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    if minutes >= 60 {
+        format!("{}h {:02}m", minutes / 60, minutes % 60)
+    } else {
+        format!("{minutes}m")
+    }
+}
+
+/// One line describing a saved commander.
+fn slot_line(s: &SlotSummary) -> String {
+    let progress = if s.tutorial {
+        "tutorial".to_owned()
+    } else {
+        format!("{} drops · {} modules", s.drops, s.modules)
+    };
+    let drop = if s.mid_drop { " (mid-drop)" } else { "" };
+    format!(
+        "{}{drop} · {progress} · {}",
+        s.location,
+        play_time(s.meta.play_seconds)
+    )
 }

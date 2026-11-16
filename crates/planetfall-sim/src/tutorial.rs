@@ -6,7 +6,9 @@
 
 use crate::math::V2;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum TutorialStep {
     Welcome,
     ToConsole,
@@ -34,7 +36,7 @@ pub struct Prompt {
     pub target: Option<V2>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Tutorial {
     pub step: TutorialStep,
     /// Ticks spent in the current step.

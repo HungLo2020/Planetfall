@@ -1,0 +1,102 @@
+# Weapons: behaviour archetypes are code (bolt, scatter, arc, mortar,
+# orbit); everything else is data. `levels` lists levels 1..5.
+# model: held model (a name from assets/models or models.toml),
+# turned by model_yaw degrees; color: linear
+# RGB of projectiles and muzzle light; sound: clip name in assets/sounds.
+
+[[weapon]]
+id = "pulse-blaster"
+name = "Pulse Blaster"
+description = "Rapid bolts at the nearest hostile."
+behavior = "bolt"
+starter = true
+model = "blaster"
+model_scale = 0.7
+# Kenney blasters face the other way.
+model_yaw = 180.0
+sound = "blaster"
+volume = 0.35
+color = [0.5, 0.95, 1.0]
+levels = [
+  { cooldown = 0.42, damage = 11.0, range = 13.0, count = 1, speed = 26.0, radius = 0.25, pierce = 0 },
+  { cooldown = 0.38, damage = 14.0, range = 13.0, count = 1, speed = 26.0, radius = 0.25, pierce = 0 },
+  { cooldown = 0.34, damage = 17.0, range = 13.0, count = 1, speed = 26.0, radius = 0.25, pierce = 0 },
+  { cooldown = 0.3, damage = 20.0, range = 13.0, count = 2, speed = 26.0, radius = 0.25, pierce = 0 },
+  { cooldown = 0.26, damage = 23.0, range = 13.0, count = 2, speed = 26.0, radius = 0.25, pierce = 1 },
+]
+
+[[weapon]]
+id = "scattergun"
+name = "Scattergun"
+description = "Close-range pellet spread."
+behavior = "scatter"
+model = "scattergun"
+model_scale = 0.7
+model_yaw = 180.0
+sound = "scatter"
+volume = 0.5
+color = [1.0, 0.7, 0.25]
+levels = [
+  { cooldown = 1.05, damage = 7.0, range = 7.5, count = 5, speed = 22.0, radius = 0.22, pierce = 0 },
+  { cooldown = 0.97, damage = 8.2, range = 7.5, count = 6, speed = 22.0, radius = 0.22, pierce = 0 },
+  { cooldown = 0.89, damage = 9.4, range = 7.5, count = 7, speed = 22.0, radius = 0.22, pierce = 0 },
+  { cooldown = 0.81, damage = 10.6, range = 7.5, count = 8, speed = 22.0, radius = 0.22, pierce = 0 },
+  { cooldown = 0.73, damage = 11.8, range = 7.5, count = 9, speed = 22.0, radius = 0.22, pierce = 0 },
+]
+
+[[weapon]]
+id = "arc-caster"
+name = "Arc Caster"
+description = "Lightning that chains between targets."
+behavior = "arc"
+model = "arc-caster"
+model_scale = 1.0
+sound = "arc"
+volume = 0.45
+color = [0.6, 0.75, 1.0]
+levels = [
+  { cooldown = 1.3, damage = 13.0, range = 9.0, count = 3, speed = 0.0, radius = 5.0, pierce = 0 },
+  { cooldown = 1.18, damage = 16.5, range = 9.0, count = 4, speed = 0.0, radius = 5.0, pierce = 0 },
+  { cooldown = 1.06, damage = 20.0, range = 9.0, count = 5, speed = 0.0, radius = 5.0, pierce = 0 },
+  { cooldown = 0.94, damage = 23.5, range = 9.0, count = 6, speed = 0.0, radius = 5.0, pierce = 0 },
+  { cooldown = 0.82, damage = 27.0, range = 9.0, count = 7, speed = 0.0, radius = 5.0, pierce = 0 },
+]
+
+[[weapon]]
+id = "plasma-mortar"
+name = "Plasma Mortar"
+description = "Lobbed plasma that bursts on impact."
+behavior = "mortar"
+ignores_walls = true
+model = "plasma-mortar"
+model_scale = 1.0
+sound = "mortar"
+volume = 0.5
+color = [0.55, 1.0, 0.45]
+levels = [
+  { cooldown = 2.2, damage = 32.0, range = 14.0, count = 1, speed = 0.9, radius = 2.6, pierce = 0 },
+  { cooldown = 2.02, damage = 40.0, range = 14.0, count = 1, speed = 0.9, radius = 2.95, pierce = 0 },
+  { cooldown = 1.84, damage = 48.0, range = 14.0, count = 1, speed = 0.9, radius = 3.3, pierce = 0 },
+  { cooldown = 1.66, damage = 56.0, range = 14.0, count = 2, speed = 0.9, radius = 3.65, pierce = 0 },
+  { cooldown = 1.48, damage = 64.0, range = 14.0, count = 2, speed = 0.9, radius = 4.0, pierce = 0 },
+]
+
+[[weapon]]
+id = "orbit-drones"
+name = "Orbit Drones"
+description = "Blades that circle you and shred anything close."
+behavior = "orbit"
+model = "blaster"
+model_scale = 0.7
+# Kenney blasters face the other way.
+model_yaw = 180.0
+sound = "drone"
+volume = 0.3
+color = [0.6, 0.9, 1.0]
+levels = [
+  { cooldown = 0.5, damage = 9.0, range = 2.6, count = 2, speed = 2.6, radius = 0.7, pierce = 0 },
+  { cooldown = 0.5, damage = 11.0, range = 2.6, count = 3, speed = 2.6, radius = 0.7, pierce = 0 },
+  { cooldown = 0.5, damage = 13.0, range = 2.6, count = 4, speed = 2.6, radius = 0.7, pierce = 0 },
+  { cooldown = 0.5, damage = 15.0, range = 2.6, count = 5, speed = 2.6, radius = 0.7, pierce = 0 },
+  { cooldown = 0.5, damage = 17.0, range = 2.6, count = 6, speed = 2.6, radius = 0.7, pierce = 0 },
+]

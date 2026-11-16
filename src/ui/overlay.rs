@@ -3,7 +3,6 @@
 //! vignette is part of the post chain's grade.)
 
 use crate::render::camera::Camera;
-use planetfall_sim::content::EnemyKind;
 use planetfall_sim::game::{ASCENT_TICKS, DESCENT_TICKS, FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::V2;
 use planetfall_sim::run::Extraction;
@@ -74,18 +73,17 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
             );
         }
     }
-    // Health bars over big enemies.
+    // Health bars over wounded enemies, and always over heavies; bigger
+    // enemies get taller, wider bars.
     for e in &run.enemies {
-        if e.kind != EnemyKind::Brute && e.health >= e.max_health {
+        let info = e.kind.info();
+        let heavy = info.health >= 200.0;
+        if !heavy && e.health >= e.max_health {
             continue;
         }
-        let height = if e.kind == EnemyKind::Brute { 3.4 } else { 2.3 };
+        let height = 2.3 + (info.radius - 0.45).max(0.0) * 2.2;
         if let Some(s) = camera.project([e.pos[0], height, e.pos[1]]) {
-            let bw = if e.kind == EnemyKind::Brute {
-                70.0
-            } else {
-                34.0
-            };
+            let bw = if heavy { 70.0 } else { 34.0 };
             let f = (e.health / e.max_health).clamp(0.0, 1.0);
             c.rect(
                 Rect::new(s[0] - bw * 0.5 - 1.0, s[1] - 1.0, bw + 2.0, 6.0),

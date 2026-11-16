@@ -4,7 +4,7 @@
 //! launches the pod. In build mode the player places and removes deck, hull,
 //! window and lamp blocks, paid from (and refunded to) the hold.
 
-use crate::content::{DT, Materials, ShipBlock, ShipUpgrade};
+use crate::content::{DT, Materials, ShipBlock, UpgradeId};
 use crate::math::{self, V2};
 use crate::profile::{Profile, ShipEdit};
 use crate::terrain::TILE;
@@ -27,7 +27,7 @@ pub enum Room {
     Bridge,
     Corridor,
     DropBay,
-    Module(ShipUpgrade),
+    Module(UpgradeId),
 }
 
 impl Room {
@@ -37,11 +37,10 @@ impl Room {
             Self::Bridge => (5, 1, 9, 4),
             Self::Corridor => (6, 5, 8, 10),
             Self::DropBay => (4, 11, 10, 15),
-            Self::Module(ShipUpgrade::HullPlating) => (1, 5, 5, 7),
-            Self::Module(ShipUpgrade::WeaponCalibration) => (9, 5, 13, 7),
-            Self::Module(ShipUpgrade::DrillRig) => (1, 8, 5, 10),
-            Self::Module(ShipUpgrade::TractorArray) => (9, 8, 13, 10),
-            Self::Module(ShipUpgrade::NavComputer) => (11, 11, 13, 15),
+            Self::Module(u) => {
+                let [x0, y0, x1, y1] = u.info().room;
+                (x0, y0, x1, y1)
+            }
         }
     }
 
@@ -71,7 +70,7 @@ pub enum StationKind {
     Fabricator,
     DropPod,
     /// Decorative module equipment; interacting explains the module.
-    Module(ShipUpgrade),
+    Module(UpgradeId),
 }
 
 impl StationKind {
@@ -166,9 +165,7 @@ fn stamp_rooms(blocks: &mut Blocks, rooms: &[Room]) {
 }
 
 fn reserved(x: i32, y: i32) -> bool {
-    ShipUpgrade::ALL
-        .iter()
-        .any(|&u| Room::Module(u).footprint_contains(x, y))
+    UpgradeId::all().any(|u| Room::Module(u).footprint_contains(x, y))
 }
 
 fn in_area(x: i32, y: i32) -> bool {
@@ -205,9 +202,9 @@ fn apply_edit(blocks: &mut Blocks, edit: &ShipEdit) {
 impl ShipLayout {
     /// Rooms for every built module except those still in `hidden`
     /// (assembling), then the player's edits.
-    pub fn build(profile: &Profile, hidden: &[ShipUpgrade]) -> Self {
+    pub fn build(profile: &Profile, hidden: &[UpgradeId]) -> Self {
         let mut rooms = vec![Room::Bridge, Room::Corridor, Room::DropBay];
-        for upgrade in ShipUpgrade::ALL {
+        for upgrade in UpgradeId::all() {
             if profile.level(upgrade) > 0 && !hidden.contains(&upgrade) {
                 rooms.push(Room::Module(upgrade));
             }
@@ -377,7 +374,7 @@ pub struct Ship {
     pub layout: ShipLayout,
     pub player: ShipPlayer,
     /// Recently built modules still assembling, with ticks remaining.
-    pub construction: Vec<(ShipUpgrade, u32)>,
+    pub construction: Vec<(UpgradeId, u32)>,
     pub ticks: u32,
     /// The selected block while build mode is on.
     pub build: Option<ShipBlock>,
@@ -412,20 +409,20 @@ impl Ship {
 
     /// Re-derive the hull; rooms still assembling stay hidden until done.
     pub fn rebuild(&mut self, profile: &Profile) {
-        let hidden: Vec<ShipUpgrade> = self.construction.iter().map(|(u, _)| *u).collect();
+        let hidden: Vec<UpgradeId> = self.construction.iter().map(|(u, _)| *u).collect();
         self.layout = ShipLayout::build(profile, &hidden);
         self.revision += 1;
     }
 
     /// Begin assembling a module room; it joins the hull when complete.
-    pub fn start_construction(&mut self, upgrade: ShipUpgrade, profile: &Profile) {
+    pub fn start_construction(&mut self, upgrade: UpgradeId, profile: &Profile) {
         self.construction.retain(|(u, _)| *u != upgrade);
         self.construction.push((upgrade, BUILD_TICKS));
         self.rebuild(profile);
     }
 
     /// 0..1 assembly progress of a module room (1 when complete).
-    pub fn build_progress(&self, upgrade: ShipUpgrade) -> f32 {
+    pub fn build_progress(&self, upgrade: UpgradeId) -> f32 {
         self.construction
             .iter()
             .find(|(u, _)| *u == upgrade)
@@ -636,6 +633,10 @@ impl Ship {
 mod tests {
     use super::*;
 
+    fn drill() -> UpgradeId {
+        UpgradeId::from_key("drill-workshop").unwrap()
+    }
+
     #[test]
     fn base_ship_is_barebones() {
         let ship = Ship::new(&Profile::default());
@@ -648,13 +649,13 @@ mod tests {
     #[test]
     fn modules_add_rooms() {
         let mut profile = Profile::default();
-        profile.upgrades.drill_rig = 1;
+        profile.upgrades.insert(drill(), 1);
         let layout = ShipLayout::build(&profile, &[]);
-        assert!(layout.rooms.contains(&Room::Module(ShipUpgrade::DrillRig)));
-        let (x0, y0, ..) = Room::Module(ShipUpgrade::DrillRig).rect();
+        assert!(layout.rooms.contains(&Room::Module(drill())));
+        let (x0, y0, ..) = Room::Module(drill()).rect();
         assert!(layout.deck(x0, y0));
         // A room still assembling is not walkable yet.
-        let hidden = ShipLayout::build(&profile, &[ShipUpgrade::DrillRig]);
+        let hidden = ShipLayout::build(&profile, &[drill()]);
         assert!(!hidden.deck(x0, y0));
     }
 
@@ -784,7 +785,7 @@ mod tests {
         }
         assert!(walled < 3, "the corridor stays open");
         // Module rooms are reserved even before they are built.
-        let (x0, y0, ..) = Room::Module(ShipUpgrade::DrillRig).rect();
+        let (x0, y0, ..) = Room::Module(drill()).rect();
         face(&mut ship, (x0 + 1, y0), -std::f32::consts::FRAC_PI_2);
         assert_eq!(ship.place(&mut profile), Err(BuildError::Reserved));
         assert!(ship.layout.stations_reachable((7, 9)));

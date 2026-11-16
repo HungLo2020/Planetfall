@@ -1,7 +1,7 @@
 //! The full game loop as one state machine:
 //! ship → nav console → FTL → drop pod → surface run → extraction → debrief → upgrades.
 
-use crate::content::{Material, Materials, PlanetId, ShipBlock, ShipUpgrade, WeaponKind};
+use crate::content::{Material, Materials, PlanetId, ShipBlock, UpgradeId, WeaponId};
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
 use crate::math::V2;
@@ -46,7 +46,7 @@ pub struct RunSummary {
     pub kills: u32,
     pub level: u32,
     pub seconds: u32,
-    pub weapons: Vec<(WeaponKind, u8)>,
+    pub weapons: Vec<(WeaponId, u8)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,7 +54,7 @@ pub enum Terminal {
     Navigation,
     Fabricator,
     Debrief(RunSummary),
-    Module(ShipUpgrade),
+    Module(UpgradeId),
 }
 
 /// A short status message, e.g. why an action was refused.
@@ -100,6 +100,14 @@ impl Game {
             tick: 0,
             rng: Rng::seed_from_u64(seed),
         }
+    }
+
+    pub(crate) fn rng(&self) -> &Rng {
+        &self.rng
+    }
+
+    pub(crate) fn set_rng(&mut self, rng: Rng) {
+        self.rng = rng;
     }
 
     pub fn tutorial_step(&self) -> Option<TutorialStep> {
@@ -280,7 +288,7 @@ impl Game {
         self.events.push(GameEvent::FtlStarted { to: planet });
     }
 
-    fn purchase(&mut self, upgrade: ShipUpgrade) {
+    fn purchase(&mut self, upgrade: UpgradeId) {
         match self.profile.purchase(upgrade) {
             Ok(level) => {
                 if level == 1 {
@@ -301,7 +309,7 @@ impl Game {
     }
 
     fn deploy(&mut self, planet: PlanetId) {
-        let tutorial = self.tutorial.is_some() && planet == PlanetId::Verdant;
+        let tutorial = self.tutorial.is_some() && planet == PlanetId::first();
         let mut run = Run::new(RunConfig {
             planet,
             seed: self.rng.next_u64(),
@@ -343,8 +351,7 @@ impl Game {
     /// tutorial ends by building one, whatever the drop happened to yield.
     fn tutorial_salvage(&mut self) -> Materials {
         let have = self.profile.materials;
-        let Some(cost) = ShipUpgrade::ALL
-            .into_iter()
+        let Some(cost) = UpgradeId::all()
             .filter_map(|u| self.profile.next_cost(u))
             .min_by_key(|c| c.total())
         else {
@@ -433,6 +440,26 @@ impl Game {
             _ if died => {
                 tutorial.retry = true;
                 Some(TutorialStep::ToPod)
+            }
+            // The drop can outrun the lesson (no level-up or cache before the
+            // objective is met); catch up instead of waiting forever.
+            step if (TutorialStep::Survive..TutorialStep::Debrief).contains(&step)
+                && matches!(self.phase, Phase::Ascent { .. }) =>
+            {
+                Some(TutorialStep::Debrief)
+            }
+            step if (TutorialStep::Survive..TutorialStep::HoldZone).contains(&step)
+                && self
+                    .run
+                    .as_ref()
+                    .is_some_and(|r| !matches!(r.extraction, Extraction::Idle)) =>
+            {
+                Some(TutorialStep::HoldZone)
+            }
+            step if (TutorialStep::Mine..TutorialStep::CallPod).contains(&step)
+                && self.run.as_ref().is_some_and(|r| r.objective_done) =>
+            {
+                Some(TutorialStep::CallPod)
             }
             TutorialStep::Survive if tutorial.ticks > 600 => Some(TutorialStep::Mine),
             TutorialStep::Mine

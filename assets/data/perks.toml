@@ -1,0 +1,61 @@
+# Level-up field perks (lost when the drop ends). New-weapon and weapon-level
+# choices come from weapons.toml. effect: max_health (also heals), move_speed
+# (multiplier), damage, fire_rate (cooldown multiplier), pickup_range,
+# mining, regeneration (HP/s). `max` caps the stacked total of an effect.
+
+[[perk]]
+id = "reinforced-suit"
+title = "Reinforced Suit"
+description = "+20 max health and heal 20."
+effect = "max_health"
+amount = 20.0
+weight = 2
+
+[[perk]]
+id = "servo-boots"
+title = "Servo Boots"
+description = "+10% movement speed."
+effect = "move_speed"
+amount = 1.1
+weight = 2
+
+[[perk]]
+id = "overcharge"
+title = "Overcharge"
+description = "+15% damage for all weapons."
+effect = "damage"
+amount = 0.15
+weight = 2
+
+[[perk]]
+id = "rapid-cycling"
+title = "Rapid Cycling"
+description = "Weapons cycle 10% faster."
+effect = "fire_rate"
+amount = 0.9
+weight = 2
+
+[[perk]]
+id = "magnetic-field"
+title = "Magnetic Field"
+description = "+1.5 m pickup range."
+effect = "pickup_range"
+amount = 1.5
+weight = 2
+
+[[perk]]
+id = "hardened-drill"
+title = "Hardened Drill"
+description = "+40% mining speed."
+effect = "mining"
+amount = 0.4
+weight = 1
+
+[[perk]]
+id = "nanite-repair"
+title = "Nanite Repair"
+description = "Regenerate 1 health per second."
+effect = "regeneration"
+amount = 1.0
+weight = 2
+max = 3.0

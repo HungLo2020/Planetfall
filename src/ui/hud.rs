@@ -4,7 +4,7 @@ use super::Layer;
 use super::{Builder, format_materials};
 use crate::bindings::Prompts;
 use planetfall_sim::content::Material;
-use planetfall_sim::run::{EXTRACTION_HOLD, Extraction};
+use planetfall_sim::run::{Extraction, extraction_hold};
 use planetfall_sim::{Game, Phase};
 use quasar_ui::{Anchor, Edges, LayoutItem, Length, TextMeasure, TextStyle, Vec2};
 
@@ -117,7 +117,7 @@ pub fn build(cx: &HudContext) -> Layer {
                         format!("EXTRACTION POD INBOUND  ·  {}s", ticks.div_ceil(60))
                     }
                     Extraction::Waiting { hold, .. } => {
-                        format!("HOLD THE ZONE  ·  {}%", hold * 100 / EXTRACTION_HOLD)
+                        format!("HOLD THE ZONE  ·  {}%", hold * 100 / extraction_hold())
                     }
                     Extraction::Departed { .. } => "EXTRACTED".into(),
                 }

@@ -1,0 +1,12 @@
+# Extra model names. Every assets/models/<name>.glb is loaded automatically
+# under its file stem; this table names models stored elsewhere (paths are
+# relative to the asset root). Data files refer to models by these names.
+
+[models]
+blaster = "kenney/blaster-kit/blaster-d.glb"
+scattergun = "kenney/blaster-kit/blaster-f.glb"
+crate-medium = "kenney/blaster-kit/crate-medium.glb"
+crate-wide = "kenney/blaster-kit/crate-wide.glb"
+barrel = "kenney/survival-kit/barrel.glb"
+workbench = "kenney/survival-kit/workbench.glb"
+metal-panel = "kenney/survival-kit/metal-panel.glb"

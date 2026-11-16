@@ -1,25 +1,25 @@
 //! Per-tick facts the presentation layer reacts to (sounds, effects, saves).
 //! The simulation never depends on whether anyone listens.
 
-use crate::content::{EnemyKind, Material, PlanetId, ShipBlock, ShipUpgrade, WeaponKind};
+use crate::content::{EnemyId, Material, PlanetId, ShipBlock, UpgradeId, WeaponId};
 use crate::math::V2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GameEvent {
     // Weapons and combat.
     Fired {
-        weapon: WeaponKind,
+        weapon: WeaponId,
         at: V2,
     },
     EnemyHit {
         at: V2,
     },
     EnemyKilled {
-        kind: EnemyKind,
+        kind: EnemyId,
         at: V2,
     },
     EnemyAlerted {
-        kind: EnemyKind,
+        kind: EnemyId,
         at: V2,
     },
     Explosion {
@@ -48,7 +48,7 @@ pub enum GameEvent {
         level: u32,
     },
     WeaponFound {
-        weapon: WeaponKind,
+        weapon: WeaponId,
     },
     ObjectiveComplete,
     // Extraction.
@@ -63,7 +63,7 @@ pub enum GameEvent {
     TerminalClosed,
     Denied,
     UpgradeBuilt {
-        upgrade: ShipUpgrade,
+        upgrade: UpgradeId,
         level: u8,
     },
     FtlStarted {

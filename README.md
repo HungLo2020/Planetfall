@@ -37,6 +37,9 @@ Weapons aim and fire automatically. Walk into rock to drill through it.
 
 ### What is in this first pass
 
+- **Main menu and five save slots**: continue, new game, load or delete a
+  slot, and settings (volumes, fullscreen, shadows, bloom, screen shake).
+  Progress autosaves, and quitting mid-drop resumes the drop later.
 - **Tutorial**: a ship AI walks a new commander from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
   cache, extraction and the first module build. It only runs once.
@@ -55,9 +58,12 @@ Weapons aim and fire automatically. Walk into rock to drill through it.
   driven by a flow field; five auto-firing weapons with five levels each;
   weapon caches; XP shards and level-up perk choices; a timed extraction where
   the pod lands at your drop site and you must hold the zone.
-- **Persistence**: materials, modules, ship edits, stats and tutorial state
-  save to `data/save/profile.json`. Dying or abandoning a drop loses
+- **Persistence**: each slot (`data/save/slot-N.json`) holds materials,
+  modules, ship edits, stats, tutorial state and any drop in progress;
+  settings are TOML in `data/config/`. Dying or abandoning a drop loses
   everything carried.
+- **Data-driven content**: weapons, enemies, planets, perks, ship modules and
+  tuning are TOML files in `assets/data/` (see [Gameplay](docs/gameplay.md#tuning-and-adding-content)).
 - **Presentation**: original low-poly GLB models (plus CC0 Kenney props) with
   GPU-skinned characters and authored clips, voxel terrain and hull with
   fog, directional shadows over meshes and voxels, dynamic point lights, HDR
@@ -81,8 +87,9 @@ cargo run --release -- --cover assets/basalt/cover.png
 cargo run --no-default-features -- --headless --autoplay
 ```
 
-Other flags: `--seed N`, `--fresh` (new in-memory profile), `--no-save`,
-`--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
+Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
+`--slot N` (load slot N, skipping the menu), `--no-save`,
+`--menu main|saves|settings|pause` (screenshot a menu), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
 ## Build, verify and package

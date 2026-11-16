@@ -1,6 +1,9 @@
 //! Planetfall entry point: desktop play, headless simulation and offscreen
 //! rendering (screenshots and Basalt cover art).
 
+// The simulation-only build leaves the menu, slot and display plumbing unused.
+#![cfg_attr(not(feature = "graphics"), allow(dead_code, unused_imports))]
+
 #[cfg(feature = "desktop")]
 mod audio;
 #[cfg(feature = "graphics")]
@@ -39,32 +42,56 @@ fn run() -> Result<(), String> {
     let mut storage = Storage::discover(settings.no_save || headless_output)
         .map_err(|e| format!("data directory: {e}"))?;
     let asset_root = storage.asset_root(settings.asset_root.as_deref());
+    install_content(&asset_root)?;
+    storage.migrate_legacy();
     if let Some(path) = &settings.cover {
         return cover(&asset_root, path);
     }
-    let (profile, warning) = if settings.fresh || settings.headless {
-        (Profile::default(), None)
-    } else {
-        storage.load_profile()
-    };
     if settings.headless {
-        return headless(&settings, profile, &asset_root);
+        return headless(&settings, Profile::default(), &asset_root);
     }
     #[cfg(feature = "desktop")]
     {
+        let _ = &mut storage;
         desktop::run(desktop::Launch {
             settings,
             storage,
-            profile,
-            warning,
             asset_root,
         })
     }
     #[cfg(not(feature = "desktop"))]
     {
-        let _ = (warning, asset_root);
+        let _ = (&mut storage, asset_root);
         Err("this build has no desktop support; run with --headless".into())
     }
+}
+
+/// Load the content tables from `assets/data/` (falling back to the copy
+/// compiled into the game when the directory is missing) and install them.
+fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
+    use planetfall_sim::content::{self, Content, ContentFiles, FILE_NAMES};
+    let dir = asset_root.join("data");
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let read = |name: &str| {
+        std::fs::read_to_string(dir.join(name))
+            .map_err(|e| format!("{}: {e}", dir.join(name).display()))
+    };
+    let texts: Vec<String> = FILE_NAMES
+        .iter()
+        .map(|n| read(n))
+        .collect::<Result<_, _>>()?;
+    let loaded = Content::from_toml(ContentFiles {
+        planets: &texts[0],
+        weapons: &texts[1],
+        enemies: &texts[2],
+        perks: &texts[3],
+        upgrades: &texts[4],
+        tuning: &texts[5],
+    })
+    .map_err(|e| format!("content data in {}: {e}", dir.display()))?;
+    content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())
 }
 
 /// Run the simulation without a window, optionally under the autopilot.
@@ -122,13 +149,14 @@ fn headless(
                 menu_open: false,
             });
             // Terminals and level-up choices render as they would on screen.
-            use ui::menu::{Content, Screen};
+            use ui::menu::{Content, MenuContext, SavesMode, Screen};
             let surface = game.phase == Phase::Surface;
             let content = if let Some(name) = &settings.menu {
                 Some(Content::Screen(match name.as_str() {
-                    "title" => Screen::Title,
+                    "main" => Screen::Main,
+                    "saves" => Screen::Saves(SavesMode::Load),
                     "pause" => Screen::Pause { surface },
-                    _ => Screen::Options { from_title: true },
+                    _ => Screen::Settings,
                 }))
             } else if game
                 .run
@@ -141,15 +169,24 @@ fn headless(
             } else {
                 None
             };
-            let mut menu = ui::menu::Menu::new(ui::menu::OptionsState {
+            let mut menu = ui::menu::Menu::new(ui::menu::SettingsState {
                 fullscreen: false,
+                shadows: true,
+                bloom: true,
                 master: 1.0,
                 music: 1.0,
                 effects: 1.0,
                 shake: true,
             });
-            menu.show(content, &game, &measure, scale, &prompts);
-            let mut layers = if settings.menu.as_deref() == Some("title") {
+            // Sample slots for the menu screenshots (nothing is read from disk).
+            let context = MenuContext {
+                slots: screenshot_slots(&game),
+                continue_slot: Some(1),
+                active_slot: Some(1),
+                error: None,
+            };
+            menu.show(content, &game, &measure, scale, &prompts, &context);
+            let mut layers = if matches!(settings.menu.as_deref(), Some("main" | "saves")) {
                 vec![]
             } else {
                 vec![&hud]
@@ -172,6 +209,37 @@ fn headless(
         }
     }
     Ok(())
+}
+
+/// Example slots for menu screenshots: slot 1 holds the current game.
+#[cfg(feature = "graphics")]
+fn screenshot_slots(game: &Game) -> Vec<(usize, storage::SlotState)> {
+    use storage::{SlotState, SlotSummary};
+    (1..=planetfall_sim::save::SLOTS)
+        .map(|slot| {
+            let state = if slot == 1 {
+                SlotState::Saved(SlotSummary {
+                    meta: planetfall_sim::save::SlotMeta {
+                        created: 0,
+                        saved: 0,
+                        play_seconds: game.tick / 60,
+                    },
+                    location: game
+                        .profile
+                        .orbiting
+                        .map_or("Deep space".into(), |p| format!("Orbiting {}", p.name())),
+                    drops: game.profile.stats.drops,
+                    extractions: game.profile.stats.extractions,
+                    modules: game.profile.upgrades.len(),
+                    tutorial: !game.profile.tutorial_complete,
+                    mid_drop: game.run.is_some(),
+                })
+            } else {
+                SlotState::Empty
+            };
+            (slot, state)
+        })
+        .collect()
 }
 
 #[cfg(feature = "graphics")]
@@ -198,10 +266,12 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
     {
         let mut profile = Profile {
             tutorial_complete: true,
-            orbiting: Some(planetfall_sim::content::PlanetId::Cinder),
+            orbiting: planetfall_sim::content::PlanetId::from_key("cinder"),
             ..Profile::default()
         };
-        profile.upgrades.nav_computer = 1;
+        if let Some(reactor) = planetfall_sim::content::UpgradeId::from_key("reactor") {
+            profile.upgrades.insert(reactor, 1);
+        }
         let mut game = Game::new(profile, 77);
         let mut pilot = Autopilot::new();
         // Play until a fight is under way on the surface.

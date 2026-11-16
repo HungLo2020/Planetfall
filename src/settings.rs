@@ -13,7 +13,7 @@ pub struct Settings {
     pub seed: u64,
     /// Headless: render the final state to a PNG (needs a GPU, no window).
     pub screenshot: Option<PathBuf>,
-    /// Headless screenshots: show this app screen (title, pause, options).
+    /// Headless screenshots: show this app screen (main, saves, pause, settings).
     pub menu: Option<String>,
     /// Render Basalt cover art (900x1200) to a PNG and exit.
     pub cover: Option<PathBuf>,
@@ -22,6 +22,8 @@ pub struct Settings {
     pub no_save: bool,
     /// Start from a new profile in memory (implies --no-save unless --save is given).
     pub fresh: bool,
+    /// Desktop: load this save slot (1-5) directly, skipping the main menu.
+    pub slot: Option<usize>,
     /// Windowed: exit after this many rendered frames (smoke tests).
     pub frames: Option<u64>,
     pub resolution: Option<(u32, u32)>,
@@ -38,9 +40,10 @@ const GAME_HELP: &str = "Planetfall options:
   --seed N               World seed (default: time-based when windowed, 1 headless)
   --screenshot FILE      Headless: render the final frame to FILE (PNG)
   --cover FILE           Render 900x1200 Basalt cover art to FILE and exit
-  --menu NAME            With --screenshot: draw the title, pause or options screen
+  --menu NAME            With --screenshot: draw the main, saves, pause or settings screen
   --asset-root DIR       Load models/sounds/fonts from DIR
-  --fresh                Start from a new in-memory profile (no saving)
+  --fresh                Start a new unsaved game, skipping the main menu
+  --slot N               Load save slot N (1-5), skipping the main menu
   --no-save              Never write save or settings files
   --frames N             Windowed: exit after N frames
 
@@ -71,6 +74,7 @@ impl Settings {
             asset_root: None,
             no_save: false,
             fresh: false,
+            slot: None,
             frames: None,
             resolution: common.resolution.map(|r| (r.width, r.height)),
             fullscreen: common.fullscreen,
@@ -101,15 +105,22 @@ impl Settings {
                 "--cover" => settings.cover = Some(value("--cover")?.into()),
                 "--menu" => {
                     let name = value("--menu")?;
-                    if !["title", "pause", "options"].contains(&name.as_str()) {
+                    if !["main", "saves", "pause", "settings"].contains(&name.as_str()) {
                         return Err(format!(
-                            "--menu must be title, pause or options, got {name:?}"
+                            "--menu must be main, saves, pause or settings, got {name:?}"
                         ));
                     }
                     settings.menu = Some(name);
                 }
                 "--asset-root" => settings.asset_root = Some(value("--asset-root")?.into()),
                 "--fresh" => settings.fresh = true,
+                "--slot" => {
+                    let slot = parse_num(&value("--slot")?)? as usize;
+                    if !(1..=planetfall_sim::save::SLOTS).contains(&slot) {
+                        return Err(format!("--slot must be 1-5, got {slot}"));
+                    }
+                    settings.slot = Some(slot);
+                }
                 "--no-save" => settings.no_save = true,
                 "--frames" => settings.frames = Some(parse_num(&value("--frames")?)?),
                 other => return Err(format!("unknown argument: {other} (see --help)")),

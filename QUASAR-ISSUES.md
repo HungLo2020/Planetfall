@@ -80,6 +80,10 @@ latches only controller edges, because it reads the gamepad hub's
 13. **Voxel cells are uniform cubes.** Cut-away walls (0.6 of a block high)
     need custom box models and face-shape rules instead of a per-block
     height or non-uniform cell size.
+14. **ui: sliders have no inner padding.** `Widget::Slider` draws its label
+    at the rect's top edge and the track on its bottom edge, so the focus
+    outline touches both (visible in Planetfall's settings menu). A theme
+    inset for sliders would fix it.
 
 ## 3. Still missing
 
@@ -102,9 +106,13 @@ latches only controller edges, because it reads the gamepad hub's
 - **A complete controls screen:** quasar-ui has rebind capture
   (`begin_rebind`/`finish_rebind`) but no ready screen that lists `Bindings`,
   detects conflicts and persists them; each game builds its own.
-- **Data-driven content:** `quasar-assets` can hot-reload files (feature
-  `hot-reload`), but there is no schema-validated tuning-table format, so
-  Planetfall's balance numbers are still Rust constants.
+- **Data-driven content:** Planetfall now keeps its content in TOML, parsed
+  with `quasar_config::load_toml_typed` and validated by hand. Quasar has no
+  schema or validation layer for content tables, and because the registry is
+  a global `OnceLock` (game code reads it everywhere), Planetfall cannot use
+  `quasar-assets` hot reload for it; a reload-aware registry pattern would
+  help. Settings are written with `quasar_config::save_file_typed`, which
+  covered everything needed.
 - **Localisation** hooks for `UiText`.
 
 **Available in Quasar, not yet adopted by Planetfall:** rebind capture in

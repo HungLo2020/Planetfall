@@ -1,7 +1,7 @@
 //! A simple autopilot that plays the whole loop. Used for headless runs,
 //! soak tests and CI, so every feature is drivable without a window.
 
-use crate::content::{Material, PlanetId, ShipBlock, ShipUpgrade};
+use crate::content::{Material, PlanetId, ShipBlock, UpgradeId};
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
 use crate::math::V2;
@@ -33,7 +33,8 @@ impl Autopilot {
         if let Some(terminal) = &game.terminal {
             let command = match terminal {
                 Terminal::Navigation => {
-                    let target = PlanetId::ALL
+                    let target = PlanetId::all()
+                        .collect::<Vec<_>>()
                         .into_iter()
                         .rev()
                         .find(|&p| game.profile.unlocked(p) && game.profile.orbiting != Some(p));
@@ -62,9 +63,8 @@ impl Autopilot {
         }
         let goal = if game.profile.orbiting.is_none()
             || game.profile.orbiting.is_some_and(|o| {
-                PlanetId::ALL
-                    .iter()
-                    .any(|&p| game.profile.unlocked(p) && p.info().nav_level > o.info().nav_level)
+                PlanetId::all()
+                    .any(|p| game.profile.unlocked(p) && p.info().nav_level > o.info().nav_level)
             }) {
             StationKind::NavConsole
         } else if affordable(game).is_some() {
@@ -190,8 +190,8 @@ impl Autopilot {
     }
 }
 
-fn affordable(game: &Game) -> Option<ShipUpgrade> {
-    ShipUpgrade::ALL.into_iter().find(|&u| {
+fn affordable(game: &Game) -> Option<UpgradeId> {
+    UpgradeId::all().find(|&u| {
         game.profile
             .next_cost(u)
             .is_some_and(|cost| game.profile.materials.covers(cost))

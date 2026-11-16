@@ -10,6 +10,7 @@ use quasar_math::{IVec3, Vec3};
 use quasar_nav::voxel::{VoxelNavBounds, sync_changes, walkable_grid};
 use quasar_nav::{DistanceField, FieldOptions, Grid, GridCell};
 use quasar_voxel::{EditBatch, EditOptions, TieBreak};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// World size of one block, in meters.
@@ -111,10 +112,18 @@ fn solid_block(block: u16) -> bool {
     block != AIR
 }
 
-#[derive(Clone)]
+/// Terrain saves as its generation inputs plus what was mined, and is
+/// regenerated on load (the voxel volume and nav grid are derived).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(into = "TerrainSave", try_from = "TerrainSave")]
 pub struct Terrain {
     pub width: u32,
     pub height: u32,
+    planet: PlanetId,
+    seed: u64,
+    tutorial: bool,
+    /// Blocks broken, in order.
+    broken: Vec<(i32, i32)>,
     blocks: Blocks,
     /// Damage dealt to partially mined blocks.
     damage: BTreeMap<(i32, i32), f32>,
@@ -198,6 +207,16 @@ impl Terrain {
             return None;
         }
         self.damage.remove(&(x, y));
+        self.broken.push((x, y));
+        self.break_block(x, y);
+        Some(Broken {
+            tile: (x, y),
+            was: tile,
+        })
+    }
+
+    /// Clear a wall block and propagate the edit to nav and re-meshing.
+    fn break_block(&mut self, x: i32, y: i32) {
         let mut batch = EditBatch::new();
         batch.set(self.blocks.block, voxel::voxel(x, y, 0), AIR);
         let result = self.blocks.volume.apply(&batch, EditOptions::default());
@@ -217,10 +236,6 @@ impl Terrain {
         ) {
             self.nav_dirty.extend(cells);
         }
-        Some(Broken {
-            tile: (x, y),
-            was: tile,
-        })
     }
 
     /// Push a circle out of solid blocks. Returns the resolved position and the
@@ -387,8 +402,8 @@ impl Terrain {
                 }
                 let roll = rng.next_f32();
                 let mut acc = 0.0;
-                for (i, material) in Material::ALL.iter().enumerate() {
-                    acc += info.ore[i] * 0.45;
+                for material in &Material::ALL {
+                    acc += info.ore.get(*material) * 0.45;
                     if roll < acc {
                         seeds.push((x, y, *material));
                         break;
@@ -522,6 +537,10 @@ impl Terrain {
             Self {
                 width: MAP_SIZE,
                 height: MAP_SIZE,
+                planet,
+                seed,
+                tutorial,
+                broken: Vec::new(),
                 blocks,
                 damage: BTreeMap::new(),
                 nav,
@@ -531,6 +550,46 @@ impl Terrain {
             },
             Layout { landing, caches },
         )
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct TerrainSave {
+    planet: PlanetId,
+    seed: u64,
+    tutorial: bool,
+    broken: Vec<(i32, i32)>,
+    damage: Vec<((i32, i32), f32)>,
+}
+
+impl From<Terrain> for TerrainSave {
+    fn from(t: Terrain) -> Self {
+        Self {
+            planet: t.planet,
+            seed: t.seed,
+            tutorial: t.tutorial,
+            broken: t.broken,
+            damage: t.damage.into_iter().collect(),
+        }
+    }
+}
+
+impl TryFrom<TerrainSave> for Terrain {
+    type Error = String;
+
+    fn try_from(save: TerrainSave) -> Result<Self, String> {
+        let (mut terrain, _) = Terrain::generate(save.planet, save.seed, save.tutorial);
+        for (x, y) in save.broken {
+            if !terrain.tile(x, y).minable() {
+                return Err(format!("saved terrain breaks unminable block ({x}, {y})"));
+            }
+            terrain.broken.push((x, y));
+            terrain.break_block(x, y);
+        }
+        terrain.damage = save.damage.into_iter().collect();
+        // The flow field is rebuilt from scratch after loading.
+        terrain.nav_dirty.clear();
+        Ok(terrain)
     }
 }
 
@@ -589,7 +648,7 @@ mod tests {
 
     #[test]
     fn generation_is_deterministic_and_playable() {
-        for planet in PlanetId::ALL {
+        for planet in PlanetId::all() {
             let (a, layout) = Terrain::generate(planet, 42, false);
             let (b, _) = Terrain::generate(planet, 42, false);
             assert!(a.tiles().eq(b.tiles()));
@@ -604,7 +663,7 @@ mod tests {
 
     #[test]
     fn mining_opens_navigation() {
-        let (mut t, layout) = Terrain::generate(PlanetId::Verdant, 3, true);
+        let (mut t, layout) = Terrain::generate(PlanetId::first(), 3, true);
         let (x, y) = t
             .tiles()
             .find(|(_, tile)| matches!(tile, Tile::Rock { .. }))
@@ -632,7 +691,7 @@ mod tests {
 
     #[test]
     fn circles_are_pushed_out_of_walls() {
-        let (t, _) = Terrain::generate(PlanetId::Verdant, 9, false);
+        let (t, _) = Terrain::generate(PlanetId::first(), 9, false);
         let ((x, y), _) = t.tiles().find(|(_, tile)| *tile == Tile::Bedrock).unwrap();
         let inside = Terrain::center_of(x, y);
         let probe = V2::new(inside[0] + TILE * 0.5 + 0.1, inside[1]);
@@ -642,7 +701,7 @@ mod tests {
 
     #[test]
     fn line_of_sight_uses_voxel_raycasts() {
-        let (t, layout) = Terrain::generate(PlanetId::Verdant, 5, false);
+        let (t, layout) = Terrain::generate(PlanetId::first(), 5, false);
         // Through open floor next to the landing site.
         let a = layout.landing;
         assert!(t.line_clear(a, a + V2::new(1.0, 0.0)));
@@ -653,7 +712,7 @@ mod tests {
 
     #[test]
     fn mining_repairs_the_flow_field_like_a_rebuild() {
-        let (mut t, layout) = Terrain::generate(PlanetId::Cinder, 11, false);
+        let (mut t, layout) = Terrain::generate(PlanetId::from_key("cinder").unwrap(), 11, false);
         let mut field = FlowField::new(&t, layout.landing);
         // Break every rock touching open floor near the landing site.
         let (lx, ly) = Terrain::tile_of(layout.landing);

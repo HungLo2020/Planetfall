@@ -1,6 +1,6 @@
 //! Device-independent player intent for one simulation tick.
 
-use crate::content::{PlanetId, ShipUpgrade};
+use crate::content::{PlanetId, UpgradeId};
 use crate::math::V2;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ pub enum Command {
     /// Navigation console: FTL to a planet.
     TravelTo(PlanetId),
     /// Fabricator: build or upgrade a ship module.
-    Purchase(ShipUpgrade),
+    Purchase(UpgradeId),
     /// Level-up screen: pick one of the offered perks.
     ChoosePerk(usize),
     /// Close the open terminal (or acknowledge the debrief).

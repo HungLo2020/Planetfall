@@ -77,7 +77,7 @@ desktop = [
 
 [dependencies]
 planetfall-sim.workspace = true
-quasar-config = { workspace = true, features = ["json"] }
+quasar-config = { workspace = true, features = ["json", "toml", "storage"] }
 quasar-diagnostics.workspace = true
 quasar-storage.workspace = true
 serde.workspace = true

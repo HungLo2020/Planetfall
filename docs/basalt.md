@@ -29,14 +29,14 @@ validates with Basalt's own `basalt-core::GameDefinition`.
 <library>/Planetfall/
 ├── app/                          from the release zip; never written at runtime
 │   ├── bin/planetfall
-│   ├── assets/{models,kenney,sounds,fonts}
+│   ├── assets/{data,models,kenney,sounds,fonts}
 │   ├── basalt/{cover.png,icon.svg}
 │   └── README.txt
 └── data/
-    ├── save/profile.json             progress, ship edits (synced, backed up)
-    ├── config/shared/preferences.json volumes, shake     (synced, backed up)
-    ├── config/display.json            window mode/size   (backed up)
-    └── cache/                         currently unused   (disposable)
+    ├── save/slot-1.json … slot-5.json   five save slots   (synced, backed up)
+    ├── config/shared/settings.toml      volumes, shake, last slot (synced)
+    ├── config/display.toml              window, shadows, bloom (this machine)
+    └── cache/                           currently unused  (disposable)
 ```
 
 `src/storage.rs` resolves these through `quasar_storage::GamePaths`:
@@ -48,13 +48,24 @@ from `app/`.
 
 Save rules:
 
-- Writes are atomic (temp file + rename, via `quasar_storage::write_json`).
-- The profile is saved whenever it changes (purchase, extraction, death,
-  travel, tutorial completion) and on exit. Mid-drop state is never banked.
-- `Profile.version` gates migrations (v1 → v2 added player-built ship
-  blocks); a newer save is never overwritten and the session runs without
-  saving. An unreadable save is copied aside as
-  `profile.corrupt-<time>.json` before starting fresh.
+- Each slot is a JSON `SaveGame`: slot metadata (created, saved, play time),
+  the profile and the session (ship position, tutorial step and any drop in
+  progress, which resumes where it was left).
+- Writes are atomic (temp file + rename, via `quasar_storage::write_json`;
+  settings via `quasar_config::save_file_typed`).
+- The active slot is saved every minute of play, whenever the profile changes
+  (purchase, extraction, death, travel, tutorial completion), on save & quit,
+  on suspend and on exit.
+- `SaveGame.version` (`SAVE_VERSION` 1) and `Profile.version`
+  (`PROFILE_VERSION` 3: string-keyed modules) gate migrations. A newer save is
+  listed as unusable and never overwritten. An unreadable slot is copied
+  aside as `slot-N.corrupt-<time>.json` so the slot can be reused. Deleting a
+  slot renames it `slot-N.deleted.json` (one level of undo by hand).
+- Settings files carry a `version`, are sanitized on load (volumes clamped,
+  sizes bounded) and fall back to defaults when missing or unreadable.
+- Files from earlier builds (`save/profile.json`,
+  `config/shared/preferences.json`, `config/display.json`) migrate once into
+  slot 1 and the TOML files, and are renamed `*.json.migrated`.
 - Saved files contain no absolute paths or machine identifiers.
 
 ## Release packaging and publishing
@@ -100,7 +111,7 @@ Linux install. There is no built-in updater.
 **Robustness**
 - [x] Save files are written atomically.
 - [x] Synced data has no absolute paths, machine IDs or lock files.
-- [x] Saves from older versions load (versioned `Profile::migrate`).
+- [x] Saves from older versions load (versioned `Profile::migrate`, `SaveGame::migrate`, legacy file migration).
 - [x] Works from any install path (`BASALT_*` with relative fallbacks).
 
 **Packaging and launch**

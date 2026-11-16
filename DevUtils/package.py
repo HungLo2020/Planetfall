@@ -5,7 +5,7 @@ Produces dist/Planetfall-<version>-linux-x64.zip whose root contains only
 app/ (see Basalt STANDARDS.md section 3):
 
     app/bin/planetfall          release executable (mode 755)
-    app/assets/...              models, sounds, fonts and their licenses
+    app/assets/...              content data, models, sounds, fonts and licenses
     app/basalt/cover.png        3:4 box art
     app/basalt/icon.svg         square emblem
     app/README.txt              runtime notes
@@ -30,7 +30,7 @@ import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-ASSET_DIRS = ["models", "kenney", "sounds", "fonts"]
+ASSET_DIRS = ["data", "models", "kenney", "sounds", "fonts"]
 MAX_COVER_BYTES = 2 * 1024 * 1024
 
 RUNTIME_NOTES = """Planetfall {version}
@@ -40,12 +40,13 @@ needed. Requires a Vulkan 1.3 capable GPU driver.
 
 Data lives beside this app/ directory (or wherever Basalt's BASALT_* variables
 point):
-  data/save/profile.json               progress (synced by Basalt)
-  data/config/shared/preferences.json  volumes and options (synced)
-  data/config/display.json             window mode/size (this machine only)
+  data/save/slot-1.json ... slot-5.json  save slots (synced by Basalt)
+  data/config/shared/settings.toml        volumes and options (synced)
+  data/config/display.toml                window and graphics (this machine)
 
 Controls: WASD/left stick move, Space/(B) dash, E/(A) use, F/(Y) call
 extraction, Esc/Start pause. Weapons aim and fire automatically.
+Content and tuning are TOML in app/assets/data/.
 
 Run `planetfall --help` for headless, screenshot and autopilot options.
 Third-party asset licenses are in app/assets/kenney/*/License.txt and

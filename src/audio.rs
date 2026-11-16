@@ -4,7 +4,6 @@
 
 use crate::storage::Preferences;
 use planetfall_sim::Phase;
-use planetfall_sim::content::{EnemyKind, WeaponKind};
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::math::V2;
 use quasar_audio::{
@@ -15,53 +14,14 @@ use quasar_core::Rng;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-const CLIPS: &[&str] = &[
-    "blaster",
-    "scatter",
-    "arc",
-    "mortar",
-    "explosion",
-    "drone",
-    "enemy_hit",
-    "enemy_die",
-    "skitter_die",
-    "brute_roar",
-    "husk_groan",
-    "player_hurt",
-    "dash",
-    "player_die",
-    "mine_hit",
-    "block_break",
-    "pickup_xp",
-    "pickup_material",
-    "level_up",
-    "weapon_found",
-    "ui_move",
-    "ui_confirm",
-    "ui_deny",
-    "console",
-    "construct",
-    "tutorial",
-    "ftl",
-    "pod_descent",
-    "pod_impact",
-    "alarm",
-    "liftoff",
-    "door",
-    "ship_hum",
-    "planet_wind",
-    "music_surface",
-    "music_ship",
-];
-
 pub struct Audio {
     engine: AudioEngine,
     music_bus: BusId,
     effects_bus: BusId,
-    clips: BTreeMap<&'static str, Clip>,
+    clips: BTreeMap<String, Clip>,
     music: Option<(&'static str, VoiceHandle)>,
     ambience: Option<(&'static str, VoiceHandle)>,
-    last_played: BTreeMap<&'static str, u64>,
+    last_played: BTreeMap<String, u64>,
     frame: u64,
     /// Per-play pitch and gain spread (`quasar_audio` Variation).
     variation: Rng,
@@ -80,12 +40,15 @@ impl Audio {
         let effects_bus = engine
             .create_bus("effects", prefs.effects_volume, 48)
             .ok()?;
+        // Every WAV in assets/sounds, by file stem; content data names them.
         let mut clips = BTreeMap::new();
-        for &name in CLIPS {
-            let path = asset_root.join("sounds").join(format!("{name}.wav"));
+        for path in sound_files(asset_root) {
+            let Some(name) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
             match Clip::load(&path) {
                 Ok(clip) => {
-                    clips.insert(name, clip);
+                    clips.insert(name.to_owned(), clip);
                 }
                 Err(e) => eprintln!("planetfall: sound {}: {e}", path.display()),
             }
@@ -124,7 +87,7 @@ impl Audio {
     }
 
     /// Play a one-shot effect; `min_gap` frames throttles rapid repeats.
-    pub fn play(&mut self, name: &'static str, volume: f32, at: Option<V2>, min_gap: u64) {
+    pub fn play(&mut self, name: &str, volume: f32, at: Option<V2>, min_gap: u64) {
         if let Some(&last) = self.last_played.get(name)
             && self.frame.saturating_sub(last) < min_gap
         {
@@ -133,7 +96,7 @@ impl Audio {
         let Some(clip) = self.clips.get(name).cloned() else {
             return;
         };
-        self.last_played.insert(name, self.frame);
+        self.last_played.insert(name.to_owned(), self.frame);
         let spatial = at.map(|p| SpatialConfig {
             position: [p[0], 0.0, p[1]],
             model: SpatialModelKind::Inverse {
@@ -214,28 +177,18 @@ impl Audio {
         for event in events {
             match *event {
                 GameEvent::Fired { weapon, at } => {
-                    let (name, volume) = match weapon {
-                        WeaponKind::PulseBlaster => ("blaster", 0.35),
-                        WeaponKind::Scattergun => ("scatter", 0.5),
-                        WeaponKind::ArcCaster => ("arc", 0.45),
-                        WeaponKind::PlasmaMortar => ("mortar", 0.5),
-                        WeaponKind::OrbitDrones => ("drone", 0.3),
-                    };
-                    self.play(name, volume, Some(at), 3);
+                    let info = weapon.info();
+                    self.play(&info.sound, info.volume, Some(at), 3);
                 }
                 GameEvent::EnemyHit { at } => self.play("enemy_hit", 0.3, Some(at), 3),
                 GameEvent::EnemyKilled { kind, at } => {
-                    let name = if kind == EnemyKind::Skitter {
-                        "skitter_die"
-                    } else {
-                        "enemy_die"
-                    };
-                    self.play(name, 0.45, Some(at), 2);
+                    self.play(&kind.info().death_sound, 0.45, Some(at), 2);
                 }
-                GameEvent::EnemyAlerted { kind, at } => match kind {
-                    EnemyKind::Brute => self.play("brute_roar", 0.8, Some(at), 60),
-                    _ => self.play("husk_groan", 0.35, Some(at), 45),
-                },
+                GameEvent::EnemyAlerted { kind, at } => {
+                    if let Some(sound) = &kind.info().alert_sound {
+                        self.play(sound, 0.5, Some(at), 45);
+                    }
+                }
                 GameEvent::Explosion { at, .. } => self.play("explosion", 0.7, Some(at), 4),
                 GameEvent::PlayerHurt { .. } => self.play("player_hurt", 0.7, None, 8),
                 GameEvent::PlayerDied => self.play("player_die", 0.9, None, 0),
@@ -281,18 +234,50 @@ enum Slot {
     Ambience,
 }
 
+/// The game's sound files, sorted.
+fn sound_files(asset_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<_> = std::fs::read_dir(asset_root.join("sounds"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "wav"))
+        .collect();
+    files.sort();
+    files
+}
+
 #[cfg(test)]
 mod tests {
-    use super::CLIPS;
+    use super::sound_files;
+    use planetfall_sim::content::{EnemyId, WeaponId};
 
-    /// Every referenced sound exists and decodes (no audio device needed).
+    /// Every sound decodes, and every sound the content data names exists
+    /// (no audio device needed).
     #[test]
-    fn all_clips_decode() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/sounds");
-        for name in CLIPS {
-            let clip = quasar_audio::Clip::load(root.join(format!("{name}.wav")))
-                .unwrap_or_else(|e| panic!("{name}: {e}"));
-            assert!(clip.frames() > 0, "{name} is empty");
+    fn all_clips_decode_and_content_sounds_exist() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        let files = sound_files(&root);
+        assert!(!files.is_empty());
+        for path in &files {
+            let clip = quasar_audio::Clip::load(path)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert!(clip.frames() > 0, "{} is empty", path.display());
+        }
+        let has = |name: &str| {
+            files
+                .iter()
+                .any(|p| p.file_stem().is_some_and(|s| s == name))
+        };
+        for w in WeaponId::all() {
+            assert!(has(&w.info().sound), "weapon {} sound", w.key());
+        }
+        for e in EnemyId::all() {
+            let info = e.info();
+            assert!(has(&info.death_sound), "enemy {} death sound", e.key());
+            if let Some(alert) = &info.alert_sound {
+                assert!(has(alert), "enemy {} alert sound", e.key());
+            }
         }
     }
 }

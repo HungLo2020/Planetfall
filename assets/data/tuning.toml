@@ -1,0 +1,57 @@
+# Global tuning. Times are seconds unless noted; distances are metres.
+
+[player]
+speed = 6.0
+radius = 0.45
+health = 100.0
+pickup_range = 3.0
+mining_rate = 3.0
+# Plain rock drops one ferrite this often.
+rock_ferrite_chance = 0.12
+dash_speed = 17.0
+dash_ticks = 11
+dash_cooldown_ticks = 70
+spawn_invulnerability = 2.0
+
+[weapons]
+max_carried = 4
+max_level = 5
+# Damage boost when a cache finds nothing left to upgrade.
+cache_overflow_damage = 0.1
+new_weapon_weight = 3
+level_up_weight = 4
+
+[xp]
+# XP to advance from level n: base + n * per_level.
+base = 5
+per_level = 4
+cache_xp = 5
+
+[horde]
+# One group per period at intensity 1; intensity grows with time.
+spawn_period = 2.6
+cap = 160
+tutorial_cap = 45
+tutorial_intensity = 0.5
+extraction_intensity = 1.8
+minutes_ramp = 0.5
+# "late" enemies appear after this many minutes or once extraction is called.
+late_minutes = 2.5
+health_ramp_per_minute = 0.22
+damage_ramp_per_minute = 0.08
+
+[extraction]
+inbound = 12.0
+hold = 6.0
+radius = 3.6
+
+[tutorial]
+# Lumite needed in the tutorial drop.
+objective = 4
+
+[blocks]
+# Ship build-mode costs.
+deck = { ferrite = 2, lumite = 0, voidstone = 0 }
+hull = { ferrite = 2, lumite = 0, voidstone = 0 }
+window = { ferrite = 1, lumite = 1, voidstone = 0 }
+lamp = { ferrite = 1, lumite = 1, voidstone = 0 }
