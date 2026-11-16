@@ -1,0 +1,73 @@
+name: Release
+run-name: Release Latest (${{ inputs.commit }})
+# Manual only. Builds the Basalt zip for one main commit whose CI passed and
+# replaces the single rolling "Latest" GitHub Release (what Basalt installs
+# from releases/latest). Pushes and tags never start it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full SHA of the current main commit with successful CI
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: planetfall-release-latest
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-x64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Require an explicit main commit
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          assert os.environ["GITHUB_REF"] == "refs/heads/main", "dispatch Release on main"
+          assert re.fullmatch(r"[0-9a-f]{40}", os.environ["RELEASE_COMMIT"]), "provide a full commit SHA"
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+      - name: Require successful CI for the requested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: python3 -m DevUtils.release --check-only --commit "$RELEASE_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.0"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config \
+            libxkbcommon-dev libasound2-dev libwayland-dev libx11-dev libxrandr-dev \
+            libxi-dev libxcursor-dev libvulkan-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace --locked --release
+      - name: Build and package
+        run: python3 DevUtils/package.py
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Planetfall-linux-x64
+          path: dist/Planetfall-*-linux-x64.zip
+          retention-days: 3
+          if-no-files-found: error
+      - name: Replace the rolling Latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: python3 -m DevUtils.release --commit "$RELEASE_COMMIT" --archive dist/Planetfall-*-linux-x64.zip

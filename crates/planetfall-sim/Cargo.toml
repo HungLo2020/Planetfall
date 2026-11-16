@@ -1,0 +1,15 @@
+[package]
+name = "planetfall-sim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Planetfall game rules: renderer-, window- and audio-free deterministic simulation."
+
+[dependencies]
+quasar-nav.workspace = true
+quasar-spatial.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

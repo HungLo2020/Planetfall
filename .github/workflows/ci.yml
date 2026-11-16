@@ -1,0 +1,27 @@
+name: Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.0"
+          components: rustfmt, clippy
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libasound2-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libxcursor-dev libvulkan-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+      # fmt, clippy, tests, release-tooling tests (offline), no-graphics build and a headless autopilot soak.
+      # GPU screenshots (--gpu) are left to local runs.
+      - run: python3 DevUtils/verify.py
