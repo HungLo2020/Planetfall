@@ -23,11 +23,15 @@ pub enum Command {
 pub struct GameInput {
     /// Movement on the ground plane: +x is screen-right, +z is screen-down.
     pub movement: V2,
-    /// Edge-triggered: use the station / pod in front of the player.
+    /// Edge-triggered: use the station / pod in front of the player (in ship
+    /// build mode: place the selected block).
     pub interact: bool,
-    /// Edge-triggered: short invulnerable burst of speed.
+    /// Edge-triggered: short invulnerable burst of speed (in ship build mode:
+    /// remove the block in front).
     pub dash: bool,
-    /// Edge-triggered: call the extraction pod.
+    /// Edge-triggered: call the extraction pod (in ship build mode: next block).
     pub call_extraction: bool,
+    /// Edge-triggered: toggle ship build mode.
+    pub build: bool,
     pub command: Option<Command>,
 }

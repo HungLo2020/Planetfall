@@ -4,7 +4,7 @@ description: Add or change Planetfall's generated 3D models (GLB) or synthesized
 compatibility: Requires python3 (standard library only) and cargo.
 metadata:
   author: Planetfall
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Regenerate assets
@@ -15,14 +15,23 @@ outputs in `assets/models` or `assets/sounds`.
 ## Models
 
 1. Edit `DevUtils/assets/generate_models.py`. Each model is a list of `Part`s.
-   A part's pivot becomes its glTF node translation, which is the joint the
-   game rotates (`leg_l`, `arm_r`, `door`, `rotor`, ...). Models face +Z with
-   feet at y = 0. Ore decorations span the [-1, 1] wall cube.
+   Models face +Z with feet at y = 0. Ore decorations span the [-1, 1] wall
+   cube.
+   - **Characters** (`SKINNED`): every part becomes a joint (parent map such
+     as `HUMANOID`), rigidly weighted, with a lit body and an unlit glow
+     primitive sampling the shared palette texture. Clips are Python functions
+     of `u` in `[0, 1)` returning joint rotations/offsets/scales. Walk clips
+     span one gait loop in walk units; pose clips (`aim`, `attack`) hold one
+     key and should animate only the joints they override.
+   - **Props** (`MODELS`): a part's pivot becomes its glTF node translation,
+     the joint the game turns (`door`, `rotor`, `holo`, ...).
 2. Run `python3 DevUtils/assets/generate_models.py`.
-3. Register new files in `src/render/models.rs` (`models!` list) and draw them
-   in `src/render/scene.rs` (`Painter::rig` for animated parts).
-4. `cargo test` checks that every model decodes and that rigs expose their
-   joints (`all_models_decode`, `rigs_expose_their_joints`).
+3. Register new files in `src/render/models.rs` (`models!` list). Characters
+   also go in `skins::CHARACTERS` and are drawn with `Painter::character`
+   (clip layers); props with `Painter::rig`.
+4. `cargo test` checks that every model decodes and that characters expose
+   their joints and clips (`all_models_decode`,
+   `rigs_expose_their_joints_and_clips`).
 
 ## Sounds
 

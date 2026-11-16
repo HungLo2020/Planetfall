@@ -4,7 +4,7 @@ Development scripts. All are Python 3 using only the standard library. Run them 
 
 | Script | Purpose |
 |---|---|
-| `verify.py` | `cargo fmt --check`, clippy (`-D warnings`), all tests, the offline release-tooling tests, a no-graphics build and a headless autopilot soak. `--gpu` also renders screenshots of each phase and the cover into `dist/screenshots/`. |
+| `verify.py` | `cargo fmt --check`, clippy (`-D warnings`), all tests, the offline release-tooling tests, a no-graphics build and a headless autopilot soak. `--gpu` also renders screenshots of each phase (ship, FTL, descent, surface, debrief, module construction, build mode) and the cover into `dist/screenshots/`. |
 | `package.py` | Builds the Basalt release zip `dist/Planetfall-<version>-linux-x64.zip` and validates its layout. `--skip-build` reuses `target/release/planetfall`; `--check ZIP` only validates. |
 | `release.py` | Run by the Release workflow: checks CI for the commit and replaces the zip on the rolling `Latest` GitHub Release. Needs `GH_TOKEN`; refuses to run off `main` or on a dirty checkout. |
 | `test_release.py` | Offline tests for `release.py` against a fake GitHub API (`python3 -m unittest DevUtils.test_release`). |

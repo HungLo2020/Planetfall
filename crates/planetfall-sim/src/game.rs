@@ -1,16 +1,17 @@
 //! The full game loop as one state machine:
 //! ship → nav console → FTL → drop pod → surface run → extraction → debrief → upgrades.
 
-use crate::content::{Material, Materials, PlanetId, ShipUpgrade, WeaponKind};
+use crate::content::{Material, Materials, PlanetId, ShipBlock, ShipUpgrade, WeaponKind};
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
 use crate::math::V2;
 use crate::profile::{Profile, PurchaseError};
-use crate::rng::Rng;
 use crate::run::{Extraction, Run, RunConfig, RunOutcome, RunState};
 use crate::ship::{Ship, StationKind};
 use crate::terrain::{Terrain, Tile};
 use crate::tutorial::{Prompt, Tutorial, TutorialStep};
+use quasar_core::Rng;
+use quasar_sim::{Simulation, StateHash, StateHasher, Tick};
 
 pub const FTL_TICKS: u32 = 210;
 pub const DESCENT_TICKS: u32 = 170;
@@ -39,6 +40,9 @@ pub struct RunSummary {
     pub outcome: RunOutcome,
     pub banked: Materials,
     pub lost: Materials,
+    /// Hull salvage the ship AI adds after the tutorial drop so the first
+    /// module is always affordable.
+    pub salvage: Materials,
     pub kills: u32,
     pub level: u32,
     pub seconds: u32,
@@ -60,6 +64,7 @@ pub struct Notice {
     pub ticks: u32,
 }
 
+#[derive(Clone)]
 pub struct Game {
     pub profile: Profile,
     pub phase: Phase,
@@ -93,7 +98,7 @@ impl Game {
             notice: None,
             events: Vec::new(),
             tick: 0,
-            rng: Rng::new(seed),
+            rng: Rng::seed_from_u64(seed),
         }
     }
 
@@ -170,7 +175,7 @@ impl Game {
 
     fn update_ship(&mut self, input: &GameInput) {
         if let Some(terminal) = self.terminal.clone() {
-            self.ship.update([0.0, 0.0]);
+            self.ship.update(V2::new(0.0, 0.0));
             let Some(command) = input.command else { return };
             match (terminal, command) {
                 (_, Command::Close) => {
@@ -183,7 +188,19 @@ impl Game {
             }
             return;
         }
-        self.ship.update(input.movement);
+        if self.ship.update(input.movement) {
+            self.ship.rebuild(&self.profile);
+        }
+        if input.build && self.profile.tutorial_complete {
+            let on = self.ship.build.is_none();
+            self.ship.build = on.then_some(ShipBlock::Deck);
+            self.events.push(GameEvent::BuildMode { on });
+            return;
+        }
+        if self.ship.build.is_some() {
+            self.update_building(input);
+            return;
+        }
         if !input.interact {
             return;
         }
@@ -203,6 +220,36 @@ impl Game {
                     );
                 }
             },
+        }
+    }
+
+    /// Build mode: interact places, dash removes, extract cycles blocks.
+    fn update_building(&mut self, input: &GameInput) {
+        if input.call_extraction
+            && let Some(block) = self.ship.build
+        {
+            self.ship.build = Some(block.next());
+        }
+        let result = if input.interact {
+            self.ship
+                .place(&mut self.profile)
+                .map(|block| GameEvent::BlockPlaced { block })
+        } else if input.dash {
+            self.ship
+                .remove(&mut self.profile)
+                .map(|_| GameEvent::BlockRemoved)
+        } else {
+            return;
+        };
+        match result {
+            Ok(event) => {
+                self.events.push(event);
+                self.events.push(GameEvent::ProfileChanged);
+            }
+            Err(e) => {
+                self.events.push(GameEvent::Denied);
+                self.notify(e.message());
+            }
         }
     }
 
@@ -237,8 +284,7 @@ impl Game {
         match self.profile.purchase(upgrade) {
             Ok(level) => {
                 if level == 1 {
-                    self.ship.rebuild(&self.profile);
-                    self.ship.start_construction(upgrade);
+                    self.ship.start_construction(upgrade, &self.profile);
                 }
                 self.events.push(GameEvent::UpgradeBuilt { upgrade, level });
                 self.events.push(GameEvent::ProfileChanged);
@@ -293,6 +339,25 @@ impl Game {
         }
     }
 
+    /// Top the hold up so the cheapest first module is affordable: the
+    /// tutorial ends by building one, whatever the drop happened to yield.
+    fn tutorial_salvage(&mut self) -> Materials {
+        let have = self.profile.materials;
+        let Some(cost) = ShipUpgrade::ALL
+            .into_iter()
+            .filter_map(|u| self.profile.next_cost(u))
+            .min_by_key(|c| c.total())
+        else {
+            return Materials::default();
+        };
+        let mut salvage = Materials::default();
+        for m in Material::ALL {
+            salvage.add(m, cost.get(m).saturating_sub(have.get(m)));
+        }
+        self.profile.materials.add_all(salvage);
+        salvage
+    }
+
     fn finish_run(&mut self) {
         let Some(run) = self.run.take() else {
             self.phase = Phase::Ship;
@@ -314,11 +379,17 @@ impl Game {
             }
             (Materials::default(), run.carried)
         };
+        let salvage = if extracted && run.tutorial {
+            self.tutorial_salvage()
+        } else {
+            Materials::default()
+        };
         let summary = RunSummary {
             planet: run.planet,
             outcome,
             banked,
             lost,
+            salvage,
             kills: run.kills,
             level: run.player.level,
             seconds: run.ticks / 60,
@@ -343,9 +414,7 @@ impl Game {
         let died = has(&|e| matches!(e, GameEvent::RunEnded { extracted: false }));
         let current = tutorial.step;
         let next = match current {
-            TutorialStep::Welcome
-                if tutorial.ticks > 60 && crate::math::length(input.movement) > 0.2 =>
-            {
+            TutorialStep::Welcome if tutorial.ticks > 60 && input.movement.length() > 0.2 => {
                 Some(TutorialStep::ToConsole)
             }
             TutorialStep::Welcome if tutorial.ticks > 600 => Some(TutorialStep::ToConsole),
@@ -468,7 +537,25 @@ impl Game {
         if self.phase != Phase::Ship || self.terminal.is_some() {
             return None;
         }
-        let station = self.ship.focused_station()?;
+        if let Some(block) = self.ship.build {
+            let cost = block.cost();
+            let status = match self.ship.can_place(&self.profile) {
+                Ok(()) => String::new(),
+                Err(e) => format!("  ({})", e.message()),
+            };
+            return Some(format!(
+                "BUILD: {} — {} ferrite, {} lumite{status}\n{{interact}} place · {{dash}} remove · {{extract}} next block · {{build}} done",
+                block.name(),
+                cost.ferrite,
+                cost.lumite,
+            ));
+        }
+        let Some(station) = self.ship.focused_station() else {
+            return self
+                .profile
+                .tutorial_complete
+                .then(|| "{build} Build mode".to_owned());
+        };
         Some(match station.kind {
             StationKind::DropPod => match self.profile.orbiting {
                 Some(p) => format!("{{interact}} Deploy to {}", p.info().name),
@@ -478,14 +565,21 @@ impl Game {
         })
     }
 
-    pub fn state_hash(&self) -> u64 {
-        let mut h = self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        h ^= u64::from(self.profile.materials.total()).rotate_left(17);
-        h ^= u64::from(self.ship.player.pos[0].to_bits()).rotate_left(7);
-        if let Some(run) = &self.run {
-            h ^= run.state_hash().rotate_left(29);
+    /// Deterministic hash of the whole game, as `quasar-sim` replays compare it.
+    pub fn state_hash(&self) -> StateHash {
+        let mut h = StateHasher::new();
+        h.write_u64(self.tick);
+        h.write_rng(&self.rng);
+        for m in Material::ALL {
+            h.write_u32(self.profile.materials.get(m));
         }
-        h
+        for v in [self.ship.player.pos.x, self.ship.player.pos.y] {
+            h.write_f32_bits(v);
+        }
+        if let Some(run) = &self.run {
+            run.hash_into(&mut h);
+        }
+        h.finish()
     }
 }
 
@@ -497,6 +591,32 @@ pub fn nearest_ore(run: &Run, material: Material) -> Option<V2> {
         .filter(|(_, t)| matches!(t, Tile::Ore { material: m, .. } if *m == material))
         .map(|((x, y), _)| Terrain::center_of(x, y))
         .min_by(|a, b| {
-            crate::math::distance_sq(*a, player).total_cmp(&crate::math::distance_sq(*b, player))
+            (*a).distance_squared(player)
+                .total_cmp(&(*b).distance_squared(player))
         })
+}
+
+/// `quasar-sim` drives the game for recording, replay and divergence checks.
+impl Simulation for Game {
+    type Input = GameInput;
+    type Snapshot = Box<Game>;
+    type Error = std::convert::Infallible;
+
+    fn update(&mut self, _tick: Tick, input: &GameInput) -> Result<(), Self::Error> {
+        Game::update(self, input);
+        Ok(())
+    }
+
+    fn state_hash(&self) -> StateHash {
+        Game::state_hash(self)
+    }
+
+    fn snapshot(&self) -> Box<Game> {
+        Box::new(self.clone())
+    }
+
+    fn restore(&mut self, snapshot: &Box<Game>) -> Result<(), Self::Error> {
+        *self = (**snapshot).clone();
+        Ok(())
+    }
 }

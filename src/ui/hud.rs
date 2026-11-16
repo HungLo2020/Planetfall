@@ -1,11 +1,12 @@
 //! Heads-up display: rebuilt from game state every frame (cheap for a small tree).
 
 use super::Layer;
-use super::{Builder, device_text, format_materials};
+use super::{Builder, format_materials};
+use crate::bindings::Prompts;
 use planetfall_sim::content::Material;
 use planetfall_sim::run::{EXTRACTION_HOLD, Extraction};
 use planetfall_sim::{Game, Phase};
-use quasar_ui::{LayoutItem, Length, TextMeasure, TextStyle, Vec2};
+use quasar_ui::{Anchor, Edges, LayoutItem, Length, TextMeasure, TextStyle, Vec2};
 
 pub struct HudContext<'a> {
     pub game: &'a Game,
@@ -13,31 +14,33 @@ pub struct HudContext<'a> {
     /// Physical viewport size.
     pub size: (f32, f32),
     pub scale: f32,
-    pub gamepad: bool,
+    pub prompts: &'a Prompts,
     /// Set while a terminal/menu covers the centre of the screen.
     pub menu_open: bool,
 }
 
-fn at(x: f32, y: f32, width: f32) -> LayoutItem {
-    LayoutItem::size(Length::fixed(width), Length::Auto).with_offset(Vec2::new(x, y))
+/// A fixed-width card pinned to a screen edge or corner.
+fn pinned(anchor: Anchor, width: f32) -> LayoutItem {
+    LayoutItem::size(Length::fixed(width), Length::Auto)
+        .with_anchor(anchor)
+        .with_margin(Edges::new(18.0, 16.0, 18.0, 16.0))
 }
 
 pub fn build(cx: &HudContext) -> Layer {
-    let mut b = Builder::new(cx.measure, cx.scale);
+    let mut b = Builder::default();
     let root = b.root(false);
-    let (w, h) = (cx.size.0 / cx.scale, cx.size.1 / cx.scale);
     let game = cx.game;
-    let text = |s: &str| device_text(s, cx.gamepad);
+    let text = |s: &str| cx.prompts.format(s);
     match game.phase {
         Phase::Ship => {
-            let panel = b.card(root, at(18.0, 16.0, 330.0), 2.0, 10.0);
+            let panel = b.card(root, pinned(Anchor::TopLeft, 330.0), 2.0, 10.0);
             b.label(panel, "THE MAYFLY  //  SALVAGE CUTTER", TextStyle::Body);
             let status = match game.profile.orbiting {
                 Some(p) => format!("In orbit: {} ({})", p.info().name, p.info().kind),
                 None => "Adrift in deep space".into(),
             };
             b.label(panel, status, TextStyle::Small);
-            let hold = b.card(root, at(w - 18.0 - 360.0, 16.0, 360.0), 2.0, 10.0);
+            let hold = b.card(root, pinned(Anchor::TopRight, 360.0), 2.0, 10.0);
             b.label(hold, "CARGO HOLD", TextStyle::Body);
             b.label(
                 hold,
@@ -56,11 +59,11 @@ pub fn build(cx: &HudContext) -> Layer {
         }
         Phase::Surface | Phase::Lost { .. } | Phase::Ascent { .. } => {
             let Some(run) = &game.run else {
-                return b.finish();
+                return b.finish_laid_out(cx.size, cx.scale, cx.measure);
             };
             let info = run.planet.info();
             let secs = run.ticks / 60;
-            let status = b.card(root, at(18.0, 16.0, 320.0), 4.0, 10.0);
+            let status = b.card(root, pinned(Anchor::TopLeft, 320.0), 4.0, 10.0);
             b.label(
                 status,
                 format!(
@@ -93,7 +96,7 @@ pub fn build(cx: &HudContext) -> Layer {
             }
             b.label(status, weapons, TextStyle::Small);
 
-            let cargo = b.card(root, at(w - 18.0 - 340.0, 16.0, 340.0), 3.0, 10.0);
+            let cargo = b.card(root, pinned(Anchor::TopRight, 340.0), 3.0, 10.0);
             b.label(cargo, "CARGO (lost if you fall)", TextStyle::Small);
             for m in Material::ALL {
                 let n = run.carried.get(m);
@@ -121,7 +124,14 @@ pub fn build(cx: &HudContext) -> Layer {
             };
             b.label(cargo, objective, TextStyle::Body);
             if matches!(game.phase, Phase::Lost { .. }) {
-                let lost = b.card(root, at(w * 0.5 - 220.0, h * 0.36, 440.0), 4.0, 18.0);
+                let lost = b.card(
+                    root,
+                    LayoutItem::size(Length::fixed(440.0), Length::Auto)
+                        .with_anchor(Anchor::Center)
+                        .with_offset(Vec2::new(0.0, -60.0)),
+                    4.0,
+                    18.0,
+                );
                 b.label(lost, "SIGNAL LOST", TextStyle::Heading);
                 b.label(
                     lost,
@@ -131,7 +141,7 @@ pub fn build(cx: &HudContext) -> Layer {
             }
         }
         Phase::Ftl { to, .. } => {
-            let panel = b.card(root, at(w * 0.5 - 200.0, h - 120.0, 400.0), 2.0, 12.0);
+            let panel = b.card(root, pinned(Anchor::Bottom, 400.0), 2.0, 12.0);
             b.label(panel, "FTL JUMP IN PROGRESS", TextStyle::Body);
             b.label(
                 panel,
@@ -141,9 +151,9 @@ pub fn build(cx: &HudContext) -> Layer {
         }
         Phase::Descent { .. } => {
             let Some(run) = &game.run else {
-                return b.finish();
+                return b.finish_laid_out(cx.size, cx.scale, cx.measure);
             };
-            let panel = b.card(root, at(w * 0.5 - 200.0, h - 120.0, 400.0), 2.0, 12.0);
+            let panel = b.card(root, pinned(Anchor::Bottom, 400.0), 2.0, 12.0);
             b.label(panel, "DROP POD DESCENDING", TextStyle::Body);
             b.label(
                 panel,
@@ -157,10 +167,9 @@ pub fn build(cx: &HudContext) -> Layer {
         }
     }
 
-    // Bottom centre: tutorial prompt, notices and interaction hints.
+    // Bottom centre: tutorial prompt, notices and interaction hints, stacked
+    // upward from the bottom edge; labels wrap at the card width.
     if !cx.menu_open {
-        let width = 620.0;
-        let mut y = h - 24.0;
         let mut blocks: Vec<(Option<String>, String)> = Vec::new();
         if let Some(prompt) = game.tutorial_prompt() {
             blocks.push((Some(prompt.title.to_string()), text(&prompt.body)));
@@ -171,27 +180,23 @@ pub fn build(cx: &HudContext) -> Layer {
         if let Some(hint) = game.interaction_hint() {
             blocks.push((None, text(&hint)));
         }
-        // Lay blocks out bottom-up using measured line counts.
-        for (title, body) in blocks.into_iter().rev() {
-            let size = b.ui.theme().size(TextStyle::Body) * cx.scale;
-            let lines = super::wrap(
-                cx.measure,
-                &body,
-                TextStyle::Body,
-                size,
-                (width - 28.0) * cx.scale,
-            )
-            .len();
-            let height = 24.0 + lines as f32 * 21.0 + if title.is_some() { 22.0 } else { 0.0 };
-            y -= height + 8.0;
-            let panel = b.card(root, at(w * 0.5 - width * 0.5, y, width), 1.0, 12.0);
-            if let Some(title) = title {
-                b.label(panel, title, TextStyle::Small);
+        if !blocks.is_empty() {
+            let column = b.panel(root, pinned(Anchor::Bottom, 620.0), 8.0, 0.0);
+            for (title, body) in blocks {
+                let card = b.card(
+                    column,
+                    LayoutItem::size(Length::Fill, Length::Auto),
+                    1.0,
+                    12.0,
+                );
+                if let Some(title) = title {
+                    b.label(card, title, TextStyle::Small);
+                }
+                b.paragraph(card, &body, TextStyle::Body, 620.0 - 24.0);
             }
-            b.paragraph(panel, &body, TextStyle::Body, width - 28.0);
         }
     }
-    b.finish()
+    b.finish_laid_out(cx.size, cx.scale, cx.measure)
 }
 
 pub fn roman(n: u8) -> &'static str {
@@ -199,4 +204,43 @@ pub fn roman(n: u8) -> &'static str {
         .get(n as usize)
         .copied()
         .unwrap_or("V+")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use planetfall_sim::Profile;
+
+    /// The HUD comes back ready to draw: the live game draws it without any
+    /// further layout, so the tutorial prompt must already have a place on
+    /// screen.
+    #[test]
+    fn hud_is_laid_out_with_the_tutorial_prompt() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        let (measure, _text) = super::super::build_text(&root).unwrap();
+        let game = Game::new(Profile::default(), 1);
+        let prompt = game
+            .tutorial_prompt()
+            .expect("a new profile starts the tutorial");
+        let layer = build(&HudContext {
+            game: &game,
+            measure: &measure,
+            size: (1600.0, 900.0),
+            scale: 1.0,
+            prompts: &Prompts::default(),
+            menu_open: false,
+        });
+        let entries = layer.ui.layout_entries();
+        assert!(!entries.is_empty(), "HUD has no layout");
+        let shown = entries.iter().any(|e| {
+            e.rect.width > 0.0
+                && e.rect.height > 0.0
+                && e.rect.bottom() <= 900.0
+                && layer.ui.node(e.id).is_some_and(|n| {
+                    matches!(&n.widget, quasar_ui::Widget::Label { text, .. }
+                        if layer.ui.resolve_text(text) == prompt.title)
+                })
+        });
+        assert!(shown, "tutorial title is not on screen");
+    }
 }

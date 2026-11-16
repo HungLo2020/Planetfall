@@ -7,7 +7,11 @@ publish.workspace = true
 description = "Planetfall game rules: renderer-, window- and audio-free deterministic simulation."
 
 [dependencies]
-quasar-nav.workspace = true
+quasar-core = { workspace = true, features = ["serde"] }
+quasar-math = { workspace = true, features = ["serde"] }
+quasar-sim.workspace = true
+quasar-nav = { workspace = true, features = ["voxel"] }
+quasar-voxel.workspace = true
 quasar-spatial.workspace = true
 serde.workspace = true
 

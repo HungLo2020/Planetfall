@@ -447,6 +447,56 @@ impl ShipUpgrade {
 }
 
 // ---------------------------------------------------------------------------
+// Free-form ship building (permanent, paid from the hold)
+// ---------------------------------------------------------------------------
+
+/// Blocks the player can place on the ship in build mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum ShipBlock {
+    /// Floor plating: extends the ship outward.
+    Deck,
+    /// Hull wall.
+    Hull,
+    /// Glass panel.
+    Window,
+    /// Light fixture.
+    Lamp,
+}
+
+impl ShipBlock {
+    pub const ALL: [ShipBlock; 4] = [Self::Deck, Self::Hull, Self::Window, Self::Lamp];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Deck => "Deck plating",
+            Self::Hull => "Hull wall",
+            Self::Window => "Window",
+            Self::Lamp => "Lamp",
+        }
+    }
+
+    /// Cost to place; removing a block you placed refunds it.
+    pub fn cost(self) -> Materials {
+        match self {
+            Self::Deck => Materials::new(2, 0, 0),
+            Self::Hull => Materials::new(2, 0, 0),
+            Self::Window => Materials::new(1, 1, 0),
+            Self::Lamp => Materials::new(1, 1, 0),
+        }
+    }
+
+    /// The deck layer (`-1`) or the wall layer (`0`).
+    pub fn layer(self) -> i32 {
+        if self == Self::Deck { -1 } else { 0 }
+    }
+
+    pub fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|&b| b == self).unwrap_or(0);
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+}
+
+// ---------------------------------------------------------------------------
 // In-run perks (lost when the run ends)
 // ---------------------------------------------------------------------------
 

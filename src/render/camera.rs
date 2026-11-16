@@ -1,35 +1,23 @@
 //! Top-down follow camera, cinematic framings and world-to-screen projection.
 
 use planetfall_sim::game::{ASCENT_TICKS, DESCENT_TICKS, FTL_TICKS, LOST_TICKS};
+use planetfall_sim::math::V2;
 use planetfall_sim::{Game, Phase};
-use quasar_render_3d::Mat4;
+use quasar_math::{Mat4, Vec3, Viewport};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Camera {
-    pub view: Mat4,
+    pub view_projection: Mat4,
     pub projection: Mat4,
-    pub eye: [f32; 3],
-    pub target: [f32; 3],
-    pub width: f32,
-    pub height: f32,
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub viewport: Viewport,
 }
 
 impl Camera {
-    pub fn view_projection(&self) -> Mat4 {
-        self.projection * self.view
-    }
-
     /// World point to pixel coordinates; None when behind the camera.
     pub fn project(&self, p: [f32; 3]) -> Option<[f32; 2]> {
-        let clip = self.view_projection().transform([p[0], p[1], p[2], 1.0]);
-        if clip[3] <= 1e-4 {
-            return None;
-        }
-        let ndc = [clip[0] / clip[3], clip[1] / clip[3]];
-        Some([
-            (ndc[0] * 0.5 + 0.5) * self.width,
-            (0.5 - ndc[1] * 0.5) * self.height,
-        ])
+        quasar_math::project(self.view_projection, Vec3::from(p), self.viewport).map(|s| [s.x, s.y])
     }
 }
 
@@ -76,7 +64,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Descent { ticks } => {
-            let landing = game.run.as_ref().map_or([0.0, 0.0], |r| r.landing);
+            let landing = game.run.as_ref().map_or(V2::ZERO, |r| r.landing);
             let h = descent_height(ticks);
             Framing {
                 target: [landing[0], h * 0.85, landing[1]],
@@ -90,7 +78,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Ascent { ticks } => {
-            let landing = game.run.as_ref().map_or([0.0, 0.0], |r| r.landing);
+            let landing = game.run.as_ref().map_or(V2::ZERO, |r| r.landing);
             let h = ascent_height(ticks);
             Framing {
                 target: [landing[0], h * 0.7, landing[1]],
@@ -100,7 +88,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Lost { ticks } => {
-            let p = game.run.as_ref().map_or([0.0, 0.0], |r| r.player.pos);
+            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player.pos);
             let t = 1.0 - ticks as f32 / LOST_TICKS as f32;
             Framing {
                 target: [p[0], 0.0, p[1]],
@@ -110,7 +98,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Surface => {
-            let p = game.run.as_ref().map_or([0.0, 0.0], |r| r.player.pos);
+            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player.pos);
             Framing {
                 target: [p[0], 0.0, p[1]],
                 offset: top_down,
@@ -124,8 +112,8 @@ pub fn framing(game: &Game) -> Framing {
 /// Smoothed camera state owned by the renderer.
 #[derive(Default)]
 pub struct CameraRig {
-    target: [f32; 3],
-    offset: [f32; 3],
+    target: Vec3,
+    offset: Vec3,
     fov: f32,
     ready: bool,
     last_phase: Option<std::mem::Discriminant<Phase>>,
@@ -142,45 +130,38 @@ impl CameraRig {
         height: f32,
     ) -> Camera {
         let f = framing(game);
+        let (target, offset) = (Vec3::from(f.target), Vec3::from(f.offset));
         let phase = std::mem::discriminant(&game.phase);
         let changed = self.last_phase != Some(phase);
         self.last_phase = Some(phase);
         if !self.ready || f.cut || changed {
-            self.target = f.target;
-            self.offset = f.offset;
+            self.target = target;
+            self.offset = offset;
             self.fov = f.fov;
             self.ready = true;
         } else {
-            let k = 1.0 - (-dt * 8.0).exp();
-            for i in 0..3 {
-                self.target[i] += (f.target[i] - self.target[i]) * k;
-                self.offset[i] += (f.offset[i] - self.offset[i]) * k;
-            }
+            let k = quasar_math::damp_factor(8.0, dt);
+            self.target = self.target.lerp(target, k);
+            self.offset = self.offset.lerp(offset, k);
             self.fov += (f.fov - self.fov) * k;
         }
-        let jitter = [
-            (time * 61.0).sin() * shake * 0.35,
-            (time * 47.0).cos() * shake * 0.2,
-            (time * 53.0).sin() * shake * 0.35,
-        ];
-        let target = [
-            self.target[0] + jitter[0],
-            self.target[1] + jitter[1],
-            self.target[2] + jitter[2],
-        ];
-        let eye = [
-            target[0] + self.offset[0],
-            target[1] + self.offset[1],
-            target[2] + self.offset[2],
-        ];
-        let aspect = (width / height.max(1.0)).max(0.1);
+        let jitter = Vec3::new(
+            (time * 61.0).sin() * 0.35,
+            (time * 47.0).cos() * 0.2,
+            (time * 53.0).sin() * 0.35,
+        ) * shake;
+        let target = self.target + jitter;
+        let eye = target + self.offset;
+        let viewport = Viewport::new(width, height.max(1.0));
+        let view = quasar_math::look_at(eye, target, Vec3::Y).unwrap_or(Mat4::IDENTITY);
+        let projection = quasar_math::perspective(self.fov, viewport.aspect().max(0.1), 0.3, 400.0)
+            .unwrap_or(Mat4::IDENTITY);
         Camera {
-            view: Mat4::look_at(eye, target, [0.0, 1.0, 0.0]).unwrap_or(Mat4::IDENTITY),
-            projection: Mat4::perspective(self.fov, aspect, 0.3, 400.0).unwrap_or(Mat4::IDENTITY),
+            view_projection: projection * view,
+            projection,
             eye,
             target,
-            width,
-            height,
+            viewport,
         }
     }
 }

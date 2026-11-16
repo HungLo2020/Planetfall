@@ -2,11 +2,17 @@
 """Generate Planetfall's original low-poly glTF (GLB) models.
 
 Every model is built from simple convex solids (boxes, prisms, cones and
-bipyramids) with flat normals and per-part named nodes. Each node's
-translation is the part's animation pivot, so the game can rotate limbs,
-doors and rotors around sensible joints. Materials use only glTF base color,
-metallic/roughness factors and emissive factors, which Quasar's classic
-material conversion supports without textures.
+bipyramids) with flat normals.
+
+* Props and vehicles keep per-part named nodes whose translation is the
+  part's pivot, so the game can turn doors, rotors and holograms. Their
+  materials use only glTF base colour, metallic/roughness and emissive
+  factors, which Quasar's classic material conversion supports.
+* Characters are skinned: one joint per part (rigid weights), a lit body
+  primitive and an unlit glow primitive that sample a shared colour-palette
+  texture, and authored animation clips (`idle`, `walk`, `attack`, `aim`,
+  `pulse`) sampled into quaternion keyframes. Walk clips are authored in
+  walk-distance units, so the game plays them by distance travelled.
 
 Output is deterministic: running the script twice produces identical bytes.
 
@@ -20,6 +26,7 @@ import argparse
 import json
 import math
 import struct
+import zlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -277,6 +284,229 @@ def write_glb(path: Path, parts: list[Part]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Skinned characters: palette texture, joints, clips
+# ---------------------------------------------------------------------------
+
+PALETTE_SIZE = 8
+PALETTE = sorted(MATERIALS)  # lit colour at index i, glow colour at 32 + i
+assert len(PALETTE) <= 32
+
+
+def srgb_byte(v: float) -> int:
+    v = max(0.0, min(1.0, v))
+    s = v * 12.92 if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055
+    return int(round(s * 255))
+
+
+def palette_uv(slot: int) -> tuple[float, float]:
+    return ((slot % PALETTE_SIZE + 0.5) / PALETTE_SIZE, (slot // PALETTE_SIZE + 0.5) / PALETTE_SIZE)
+
+
+def palette_png() -> bytes:
+    """RGBA palette: base colours, then emissive colours for glow parts."""
+    texels = [(0, 0, 0, 255)] * (PALETTE_SIZE * PALETTE_SIZE)
+    for i, name in enumerate(PALETTE):
+        rgba, _, _, emissive = MATERIALS[name]
+        texels[i] = tuple(srgb_byte(c) for c in rgba[:3]) + (255,)
+        glow = emissive if any(emissive) else rgba[:3]
+        peak = max(glow) or 1.0
+        texels[32 + i] = tuple(srgb_byte(c / peak) for c in glow) + (255,)
+    rows = b"".join(
+        b"\x00" + bytes(c for x in range(PALETTE_SIZE) for c in texels[y * PALETTE_SIZE + x])
+        for y in range(PALETTE_SIZE)
+    )
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", PALETTE_SIZE, PALETTE_SIZE, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
+
+
+def quat_axis(axis: int, angle: float) -> tuple[float, float, float, float]:
+    s, c = math.sin(angle / 2), math.cos(angle / 2)
+    q = [0.0, 0.0, 0.0, c]
+    q[axis] = s
+    return tuple(q)
+
+
+def qmul(a, b):
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw,
+        aw * bw - ax * bx - ay * by - az * bz,
+    )
+
+
+def qx(a):
+    return quat_axis(0, a)
+
+
+def qy(a):
+    return quat_axis(1, a)
+
+
+def qz(a):
+    return quat_axis(2, a)
+
+
+class Clip:
+    """A clip sampled from `pose(u)` for u in [0, 1). `pose` returns
+    {joint: {"rotation": quat, "translation": offset from rest, "scale": vec3}}.
+    Looping clips repeat their first key at the end; pose clips hold one key."""
+
+    def __init__(self, duration: float, pose, keys: int = 24, loop: bool = True):
+        self.duration = duration
+        self.pose = pose
+        self.keys = keys if loop else 1
+        self.loop = loop
+
+    def samples(self):
+        if not self.loop:
+            frame = self.pose(0.0)
+            return [0.0, self.duration], [frame, frame]
+        times = [self.duration * k / self.keys for k in range(self.keys + 1)]
+        return times, [self.pose((k % self.keys) / self.keys) for k in range(self.keys + 1)]
+
+
+def write_skinned_glb(path: Path, parts: list[Part], parents: dict[str, str | None], clips: dict[str, Clip]) -> None:
+    joints = ["root"] + [p.name for p in parts]
+    pivots = {"root": (0.0, 0.0, 0.0)} | {p.name: p.pivot for p in parts}
+    parent_of = {"root": None} | {p.name: parents.get(p.name, "root") for p in parts}
+    joint_index = {name: i for i, name in enumerate(joints)}
+    binary = bytearray()
+    buffer_views, accessors = [], []
+
+    def add_view(data: bytes, target: int | None = None) -> int:
+        while len(binary) % 4:
+            binary.append(0)
+        view = {"buffer": 0, "byteOffset": len(binary), "byteLength": len(data)}
+        if target is not None:
+            view["target"] = target
+        buffer_views.append(view)
+        binary.extend(data)
+        return len(buffer_views) - 1
+
+    def add_accessor(data: bytes, component: int, count: int, kind: str, target=None, **extra) -> int:
+        accessors.append({"bufferView": add_view(data, target), "componentType": component, "count": count, "type": kind, **extra})
+        return len(accessors) - 1
+
+    # Two primitives: lit body and unlit glow, both sampling the palette.
+    groups = {"body": [], "glow": []}
+    for part in parts:
+        for material in sorted(part.tris):
+            glow = any(MATERIALS[material][3]) and material.startswith(("glow", "visor", "screen"))
+            slot = PALETTE.index(material) + (32 if glow else 0)
+            for tri in part.tris[material]:
+                groups["glow" if glow else "body"].append((tri, joint_index[part.name], slot))
+    primitives = []
+    for group_index, group in enumerate(("body", "glow")):
+        if not groups[group]:
+            continue
+        positions, normals, uvs, joint_ids, indices = [], [], [], [], []
+        for tri, joint, slot in groups[group]:
+            n = normalize(cross(sub(tri[1], tri[0]), sub(tri[2], tri[0])))
+            for v in tri:
+                indices.append(len(positions))
+                positions.append(v)
+                normals.append(n)
+                uvs.append(palette_uv(slot))
+                joint_ids.append(joint)
+        lo = [round(min(p[i] for p in positions), 6) for i in range(3)]
+        hi = [round(max(p[i] for p in positions), 6) for i in range(3)]
+        attributes = {
+            "POSITION": add_accessor(b"".join(struct.pack("<3f", *v) for v in positions), 5126, len(positions), "VEC3", 34962, min=lo, max=hi),
+            "NORMAL": add_accessor(b"".join(struct.pack("<3f", *v) for v in normals), 5126, len(normals), "VEC3", 34962),
+            "TEXCOORD_0": add_accessor(b"".join(struct.pack("<2f", *v) for v in uvs), 5126, len(uvs), "VEC2", 34962),
+            "JOINTS_0": add_accessor(b"".join(struct.pack("<4B", j, 0, 0, 0) for j in joint_ids), 5121, len(joint_ids), "VEC4", 34962),
+            "WEIGHTS_0": add_accessor(b"".join(struct.pack("<4f", 1.0, 0.0, 0.0, 0.0) for _ in joint_ids), 5126, len(joint_ids), "VEC4", 34962),
+        }
+        index_acc = add_accessor(b"".join(struct.pack("<I", i) for i in indices), 5125, len(indices), "SCALAR", 34963)
+        primitives.append({"attributes": attributes, "indices": index_acc, "material": group_index, "mode": 4})
+
+    nodes = []
+    for name in joints:
+        parent = parent_of[name]
+        rel = sub(pivots[name], pivots[parent]) if parent else pivots[name]
+        node = {"name": name}
+        if any(rel):
+            node["translation"] = [round(v, 6) for v in rel]
+        children = [joint_index[c] for c in joints if parent_of[c] == name]
+        if children:
+            node["children"] = children
+        nodes.append(node)
+    mesh_node = len(nodes)
+    nodes.append({"name": "mesh", "mesh": 0, "skin": 0})
+
+    inverse_bind = b""
+    for name in joints:
+        x, y, z = pivots[name]
+        inverse_bind += struct.pack("<16f", 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1)
+    ibm = add_accessor(inverse_bind, 5126, len(joints), "MAT4")
+
+    animations = []
+    for clip_name in sorted(clips):
+        clip = clips[clip_name]
+        times, frames = clip.samples()
+        time_acc = add_accessor(b"".join(struct.pack("<f", t) for t in times), 5126, len(times), "SCALAR", min=[times[0]], max=[times[-1]])
+        channels, samplers = [], []
+        animated = sorted({(j, prop) for frame in frames for j, props in frame.items() for prop in props})
+        for joint, prop in animated:
+            rest = pivots[joint] if parent_of[joint] is None else sub(pivots[joint], pivots[parent_of[joint]])
+            values = []
+            for frame in frames:
+                v = frame.get(joint, {}).get(prop)
+                if prop == "rotation":
+                    values.append(v or (0.0, 0.0, 0.0, 1.0))
+                elif prop == "translation":
+                    off = v or (0.0, 0.0, 0.0)
+                    values.append(tuple(rest[i] + off[i] for i in range(3)))
+                else:
+                    values.append(v or (1.0, 1.0, 1.0))
+            kind, fmt = ("VEC4", "<4f") if prop == "rotation" else ("VEC3", "<3f")
+            out_acc = add_accessor(b"".join(struct.pack(fmt, *[round(c, 6) for c in v]) for v in values), 5126, len(values), kind)
+            samplers.append({"input": time_acc, "output": out_acc, "interpolation": "LINEAR"})
+            channels.append({"sampler": len(samplers) - 1, "target": {"node": joint_index[joint], "path": prop}})
+        animations.append({"name": clip_name, "channels": channels, "samplers": samplers})
+
+    image_view = add_view(palette_png())
+    while len(binary) % 4:
+        binary.append(0)
+    document = {
+        "asset": {"version": "2.0", "generator": "Planetfall DevUtils/assets/generate_models.py"},
+        "extensionsUsed": ["KHR_materials_unlit"],
+        "scene": 0,
+        "scenes": [{"name": path.stem, "nodes": [0, mesh_node]}],
+        "nodes": nodes,
+        "meshes": [{"name": path.stem, "primitives": primitives}],
+        "skins": [{"joints": list(range(len(joints))), "inverseBindMatrices": ibm, "skeleton": 0}],
+        "animations": animations,
+        "materials": [
+            {"name": "body", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}, "metallicFactor": 0.1, "roughnessFactor": 0.6}},
+            {"name": "glow", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}, "extensions": {"KHR_materials_unlit": {}}},
+        ],
+        "textures": [{"source": 0, "sampler": 0}],
+        "samplers": [{"magFilter": 9728, "minFilter": 9728, "wrapS": 33071, "wrapT": 33071}],
+        "images": [{"bufferView": image_view, "mimeType": "image/png"}],
+        "accessors": accessors,
+        "bufferViews": buffer_views,
+        "buffers": [{"byteLength": len(binary)}],
+    }
+    json_bytes = json.dumps(document, separators=(",", ":"), sort_keys=True).encode()
+    while len(json_bytes) % 4:
+        json_bytes += b" "
+    total = 12 + 8 + len(json_bytes) + 8 + len(binary)
+    out = struct.pack("<III", 0x46546C67, 2, total)
+    out += struct.pack("<II", len(json_bytes), 0x4E4F534A) + json_bytes
+    out += struct.pack("<II", len(binary), 0x004E4942) + bytes(binary)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(out)
+
+
+# ---------------------------------------------------------------------------
 # Characters (all face +Z, feet at y = 0)
 # ---------------------------------------------------------------------------
 
@@ -412,6 +642,132 @@ def bloater() -> list[Part]:
         leg.box("bloat_dark", (side * 0.3, 0.2, 0), (0.24, 0.4, 0.26))
         parts.append(leg)
     return parts
+
+
+# ---------------------------------------------------------------------------
+# Character rigs and clips. Walk clips span one gait loop in walk units (the
+# distance accumulator the simulation advances), idle clips are in seconds.
+# ---------------------------------------------------------------------------
+
+HUMANOID = {"torso": "root", "head": "torso", "arm_l": "torso", "arm_r": "torso", "leg_l": "root", "leg_r": "root"}
+TAU = 2 * math.pi
+
+
+def astronaut_clips() -> dict[str, Clip]:
+    def walk(u):
+        swing = math.sin(TAU * u) * 0.7
+        return {
+            "root": {"translation": (0.0, abs(math.sin(2 * TAU * u)) * 0.06, 0.0)},
+            "leg_l": {"rotation": qx(swing)},
+            "leg_r": {"rotation": qx(-swing)},
+            "arm_l": {"rotation": qx(-swing * 0.8)},
+            "arm_r": {"rotation": qx(swing * 0.8)},
+        }
+
+    def idle(u):
+        return {
+            "root": {"translation": (0.0, math.sin(2 * TAU * u) * 0.01, 0.0)},
+            "head": {"rotation": qy(math.sin(TAU * u) * 0.15)},
+        }
+
+    return {
+        "walk": Clip(TAU / 2.2, walk),
+        "idle": Clip(4.0, idle),
+        # Weapon held out: overrides only the right arm when blended.
+        "aim": Clip(1.0, lambda u: {"arm_r": {"rotation": qx(-1.2)}}, loop=False),
+    }
+
+
+def shambler_clips() -> dict[str, Clip]:
+    """Husks and brutes: arms out front, a lurching sway every other step."""
+
+    def walk(u):
+        swing = math.sin(2 * TAU * u) * 0.6
+        sway = math.sin(TAU * u) * 0.08
+        return {
+            "root": {"rotation": qz(sway)},
+            "leg_l": {"rotation": qx(swing)},
+            "leg_r": {"rotation": qx(-swing)},
+            "arm_l": {"rotation": qx(-1.35 + swing * 0.15)},
+            "arm_r": {"rotation": qx(-1.35 - swing * 0.15)},
+            "head": {"rotation": qz(sway * 2.0)},
+            "torso": {"rotation": qx(0.12)},
+        }
+
+    def idle(u):
+        drift = math.sin(TAU * u) * 0.05
+        return {
+            "root": {"rotation": qz(drift * 0.5)},
+            "arm_l": {"rotation": qx(-1.3 + drift)},
+            "arm_r": {"rotation": qx(-1.3 - drift)},
+            "head": {"rotation": qz(drift * 2.0)},
+            "torso": {"rotation": qx(0.12)},
+        }
+
+    def attack(u):
+        return {
+            "arm_l": {"rotation": qx(-1.95)},
+            "arm_r": {"rotation": qx(-1.95)},
+            "torso": {"rotation": qx(0.37)},
+        }
+
+    return {
+        "walk": Clip(TAU, walk),
+        "idle": Clip(3.0, idle),
+        "attack": Clip(1.0, attack, loop=False),
+    }
+
+
+SKITTER = {"head": "body"} | {f"leg_{s}{i}": "body" for s in "lr" for i in range(3)} | {"body": "root"}
+
+
+def skitter_clips() -> dict[str, Clip]:
+    def legs(gait, amount):
+        pose = {}
+        for i in range(3):
+            for s, side in (("l", 1.0), ("r", -1.0)):
+                phase = gait + i * 2.1 + (0.0 if side > 0 else math.pi)
+                pose[f"leg_{s}{i}"] = {"rotation": qmul(qy(math.sin(phase) * 0.35 * amount), qz(side * max(math.cos(phase), 0.0) * 0.25 * amount))}
+        return pose
+
+    def walk(u):
+        pose = legs(TAU * u, 1.0)
+        pose["body"] = {"translation": (0.0, abs(math.sin(2 * TAU * u)) * 0.05, 0.0)}
+        return pose
+
+    return {
+        "walk": Clip(TAU / 3.5, walk),
+        "idle": Clip(2.0, lambda u: legs(TAU * u, 0.15)),
+        "attack": Clip(1.0, lambda u: {"head": {"rotation": qx(-0.5)}}, loop=False),
+    }
+
+
+BLOATER = {"body": "root", "leg_l": "root", "leg_r": "root"}
+
+
+def bloater_clips() -> dict[str, Clip]:
+    def walk(u):
+        swing = math.sin(TAU * u) * 0.6
+        return {"leg_l": {"rotation": qx(swing)}, "leg_r": {"rotation": qx(-swing)}}
+
+    def pulse(u):
+        k = 1.0 + math.sin(TAU * u) * 0.05
+        return {"body": {"scale": (k, k, k)}}
+
+    return {
+        "walk": Clip(TAU / 2.0, walk),
+        # Body-only track: layers over walk or rest.
+        "pulse": Clip(TAU / 6.0, pulse),
+    }
+
+
+SKINNED = {
+    "astronaut": (astronaut, HUMANOID, astronaut_clips),
+    "husk": (husk, HUMANOID, shambler_clips),
+    "brute": (brute, HUMANOID, shambler_clips),
+    "skitter": (skitter, SKITTER, skitter_clips),
+    "bloater": (bloater, BLOATER, bloater_clips),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -625,11 +981,6 @@ def planet() -> list[Part]:
 
 
 MODELS = {
-    "astronaut": astronaut,
-    "husk": husk,
-    "brute": brute,
-    "skitter": skitter,
-    "bloater": bloater,
     "drop-pod": drop_pod,
     "arc-caster": arc_caster,
     "plasma-mortar": plasma_mortar,
@@ -657,6 +1008,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=REPO / "assets" / "models")
     args = parser.parse_args()
+    for name, (build, parents, clips) in SKINNED.items():
+        path = args.out / f"{name}.glb"
+        write_skinned_glb(path, build(), parents, clips())
+        print(f"wrote {path.relative_to(REPO) if path.is_relative_to(REPO) else path} (skinned)")
     for name, build in MODELS.items():
         path = args.out / f"{name}.glb"
         write_glb(path, build())

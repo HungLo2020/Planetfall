@@ -2,7 +2,8 @@
 //! wires the game, input, menus, audio and renderer together.
 
 use crate::audio::Audio;
-use crate::controls::{Controls, keyboard_bindings};
+use crate::bindings;
+use crate::controls::Controls;
 use crate::render::{Frame, Graphics, camera::Camera};
 use crate::settings::Settings;
 use crate::storage::{Display, Preferences, Storage};
@@ -341,7 +342,7 @@ impl App {
             measure: &self.measure,
             size: self.size,
             scale: self.scale,
-            gamepad: self.controls.gamepad_active,
+            prompts: &self.controls.prompts,
             menu_open,
         })
     }
@@ -398,7 +399,7 @@ impl Application for App {
             &self.game,
             &self.measure,
             self.scale,
-            self.controls.gamepad_active,
+            &self.controls.prompts,
         );
         if self.menu.is_open() {
             let input = self.controls.ui_input(c.input);
@@ -499,6 +500,7 @@ impl Application for App {
                 graphics.commands(gal, target, &frame)
             })
             .map_err(|e| AppError(format!("render: {e}")))?;
+        graphics.submitted(gal);
         if report.is_some() {
             self.frames += 1;
             if self.settings.frames.is_some_and(|n| self.frames >= n) {
@@ -544,7 +546,7 @@ impl DesktopApplication for App {
     fn configure_window(&mut self, window: &mut quasar_window::GameWindow) -> Result<(), AppError> {
         window
             .input
-            .set_bindings(keyboard_bindings())
+            .set_bindings(bindings::keyboard())
             .map_err(|e| AppError(format!("install controls: {e}")))?;
         let _ = window.capture_cursor(false);
         Ok(())

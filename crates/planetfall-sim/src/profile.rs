@@ -1,11 +1,11 @@
 //! Persistent player progress. Serialized to `data/save/profile.json` by the
 //! desktop app; this module only defines the data, its rules and migrations.
 
-use crate::content::{Materials, PlanetId, ShipUpgrade};
+use crate::content::{Materials, PlanetId, ShipBlock, ShipUpgrade};
 use serde::{Deserialize, Serialize};
 
 /// Current on-disk schema. Bump and extend [`Profile::migrate`] when it changes.
-pub const PROFILE_VERSION: u32 = 1;
+pub const PROFILE_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -60,6 +60,19 @@ pub struct Profile {
     /// The planet the ship is orbiting, if any. Travel happens at the nav console.
     pub orbiting: Option<PlanetId>,
     pub stats: Stats,
+    /// Player-built ship blocks over the base layout, one entry per cell
+    /// (version 2+). `block: None` removes a base block.
+    pub ship_edits: Vec<ShipEdit>,
+}
+
+/// One cell of free-form ship construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShipEdit {
+    pub x: i32,
+    pub z: i32,
+    /// `-1` deck layer, `0` wall layer.
+    pub layer: i32,
+    pub block: Option<ShipBlock>,
 }
 
 impl Default for Profile {
@@ -71,6 +84,7 @@ impl Default for Profile {
             tutorial_complete: false,
             orbiting: None,
             stats: Stats::default(),
+            ship_edits: Vec::new(),
         }
     }
 }
@@ -110,6 +124,11 @@ impl Profile {
         // Future migrations go here, one `if self.version == N { ...; self.version = N + 1 }` per step.
         if self.version == 0 {
             self.version = 1;
+        }
+        if self.version == 1 {
+            // v2 adds free-form ship building; older ships have no edits.
+            self.ship_edits.clear();
+            self.version = 2;
         }
         for upgrade in ShipUpgrade::ALL {
             let slot = self.upgrades.slot(upgrade);
@@ -186,6 +205,30 @@ mod tests {
         assert_eq!(p.materials.ferrite, 3);
         assert_eq!(p.version, PROFILE_VERSION);
         assert!(!p.tutorial_complete);
+    }
+
+    /// A save written before free-form building loads with an untouched ship.
+    #[test]
+    fn version_one_saves_migrate() {
+        let v1 = r#"{"version":1,"materials":{"ferrite":12,"lumite":4,"voidstone":0},
+            "upgrades":{"drill_rig":1},"tutorial_complete":true,"orbiting":"Verdant",
+            "stats":{"drops":3}}"#;
+        let p: Profile = serde_json::from_str(v1).unwrap();
+        let p = p.migrate().unwrap();
+        assert_eq!(p.version, 2);
+        assert_eq!(p.materials, Materials::new(12, 4, 0));
+        assert_eq!(p.level(ShipUpgrade::DrillRig), 1);
+        assert!(p.ship_edits.is_empty());
+        let mut edited = p.clone();
+        edited.ship_edits.push(ShipEdit {
+            x: 3,
+            z: 4,
+            layer: 0,
+            block: Some(ShipBlock::Lamp),
+        });
+        let text = serde_json::to_string(&edited).unwrap();
+        let back: Profile = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.migrate().unwrap(), edited);
     }
 
     #[test]

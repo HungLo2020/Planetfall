@@ -33,7 +33,7 @@ validates with Basalt's own `basalt-core::GameDefinition`.
 │   ├── basalt/{cover.png,icon.svg}
 │   └── README.txt
 └── data/
-    ├── save/profile.json             progress            (synced, backed up)
+    ├── save/profile.json             progress, ship edits (synced, backed up)
     ├── config/shared/preferences.json volumes, shake     (synced, backed up)
     ├── config/display.json            window mode/size   (backed up)
     └── cache/                         currently unused   (disposable)
@@ -51,8 +51,9 @@ Save rules:
 - Writes are atomic (temp file + rename, via `quasar_storage::write_json`).
 - The profile is saved whenever it changes (purchase, extraction, death,
   travel, tutorial completion) and on exit. Mid-drop state is never banked.
-- `Profile.version` gates migrations; a newer save is never overwritten and the
-  session runs without saving. An unreadable save is copied aside as
+- `Profile.version` gates migrations (v1 → v2 added player-built ship
+  blocks); a newer save is never overwritten and the session runs without
+  saving. An unreadable save is copied aside as
   `profile.corrupt-<time>.json` before starting fresh.
 - Saved files contain no absolute paths or machine identifiers.
 

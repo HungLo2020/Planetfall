@@ -2,7 +2,8 @@
 //! in-world terminals (navigation, fabricator, level-up, debrief).
 //! Keyboard, mouse and gamepad all navigate through `quasar-ui` focus.
 
-use super::{Builder, Layer, device_text, format_cost, format_materials, hud::roman};
+use super::{Builder, Layer, format_cost, format_materials, hud::roman};
+use crate::bindings::Prompts;
 use planetfall_sim::content::{PlanetId, ShipUpgrade};
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
@@ -109,14 +110,14 @@ impl Menu {
         game: &Game,
         measure: &dyn TextMeasure,
         scale: f32,
-        gamepad: bool,
+        prompts: &Prompts,
     ) {
         let Some(content) = content else {
             self.layer = None;
             self.signature.clear();
             return;
         };
-        let signature = signature(content, game, gamepad);
+        let signature = signature(content, game, prompts);
         if self.layer.is_some() && signature == self.signature {
             return;
         }
@@ -126,12 +127,12 @@ impl Menu {
         });
         let same_screen = self.signature.split('|').next() == signature.split('|').next();
         self.signature = signature;
-        let mut b = Builder::new(measure, scale);
+        let mut b = Builder::default();
         self.actions.clear();
         self.sliders.clear();
         self.checks.clear();
         self.cancel = MenuAction::None;
-        self.build(&mut b, content, game, gamepad);
+        self.build(&mut b, content, game, prompts);
         let mut layer = b.finish();
         if same_screen && let Some(i) = focus_index {
             // Keep the cursor in place when only numbers changed (e.g. after a purchase).
@@ -223,9 +224,9 @@ impl Menu {
         b.button(parent, text, id, enabled);
     }
 
-    fn build(&mut self, b: &mut Builder, content: Content, game: &Game, gamepad: bool) {
+    fn build(&mut self, b: &mut Builder, content: Content, game: &Game, prompts: &Prompts) {
         match content {
-            Content::Screen(screen) => self.build_screen(b, screen, game, gamepad),
+            Content::Screen(screen) => self.build_screen(b, screen, game, prompts),
             Content::LevelUp => {
                 let card = Self::card(b, 560.0);
                 let level = game.run.as_ref().map_or(1, |r| r.player.level);
@@ -305,6 +306,13 @@ impl Menu {
                             format!("Banked: {}", format_materials(&summary.banked)),
                             TextStyle::Body,
                         );
+                        if summary.salvage.total() > 0 {
+                            b.label(
+                                card,
+                                format!("Ship AI salvage: {}", format_materials(&summary.salvage)),
+                                TextStyle::Small,
+                            );
+                        }
                     } else if summary.lost.total() > 0 {
                         b.label(
                             card,
@@ -437,7 +445,7 @@ impl Menu {
         self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
     }
 
-    fn build_screen(&mut self, b: &mut Builder, screen: Screen, game: &Game, gamepad: bool) {
+    fn build_screen(&mut self, b: &mut Builder, screen: Screen, game: &Game, prompts: &Prompts) {
         match screen {
             Screen::Title => {
                 let card = Self::card(b, 520.0);
@@ -470,9 +478,8 @@ impl Menu {
                 self.button(b, card, "QUIT", MenuAction::AskQuit, true);
                 b.paragraph(
                     card,
-                    &device_text(
+                    &prompts.format(
                         "{move} move · {dash} dash · {interact} use · {extract} call pod · weapons fire automatically",
-                        gamepad,
                     ),
                     TextStyle::Small,
                     476.0,
@@ -583,8 +590,8 @@ impl Menu {
 }
 
 /// Everything a screen displays; a change triggers a rebuild.
-fn signature(content: Content, game: &Game, gamepad: bool) -> String {
-    let mut s = format!("{content:?}|{gamepad}");
+fn signature(content: Content, game: &Game, prompts: &Prompts) -> String {
+    let mut s = format!("{content:?}|{:?}", prompts.family);
     match content {
         Content::Terminal => {
             s.push_str(&format!(

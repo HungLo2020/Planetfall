@@ -1,7 +1,7 @@
 //! Per-tick facts the presentation layer reacts to (sounds, effects, saves).
 //! The simulation never depends on whether anyone listens.
 
-use crate::content::{EnemyKind, Material, PlanetId, ShipUpgrade, WeaponKind};
+use crate::content::{EnemyKind, Material, PlanetId, ShipBlock, ShipUpgrade, WeaponKind};
 use crate::math::V2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -81,4 +81,12 @@ pub enum GameEvent {
     TutorialComplete,
     /// Persistent profile changed and should be saved.
     ProfileChanged,
+    /// Ship build mode switched on or off.
+    BuildMode {
+        on: bool,
+    },
+    BlockPlaced {
+        block: ShipBlock,
+    },
+    BlockRemoved,
 }

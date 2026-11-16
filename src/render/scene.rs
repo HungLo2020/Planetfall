@@ -3,7 +3,10 @@
 
 use super::geometry::{Textures3D, tile_hash};
 use super::models::{ModelId, Models};
+use super::skins::{Layer, Posed, SkinRequest, Skins};
+use super::voxels::{self, VoxelScene, WorldKey};
 use crate::render::camera::{ascent_height, descent_height};
+use planetfall_sim::content::ShipBlock;
 use planetfall_sim::content::{EnemyKind, Material, Palette, PlanetId, ShipUpgrade, WeaponKind};
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};
@@ -11,36 +14,50 @@ use planetfall_sim::run::{
     BlastKind, EXTRACTION_HOLD, EXTRACTION_INBOUND, EXTRACTION_RADIUS, Extraction, ProjectileKind,
     Run, SparkKind,
 };
-use planetfall_sim::ship::{Room, ShipTile, StationKind};
+use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};
 use planetfall_sim::terrain::{TILE, Terrain, Tile};
+use planetfall_sim::voxel;
 use planetfall_sim::{Game, Phase};
 use quasar_render_3d::{
-    Attenuation, Light, LitMaterial, Mat4, Mesh, NormalMap, ShadingModel, SurfaceDraw3D,
-    SurfaceMaterial,
+    Attenuation, BlendMode, BloomSettings, ColorGrade, Light, LitMaterial, Mat4, Mesh, NormalMap,
+    PostSettings, ShadingModel, SurfaceDraw3D, SurfaceMaterial, TransparentDraw3D,
+    VignetteSettings,
 };
+use quasar_render_voxel::{Fog, OverlayBox};
 
 /// Everything the 3D passes need for one frame.
 pub struct SceneOutput<'a> {
     pub draws: Vec<SurfaceDraw3D<'a>>,
+    /// Blended draws, sorted back to front by the renderer.
+    pub transparent: Vec<TransparentDraw3D<'a>>,
     pub lights: Vec<Light>,
     pub ambient: [f32; 3],
     pub clear: [f32; 4],
     /// Center of the directional shadow volume.
     pub shadow_focus: [f32; 3],
+    pub post: PostSettings,
+    /// Characters to pose on the GPU (drawn after skinning).
+    pub skinned: Vec<SkinRequest>,
+    /// Terrain or hull blocks to draw, if the scene has any.
+    pub voxels: Option<VoxelScene>,
 }
 
 #[derive(Clone, Copy)]
 enum Surface {
     Plain,
-    Rock,
     Metal,
 }
 
-pub struct Painter<'a> {
+pub struct Painter<'a, 's> {
     cube: &'a Mesh,
+    sphere: &'a Mesh,
     tex: &'a Textures3D,
     models: &'a Models,
+    skins: &'s Skins,
     pub draws: Vec<SurfaceDraw3D<'a>>,
+    pub transparent: Vec<TransparentDraw3D<'a>>,
+    /// Characters to pose on the GPU this frame.
+    pub skinned: Vec<SkinRequest>,
     pub lights: Vec<Light>,
     pub time: f32,
 }
@@ -67,13 +84,24 @@ fn at(p: V2, y: f32) -> Mat4 {
     Mat4::translation(p[0], y, p[1])
 }
 
-impl<'a> Painter<'a> {
-    pub fn new(cube: &'a Mesh, tex: &'a Textures3D, models: &'a Models, time: f32) -> Self {
+impl<'a, 's> Painter<'a, 's> {
+    pub fn new(
+        cube: &'a Mesh,
+        sphere: &'a Mesh,
+        tex: &'a Textures3D,
+        models: &'a Models,
+        skins: &'s Skins,
+        time: f32,
+    ) -> Self {
         Self {
             cube,
+            sphere,
             tex,
             models,
+            skins,
+            skinned: Vec::with_capacity(128),
             draws: Vec::with_capacity(2048),
+            transparent: Vec::with_capacity(512),
             lights: Vec::with_capacity(24),
             time,
         }
@@ -93,11 +121,6 @@ impl<'a> Painter<'a> {
         let mut m = SurfaceMaterial::from(lit);
         m.normal_map = match surface {
             Surface::Plain => None,
-            Surface::Rock => Some(NormalMap {
-                uv_scale: [uv; 2],
-                strength: 1.0,
-                ..NormalMap::new(&self.tex.rock_normal)
-            }),
             Surface::Metal => Some(NormalMap {
                 uv_scale: [uv; 2],
                 strength: 1.0,
@@ -120,11 +143,12 @@ impl<'a> Painter<'a> {
         self.block(model, color, Surface::Plain, 1.0);
     }
 
-    /// Unlit emissive cube (projectiles, sparks, lights).
+    /// Unlit emissive cube (projectiles, sparks, lights). Emission above 1.0
+    /// blooms in the post chain.
     fn glow(&mut self, model: Mat4, color: [f32; 3]) {
         let mut lit = LitMaterial::textured(&self.tex.white);
         lit.base.tint = [0.0, 0.0, 0.0, 1.0];
-        lit.emissive = color;
+        lit.emissive = math_scale3(color, GLOW);
         lit.shading = ShadingModel::Unlit;
         let mut m = SurfaceMaterial::from(lit);
         m.receives_shadows = false;
@@ -135,10 +159,37 @@ impl<'a> Painter<'a> {
         });
     }
 
-    /// Soft holographic glow: an emissive volume dimmed by `alpha`. (The lit
-    /// pass encodes sRGB in-shader, so effects are opaque emissive geometry.)
+    /// Additive light volume: flames, beams, holograms, light shafts.
     fn ghost(&mut self, model: Mat4, color: [f32; 3], alpha: f32) {
-        self.glow(model, math_scale3(color, 0.35 + alpha.clamp(0.0, 1.0)));
+        self.blend(self.cube, model, color, alpha, BlendMode::Additive);
+    }
+
+    /// Additive sphere: blast cores and glow halos.
+    fn halo(&mut self, model: Mat4, color: [f32; 3], alpha: f32) {
+        self.blend(self.sphere, model, color, alpha, BlendMode::Additive);
+    }
+
+    /// See-through tinted surface (glass), alpha-blended over the scene.
+    fn glass(&mut self, model: Mat4, color: [f32; 3], alpha: f32) {
+        let mut lit = LitMaterial::textured(&self.tex.white);
+        lit.base.tint = [color[0], color[1], color[2], alpha];
+        lit.specular = [0.6; 3];
+        lit.shininess = 96.0;
+        self.transparent.push(TransparentDraw3D::new(
+            self.cube,
+            model,
+            lit,
+            BlendMode::Alpha,
+        ));
+    }
+
+    fn blend(&mut self, mesh: &'a Mesh, model: Mat4, color: [f32; 3], alpha: f32, mode: BlendMode) {
+        let mut lit = LitMaterial::textured(&self.tex.white);
+        lit.base.tint = [0.0, 0.0, 0.0, alpha.clamp(0.0, 1.0)];
+        lit.emissive = math_scale3(color, GLOW);
+        lit.shading = ShadingModel::Unlit;
+        self.transparent
+            .push(TransparentDraw3D::new(mesh, model, lit, mode));
     }
 
     fn model(&mut self, id: ModelId, root: Mat4) {
@@ -158,7 +209,20 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// Draw a rigged model: `pose(node)` rotates each named part about its pivot.
+    /// Pose a skinned character from clip layers and queue it for GPU
+    /// skinning. Returns the pose for attachments.
+    fn character(&mut self, id: ModelId, root: Mat4, layers: &[Layer], flash: f32) -> Posed {
+        let posed = self.skins.character(id).pose(layers);
+        self.skinned.push(SkinRequest {
+            id,
+            palette: posed.palette.clone(),
+            root,
+            flash,
+        });
+        posed
+    }
+
+    /// Draw a prop with named parts: `pose(node)` rotates each part about its pivot.
     fn rig(&mut self, id: ModelId, root: Mat4, flash: f32, pose: impl Fn(&str) -> Mat4) {
         let model = self.models.get(id);
         for (i, inst) in model.instances().iter().enumerate() {
@@ -201,13 +265,9 @@ impl<'a> Painter<'a> {
             (a[1] + b[1]) * 0.5,
             (a[2] + b[2]) * 0.5,
         ];
-        self.glow(
-            t(mid[0], mid[1], mid[2])
-                * Mat4::rotation_y(yaw)
-                * Mat4::rotation_x(pitch)
-                * s(width, width, len * 0.5),
-            color,
-        );
+        let model = t(mid[0], mid[1], mid[2]) * Mat4::rotation_y(yaw) * Mat4::rotation_x(pitch);
+        self.glow(model * s(width * 0.45, width * 0.45, len * 0.5), color);
+        self.ghost(model * s(width * 2.2, width * 2.2, len * 0.5), color, 0.35);
     }
 
     #[allow(
@@ -224,26 +284,16 @@ impl<'a> Painter<'a> {
         flash: f32,
         weapon: Option<WeaponKind>,
     ) {
-        let time = self.time;
-        let swing = if moving {
-            (walk * 2.2).sin() * 0.7
+        let root = at(pos, y) * Mat4::rotation_y(yaw);
+        let mut layers = vec![if moving {
+            Layer::full("walk", walk)
         } else {
-            0.0
-        };
-        let bob = if moving {
-            (walk * 4.4).sin().abs() * 0.06
-        } else {
-            (self.time * 2.0).sin() * 0.01
-        };
-        let root = at(pos, y + bob) * Mat4::rotation_y(yaw);
-        self.rig(ModelId::Astronaut, root, flash, |name| match name {
-            "leg_l" => Mat4::rotation_x(swing),
-            "leg_r" => Mat4::rotation_x(-swing),
-            "arm_l" => Mat4::rotation_x(-swing * 0.8),
-            "arm_r" => Mat4::rotation_x(if weapon.is_some() { -1.2 } else { swing * 0.8 }),
-            "head" => Mat4::rotation_y((time * 0.7).sin() * 0.15),
-            _ => Mat4::IDENTITY,
-        });
+            Layer::full("idle", self.time)
+        }];
+        if weapon.is_some() {
+            layers.push(Layer::full("aim", 0.0));
+        }
+        let posed = self.character(ModelId::Astronaut, root, &layers, flash);
         if let Some(weapon) = weapon {
             let (id, scale) = match weapon {
                 WeaponKind::PulseBlaster | WeaponKind::OrbitDrones => (ModelId::Blaster, 0.7),
@@ -251,13 +301,10 @@ impl<'a> Painter<'a> {
                 WeaponKind::ArcCaster => (ModelId::ArcCaster, 1.0),
                 WeaponKind::PlasmaMortar => (ModelId::PlasmaMortar, 1.0),
             };
-            // Held out in front of the right arm (pivot at the shoulder, arm raised).
-            let gun = root
-                * t(0.37, 1.34, 0.0)
-                * Mat4::rotation_x(-1.2)
-                * t(0.0, -0.62, 0.05)
-                * Mat4::rotation_x(1.2)
-                * s(scale, scale, scale);
+            // Held in the right hand: follow the arm joint, then level the gun.
+            let arm = posed.bone("arm_r").unwrap_or(Mat4::IDENTITY);
+            let gun =
+                root * arm * t(0.0, -0.62, 0.05) * Mat4::rotation_x(1.2) * s(scale, scale, scale);
             let flip = if matches!(id, ModelId::Blaster | ModelId::Scattergun) {
                 Mat4::rotation_y(std::f32::consts::PI)
             } else {
@@ -266,9 +313,17 @@ impl<'a> Painter<'a> {
             self.model(id, gun * flip);
         }
         // Suit lamp so the player always reads in dark caves.
-        self.point([pos[0], y + 2.6, pos[1] + 0.4], [0.85, 0.92, 1.0], 1.3, 9.0);
+        self.point(
+            [pos[0], y + 3.6, pos[1] + 0.6],
+            [0.85, 0.92, 1.0],
+            1.15,
+            10.0,
+        );
     }
 }
+
+/// HDR boost for emissive effects so the post chain blooms them.
+const GLOW: f32 = 2.2;
 
 fn math_scale3(c: [f32; 3], k: f32) -> [f32; 3] {
     [c[0] * k, c[1] * k, c[2] * k]
@@ -292,98 +347,145 @@ fn sun(direction: [f32; 3], color: [f32; 3], intensity: f32) -> Light {
 
 pub const SUN_DIRECTION: [f32; 3] = [0.35, -1.0, -0.45];
 
+/// Bloom on emissive effects, filmic tonemapping and a soft vignette.
+fn base_post() -> PostSettings {
+    PostSettings {
+        exposure: 0.85,
+        bloom: BloomSettings {
+            threshold: 1.25,
+            knee: 0.4,
+            intensity: 0.4,
+            levels: 5,
+            ..BloomSettings::default()
+        },
+        vignette: VignetteSettings {
+            strength: 0.28,
+            ..VignetteSettings::default()
+        },
+        grade: ColorGrade {
+            saturation: 1.08,
+            contrast: 1.06,
+            ..ColorGrade::default()
+        },
+        ..PostSettings::default()
+    }
+}
+
+/// Phase-dependent grading: danger reddens and darkens the edges; losing the
+/// signal drains the colour.
+fn post_settings(game: &Game, time: f32) -> PostSettings {
+    let mut post = base_post();
+    let Some(run) = &game.run else {
+        return post;
+    };
+    match game.phase {
+        Phase::Surface => {
+            let p = &run.player;
+            let danger = (1.0 - p.health / p.max_health).max(0.0);
+            let hurt = p.hurt_ticks as f32 / 18.0;
+            let pulse = 0.8 + 0.2 * (time * 6.0).sin();
+            let edge = ((danger * danger * 0.5 + hurt * 0.4) * pulse).min(0.75);
+            post.vignette.strength = (post.vignette.strength + edge).min(1.0);
+            post.grade.gain = [1.0 + edge * 0.6, 1.0 - edge * 0.45, 1.0 - edge * 0.45];
+        }
+        Phase::Lost { ticks } => {
+            let t = 1.0 - ticks as f32 / LOST_TICKS as f32;
+            post.grade.saturation = 1.0 - t * 0.8;
+            post.vignette.strength = 0.5 + t * 0.4;
+        }
+        _ => {}
+    }
+    post
+}
+
 // ---------------------------------------------------------------------------
 // Ship
 // ---------------------------------------------------------------------------
 
-pub fn ship<'a>(p: &mut Painter<'a>, game: &Game) -> SceneOutput<'a> {
+pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
     let ship = &game.ship;
     let time = p.time;
     p.lights.push(sun(SUN_DIRECTION, [1.0, 0.95, 0.88], 0.55));
-    let hull = [0.30, 0.32, 0.36];
-    let deck = [0.20, 0.22, 0.25];
-    let stripe = [0.95, 0.47, 0.12];
     let built = |room: Room| match room {
         Room::Module(u) => ship.build_progress(u),
+        // Rooms still assembling are absent from the hull until complete.
         _ => 1.0,
     };
-    let room_of = |x: i32, y: i32| {
-        ship.layout.rooms.iter().copied().find(|r| {
-            let (x0, y0, x1, y1) = r.rect();
-            (x0..=x1).contains(&x) && (y0..=y1).contains(&y)
-        })
-    };
-    for ((x, y), tile) in ship.layout.tiles() {
-        let c = [(x as f32 + 0.5) * TILE, (y as f32 + 0.5) * TILE];
-        // Rooms under construction assemble block by block, dropping into place.
-        let nearest_room = room_of(x, y).or_else(|| {
-            [
-                (1, 0),
-                (-1, 0),
-                (0, 1),
-                (0, -1),
-                (1, 1),
-                (-1, -1),
-                (1, -1),
-                (-1, 1),
-            ]
-            .iter()
-            .find_map(|(dx, dy)| room_of(x + dx, y + dy))
-        });
-        let progress = nearest_room.map_or(1.0, built);
-        let delay = tile_hash(x, y) * 0.6;
-        let local = ((progress - delay) / 0.4).clamp(0.0, 1.0);
-        if local <= 0.0 {
-            continue;
-        }
-        let drop = (1.0 - local) * 6.0;
-        let shade = 0.92 + tile_hash(x * 3, y * 7) * 0.12;
-        match tile {
-            ShipTile::Space => {}
-            ShipTile::Floor => {
-                p.block(
-                    at(c, -0.35 + drop) * s(0.99, 0.35, 0.99),
-                    math_scale3(deck, shade),
-                    Surface::Metal,
-                    1.0,
-                );
-                if local < 1.0 {
-                    p.glow(at(c, 0.05 + drop) * s(1.0, 0.02, 1.0), [1.0, 0.6, 0.2]);
-                }
+    // Module rooms assemble block by block, dropping into place, then join
+    // the voxel hull when construction completes.
+    for &(upgrade, _) in &ship.construction {
+        let progress = ship.build_progress(upgrade);
+        for (v, id) in ShipLayout::room_blocks(Room::Module(upgrade)) {
+            let delay = tile_hash(v.x, v.z) * 0.6 + (v.y + 2) as f32 * 0.05;
+            let local = ((progress - delay) / 0.35).clamp(0.0, 1.0);
+            if local <= 0.0 {
+                continue;
             }
-            // Cut-away walls: low enough that the top-down camera sees into rooms.
-            ShipTile::Wall => {
-                p.block(
-                    at(c, 0.6 + drop) * s(1.0, 0.6, 1.0),
-                    math_scale3(hull, shade),
-                    Surface::Metal,
-                    1.0,
-                );
-                p.cube(at(c, 1.22 + drop) * s(1.0, 0.02, 1.0), [0.14, 0.15, 0.17]);
-                p.cube(
-                    at(c, 0.95 + drop) * s(1.01, 0.04, 1.01),
-                    math_scale3(stripe, 0.7),
-                );
-            }
-            ShipTile::Window => {
-                p.block(
-                    at(c, 0.3 + drop) * s(1.0, 0.3, 1.0),
-                    hull,
-                    Surface::Metal,
-                    1.0,
-                );
+            let drop = (1.0 - local) * 6.0;
+            let height = if id == voxel::HULL || id == voxel::WINDOW {
+                0.6
+            } else {
+                1.0
+            };
+            let base = V2::new((v.x as f32 + 0.5) * TILE, (v.z as f32 + 0.5) * TILE);
+            let y = v.y as f32 * TILE + height + drop;
+            let color = match id {
+                voxel::DECK => [0.20, 0.22, 0.25],
+                voxel::WINDOW => [0.35, 0.6, 0.85],
+                voxel::KEEL => [0.18, 0.19, 0.22],
+                _ => [0.30, 0.32, 0.36],
+            };
+            p.block(
+                at(base, y) * s(1.0, height, 1.0),
+                color,
+                Surface::Metal,
+                1.0,
+            );
+            if local < 1.0 {
+                // Welding seam along the top while the block settles.
                 p.ghost(
-                    at(c, 0.85 + drop) * s(0.98, 0.25, 0.1),
-                    [0.1, 0.25, 0.4],
-                    0.0,
+                    at(base, y + height + 0.02) * s(1.0, 0.02, 1.0),
+                    [1.0, 0.6, 0.2],
+                    0.35 * (1.0 - local),
                 );
-                p.cube(at(c, 1.15 + drop) * s(1.0, 0.04, 1.0), hull);
             }
         }
-        // Underside hull for depth against space.
-        if tile != ShipTile::Space {
-            p.cube(at(c, -1.4 + drop) * s(1.0, 0.7, 1.0), [0.18, 0.19, 0.22]);
+    }
+    // Player-built lamps light the deck.
+    let mut overlays = Vec::new();
+    for z in BUILD_AREA.1..=BUILD_AREA.3 {
+        for x in BUILD_AREA.0..=BUILD_AREA.2 {
+            if ship.layout.wall(x, z) == voxel::LAMP {
+                let c = V2::new((x as f32 + 0.5) * TILE, (z as f32 + 0.5) * TILE);
+                p.point([c.x, 1.6, c.y], [1.0, 0.85, 0.6], 1.4, 9.0);
+            }
         }
+    }
+    // Build mode: cursor box and a ghost of the selected block.
+    if let Some(block) = ship.build {
+        let (x, z) = ship.build_cursor();
+        let ok = ship.can_place(&game.profile).is_ok();
+        let color = if ok {
+            [0.4, 1.0, 0.55]
+        } else {
+            [1.0, 0.35, 0.3]
+        };
+        let layer = block.layer();
+        overlays.push(voxels::block_box(
+            x,
+            layer,
+            z,
+            0.02,
+            [color[0], color[1], color[2], 1.0],
+        ));
+        let c = V2::new((x as f32 + 0.5) * TILE, (z as f32 + 0.5) * TILE);
+        let (y, height) = match block {
+            ShipBlock::Deck => (-1.0, 1.0),
+            ShipBlock::Lamp => (0.45, 0.45),
+            _ => (0.6, 0.6),
+        };
+        let pulse = 0.25 + 0.1 * (time * 5.0).sin();
+        p.glass(at(c, y) * s(1.02, height, 1.02), color, pulse);
     }
     for room in &ship.layout.rooms {
         let c = room.center();
@@ -504,8 +606,10 @@ pub fn ship<'a>(p: &mut Painter<'a>, game: &Game) -> SceneOutput<'a> {
                     };
                     p.model(
                         prop,
-                        at([station.pos[0] + off[0], station.pos[1] + off[1]], 0.0)
-                            * s(2.0, 2.0, 2.0),
+                        at(
+                            V2::new(station.pos[0] + off[0], station.pos[1] + off[1]),
+                            0.0,
+                        ) * s(2.0, 2.0, 2.0),
                     );
                 }
             }
@@ -514,36 +618,45 @@ pub fn ship<'a>(p: &mut Painter<'a>, game: &Game) -> SceneOutput<'a> {
     // Decor in the base rooms.
     p.model(
         ModelId::CrateWide,
-        at([5.6 * TILE, 14.6 * TILE], 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(5.6 * TILE, 14.6 * TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         ModelId::Barrel,
-        at([9.4 * TILE, 14.7 * TILE], 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(9.4 * TILE, 14.7 * TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         ModelId::Barrel,
-        at([9.0 * TILE, 15.2 * TILE], 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(9.0 * TILE, 15.2 * TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         ModelId::CrateMedium,
-        at([5.5 * TILE, 1.6 * TILE], 0.0) * Mat4::rotation_y(0.4) * s(2.0, 2.0, 2.0),
+        at(V2::new(5.5 * TILE, 1.6 * TILE), 0.0) * Mat4::rotation_y(0.4) * s(2.0, 2.0, 2.0),
     );
     let pl = &ship.player;
     if !matches!(game.phase, Phase::Descent { .. }) {
         p.astronaut(pl.pos, 0.0, pl.yaw, pl.walk, pl.moving, 0.0, None);
     }
     ship_markers(p, game);
-    space_backdrop(p, game.profile.orbiting, [7.5 * TILE, 8.5 * TILE]);
+    space_backdrop(p, game.profile.orbiting, V2::new(7.5 * TILE, 8.5 * TILE));
     SceneOutput {
         draws: std::mem::take(&mut p.draws),
         lights: std::mem::take(&mut p.lights),
         ambient: [0.08, 0.085, 0.1],
         clear: [0.004, 0.006, 0.014, 1.0],
         shadow_focus: [pl.pos[0], 0.0, pl.pos[1]],
+        transparent: std::mem::take(&mut p.transparent),
+        skinned: std::mem::take(&mut p.skinned),
+        post: post_settings(game, p.time),
+        voxels: Some(VoxelScene {
+            key: WorldKey::Ship,
+            palette: None,
+            overlays,
+            fog: None,
+        }),
     }
 }
 
-fn space_backdrop(p: &mut Painter, orbiting: Option<PlanetId>, center: V2) {
+fn space_backdrop(p: &mut Painter<'_, '_>, orbiting: Option<PlanetId>, center: V2) {
     for i in 0..260 {
         let h = |k: i32| tile_hash(i * 7 + k, i * 13 - k);
         let x = center[0] + (h(1) - 0.5) * 260.0;
@@ -573,7 +686,7 @@ fn space_backdrop(p: &mut Painter, orbiting: Option<PlanetId>, center: V2) {
 // FTL travel
 // ---------------------------------------------------------------------------
 
-pub fn ftl<'a>(p: &mut Painter<'a>, ticks: u32, to: PlanetId) -> SceneOutput<'a> {
+pub fn ftl<'a>(p: &mut Painter<'a, '_>, ticks: u32, to: PlanetId) -> SceneOutput<'a> {
     let progress = 1.0 - ticks as f32 / FTL_TICKS as f32;
     let warp = if progress < 0.25 {
         progress / 0.25 * 0.3
@@ -618,6 +731,16 @@ pub fn ftl<'a>(p: &mut Painter<'a>, ticks: u32, to: PlanetId) -> SceneOutput<'a>
         ambient: [0.1, 0.1, 0.14],
         clear: [0.005, 0.008, 0.02 + warp * 0.03, 1.0],
         shadow_focus: [0.0, 0.0, 0.0],
+        transparent: std::mem::take(&mut p.transparent),
+        skinned: std::mem::take(&mut p.skinned),
+        voxels: None,
+        post: PostSettings {
+            bloom: BloomSettings {
+                intensity: 0.5 + warp * 0.7,
+                ..base_post().bloom
+            },
+            ..base_post()
+        },
     }
 }
 
@@ -626,7 +749,7 @@ pub fn ftl<'a>(p: &mut Painter<'a>, ticks: u32, to: PlanetId) -> SceneOutput<'a>
 // ---------------------------------------------------------------------------
 
 pub fn surface<'a>(
-    p: &mut Painter<'a>,
+    p: &mut Painter<'a, '_>,
     game: &Game,
     run: &Run,
     view_center: V2,
@@ -635,7 +758,7 @@ pub fn surface<'a>(
     let time = p.time;
     p.lights.push(sun(SUN_DIRECTION, palette.sun, 0.85));
     let wide = !matches!(game.phase, Phase::Surface | Phase::Lost { .. });
-    terrain(p, run, &palette, view_center, if wide { 6 } else { 0 });
+    let mining = terrain(p, run, view_center, if wide { 6 } else { 0 });
     let hide_player = matches!(game.phase, Phase::Descent { .. } | Phase::Ascent { .. });
     pods(p, game, run);
     caches(p, run);
@@ -657,7 +780,7 @@ pub fn surface<'a>(
             let root = at(pl.pos, 0.0)
                 * Mat4::rotation_y(pl.yaw)
                 * Mat4::rotation_x((dying * 3.0).min(1.0) * 1.45);
-            p.rig(ModelId::Astronaut, root, 0.0, |_| Mat4::IDENTITY);
+            p.character(ModelId::Astronaut, root, &[Layer::full("idle", 0.0)], 0.0);
         } else {
             let held = run
                 .weapons
@@ -679,7 +802,7 @@ pub fn surface<'a>(
             if pl.dash_ticks > 0 {
                 let back = math::from_yaw(pl.yaw);
                 for i in 1..4 {
-                    let q = math::sub(pl.pos, math::scale(back, i as f32 * 0.5));
+                    let q = pl.pos - (back * i as f32 * 0.5);
                     let k = 0.12 - i as f32 * 0.025;
                     p.glow(at(q, 0.9) * s(k, k, k), [0.5, 0.85, 1.0]);
                 }
@@ -705,12 +828,29 @@ pub fn surface<'a>(
         ambient: palette.ambient,
         clear: [palette.sky[0], palette.sky[1], palette.sky[2], 1.0],
         shadow_focus: [view_center[0], 0.0, view_center[1]],
+        transparent: std::mem::take(&mut p.transparent),
+        skinned: std::mem::take(&mut p.skinned),
+        post: post_settings(game, time),
+        voxels: Some(VoxelScene {
+            key: WorldKey::Planet {
+                planet: run.planet,
+                drop: game.profile.stats.drops,
+            },
+            palette: Some((run.planet, palette)),
+            overlays: mining.into_iter().collect(),
+            fog: Some(Fog {
+                color: palette.sky.map(super::srgb_to_linear),
+                start: 38.0,
+                end: 95.0,
+            }),
+        }),
     }
 }
 
-fn terrain(p: &mut Painter, run: &Run, palette: &Palette, center: V2, extra: i32) {
+/// Decorations on the voxel terrain (pebbles, ore crystals and their glow)
+/// and the overlay marking the block being drilled.
+fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option<OverlayBox> {
     let (cx, cy) = Terrain::tile_of(center);
-    let mining = run.player.mining;
     let mut glows: Vec<(f32, [f32; 3], [f32; 3])> = Vec::new();
     for y in cy - 10 - extra..=cy + 8 + extra {
         for x in cx - 12 - extra..=cx + 12 + extra {
@@ -718,73 +858,37 @@ fn terrain(p: &mut Painter, run: &Run, palette: &Palette, center: V2, extra: i32
             let c = Terrain::center_of(x, y);
             let h = tile_hash(x, y);
             match tile {
-                Tile::Floor => {
-                    let base = if (x + y) % 2 == 0 {
-                        palette.floor
-                    } else {
-                        palette.floor_alt
-                    };
-                    p.block(
-                        at(c, -0.2) * s(1.0, 0.2, 1.0),
-                        math_scale3(base, 0.9 + h * 0.2),
-                        Surface::Rock,
-                        1.0,
+                // Scattered pebbles on open ground.
+                Tile::Floor if h > 0.9 => {
+                    let off = V2::new(
+                        (tile_hash(x * 5, y) - 0.5) * 1.4,
+                        (tile_hash(x, y * 5) - 0.5) * 1.4,
                     );
-                    // Scattered pebbles and tufts.
-                    if h > 0.9 {
-                        let off = [
-                            (tile_hash(x * 5, y) - 0.5) * 1.4,
-                            (tile_hash(x, y * 5) - 0.5) * 1.4,
-                        ];
-                        let size = 0.12 + h * 0.12;
-                        p.cube(
-                            at(math::add(c, off), size * 0.5)
-                                * Mat4::rotation_y(h * 6.0)
-                                * s(size, size * 0.6, size),
-                            math_scale3(mix3(palette.rock, palette.rock_top, h), 0.6),
-                        );
-                    }
-                }
-                Tile::Bedrock => {
-                    p.block(
-                        at(c, 1.6) * s(1.0, 1.6, 1.0),
-                        palette.bedrock,
-                        Surface::Rock,
-                        1.0,
-                    );
-                }
-                Tile::Rock { .. } | Tile::Ore { .. } => {
-                    let (shake, crack) = match mining {
-                        Some(m) if m.tile == (x, y) => (
-                            (p.time * 50.0).sin() * 0.03 * (1.0 + m.progress),
-                            m.progress,
-                        ),
-                        _ => (0.0, 0.0),
-                    };
-                    let tone = 0.85 + h * 0.25 - crack * 0.35;
-                    let height = 1.1 + (h - 0.5) * 0.25;
-                    let body = at([c[0] + shake, c[1]], height) * s(1.0, height, 1.0);
-                    p.block(body, math_scale3(palette.rock, tone), Surface::Rock, 1.0);
+                    let size = 0.12 + h * 0.12;
                     p.cube(
-                        at([c[0] + shake, c[1]], height * 2.0 + 0.06) * s(1.0, 0.07, 1.0),
-                        math_scale3(palette.rock_top, 0.9 + h * 0.2),
+                        at(c + off, size * 0.5)
+                            * Mat4::rotation_y(h * 6.0)
+                            * s(size, size * 0.6, size),
+                        [0.25, 0.24, 0.22],
                     );
-                    if let Tile::Ore { material, .. } = tile {
-                        let (id, light) = match material {
-                            Material::Ferrite => (ModelId::FerriteOre, None),
-                            Material::Lumite => (ModelId::LumiteOre, Some([0.3, 0.85, 1.0])),
-                            Material::Voidstone => (ModelId::VoidstoneOre, Some([0.65, 0.3, 1.0])),
-                        };
-                        p.model(id, body);
-                        if let Some(color) = light {
-                            glows.push((
-                                math::distance_sq(c, run.player.pos),
-                                [c[0], height * 2.0 + 0.8, c[1]],
-                                color,
-                            ));
-                        }
+                }
+                Tile::Ore { material, .. } => {
+                    let (id, light) = match material {
+                        Material::Ferrite => (ModelId::FerriteOre, None),
+                        Material::Lumite => (ModelId::LumiteOre, Some([0.3, 0.85, 1.0])),
+                        Material::Voidstone => (ModelId::VoidstoneOre, Some([0.65, 0.3, 1.0])),
+                    };
+                    // Crystals erupt from the ore block (the [-1, 1] cube).
+                    p.model(id, at(c, TILE * 0.5) * s(1.02, 1.02, 1.02));
+                    if let Some(color) = light {
+                        glows.push((
+                            c.distance_squared(run.player.pos),
+                            [c[0], TILE + 0.8, c[1]],
+                            color,
+                        ));
                     }
                 }
+                _ => {}
             }
         }
     }
@@ -793,11 +897,23 @@ fn terrain(p: &mut Painter, run: &Run, palette: &Palette, center: V2, extra: i32
         let pulse = 1.0 + (p.time * 2.0 + pos[0]).sin() * 0.15;
         p.point(pos, color, 1.6 * pulse, 7.0);
     }
+    // The block being drilled: an outline that heats up with progress.
+    run.player.mining.map(|m| {
+        let k = m.progress.clamp(0.0, 1.0);
+        let jitter = (p.time * 50.0).sin() * 0.01 * (1.0 + k);
+        voxels::block_box(
+            m.tile.0,
+            0,
+            m.tile.1,
+            0.02 + jitter.abs(),
+            [1.0, 0.75 - 0.5 * k, 0.3 - 0.25 * k, 1.0],
+        )
+    })
 }
 
-fn pods(p: &mut Painter, game: &Game, run: &Run) {
+fn pods(p: &mut Painter<'_, '_>, game: &Game, run: &Run) {
     let landing = run.landing;
-    let flame = |p: &mut Painter, pos: V2, y: f32, power: f32| {
+    let flame = |p: &mut Painter<'_, '_>, pos: V2, y: f32, power: f32| {
         let flicker = 0.85 + 0.15 * (p.time * 37.0).sin();
         p.ghost(
             at(pos, y - 1.0 * power) * s(0.45, 1.2 * power * flicker, 0.45),
@@ -812,7 +928,7 @@ fn pods(p: &mut Painter, game: &Game, run: &Run) {
             14.0,
         );
     };
-    let pod = |p: &mut Painter, pos: V2, y: f32, door: f32| {
+    let pod = |p: &mut Painter<'_, '_>, pos: V2, y: f32, door: f32| {
         p.rig(ModelId::DropPod, at(pos, y), 0.0, |n| {
             if n == "door" {
                 Mat4::rotation_y(-door)
@@ -829,10 +945,10 @@ fn pods(p: &mut Painter, game: &Game, run: &Run) {
             // Atmospheric streaks rushing past.
             for i in 0..30 {
                 let k = tile_hash(i, 99);
-                let off = [(k - 0.5) * 8.0, (tile_hash(99, i) - 0.5) * 8.0];
+                let off = V2::new((k - 0.5) * 8.0, (tile_hash(99, i) - 0.5) * 8.0);
                 let y = h + ((p.time * 40.0 + k * 30.0) % 30.0) - 5.0;
                 p.ghost(
-                    at(math::add(landing, off), y) * s(0.04, 2.0, 0.04),
+                    at(landing + off, y) * s(0.04, 2.0, 0.04),
                     [1.0, 0.9, 0.8],
                     0.35,
                 );
@@ -890,15 +1006,12 @@ fn pods(p: &mut Painter, game: &Game, run: &Run) {
     }
 }
 
-fn zone_ring(p: &mut Painter, pos: V2, progress: f32, color: [f32; 3]) {
+fn zone_ring(p: &mut Painter<'_, '_>, pos: V2, progress: f32, color: [f32; 3]) {
     let n = 28;
     for i in 0..n {
         let a = i as f32 / n as f32 * std::f32::consts::TAU + p.time * 0.4;
         let lit = (i as f32 / n as f32) < progress;
-        let point = [
-            pos[0] + a.sin() * EXTRACTION_RADIUS,
-            pos[1] + a.cos() * EXTRACTION_RADIUS,
-        ];
+        let point = pos + V2::new(a.sin(), a.cos()) * EXTRACTION_RADIUS;
         let c = if lit { color } else { math_scale3(color, 0.25) };
         p.glow(
             at(point, 0.08) * Mat4::rotation_y(a) * s(0.32, 0.05, 0.12),
@@ -907,7 +1020,7 @@ fn zone_ring(p: &mut Painter, pos: V2, progress: f32, color: [f32; 3]) {
     }
 }
 
-fn caches(p: &mut Painter, run: &Run) {
+fn caches(p: &mut Painter<'_, '_>, run: &Run) {
     for (i, c) in run.caches.iter().enumerate() {
         let yaw = i as f32 * 1.3;
         if c.opened {
@@ -931,7 +1044,7 @@ fn caches(p: &mut Painter, run: &Run) {
     }
 }
 
-fn pickups(p: &mut Painter, run: &Run) {
+fn pickups(p: &mut Painter<'_, '_>, run: &Run) {
     for (i, pk) in run.pickups.iter().enumerate() {
         let spin = Mat4::rotation_y(p.time * 3.0 + i as f32);
         let bob = (p.time * 4.0 + i as f32 * 0.7).sin() * 0.08;
@@ -956,7 +1069,7 @@ fn pickups(p: &mut Painter, run: &Run) {
     }
 }
 
-fn enemies(p: &mut Painter, run: &Run) {
+fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
     for e in &run.enemies {
         let rise = if e.spawn_ticks > 0 {
             -(e.spawn_ticks as f32 / 24.0) * 2.2
@@ -969,69 +1082,27 @@ fn enemies(p: &mut Painter, run: &Run) {
         } else {
             0.0
         };
-        let swing = (e.walk * 2.0).sin() * 0.6;
         let lunge = e.attack_ticks as f32 / 14.0;
-        match e.kind {
-            EnemyKind::Husk | EnemyKind::Brute => {
-                let id = if e.kind == EnemyKind::Husk {
-                    ModelId::Husk
-                } else {
-                    ModelId::Brute
-                };
-                let sway = (e.walk * 1.0).sin() * 0.08;
-                p.rig(id, root * rot_z(sway), flash, |n| match n {
-                    "leg_l" => Mat4::rotation_x(swing),
-                    "leg_r" => Mat4::rotation_x(-swing),
-                    "arm_l" => Mat4::rotation_x(-1.35 - lunge * 0.6 + swing * 0.15),
-                    "arm_r" => Mat4::rotation_x(-1.35 - lunge * 0.6 - swing * 0.15),
-                    "head" => rot_z(sway * 2.0),
-                    "torso" => Mat4::rotation_x(0.12 + lunge * 0.25),
-                    _ => Mat4::IDENTITY,
-                });
-            }
-            EnemyKind::Skitter => {
-                let gait = e.walk * 3.5;
-                p.rig(
-                    ModelId::Skitter,
-                    root * t(0.0, (gait * 2.0).sin().abs() * 0.05, 0.0),
-                    flash,
-                    |n| {
-                        if let Some(rest) = n.strip_prefix("leg_") {
-                            let side = if rest.starts_with('l') { 1.0 } else { -1.0 };
-                            let idx: f32 = rest[1..].parse().unwrap_or(0.0);
-                            let phase = gait
-                                + idx * 2.1
-                                + if side > 0.0 {
-                                    0.0
-                                } else {
-                                    std::f32::consts::PI
-                                };
-                            Mat4::rotation_y(phase.sin() * 0.35)
-                                * rot_z(side * phase.cos().max(0.0) * 0.25)
-                        } else if n == "head" {
-                            Mat4::rotation_x(-lunge * 0.5)
-                        } else {
-                            Mat4::IDENTITY
-                        }
-                    },
-                );
-            }
-            EnemyKind::Bloater => {
-                let pulse = 1.0 + (p.time * 6.0 + e.id as f32).sin() * 0.05;
-                let danger = (1.0 - (math::distance(e.pos, run.player.pos) / 5.0)).clamp(0.0, 1.0);
-                p.rig(
-                    ModelId::Bloater,
-                    root,
-                    flash + danger * 0.4 * ((p.time * 14.0).sin() * 0.5 + 0.5),
-                    |n| match n {
-                        "body" => s(pulse, pulse, pulse),
-                        "leg_l" => Mat4::rotation_x(swing),
-                        "leg_r" => Mat4::rotation_x(-swing),
-                        _ => Mat4::IDENTITY,
-                    },
-                );
-            }
+        let mut layers = vec![Layer::full("walk", e.walk)];
+        let id = match e.kind {
+            EnemyKind::Husk => ModelId::Husk,
+            EnemyKind::Brute => ModelId::Brute,
+            EnemyKind::Skitter => ModelId::Skitter,
+            EnemyKind::Bloater => ModelId::Bloater,
+        };
+        let mut glow = flash;
+        if e.kind == EnemyKind::Bloater {
+            layers.push(Layer::full("pulse", p.time + e.id as f32 * 0.37));
+            let danger = (1.0 - (e.pos.distance(run.player.pos) / 5.0)).clamp(0.0, 1.0);
+            glow += danger * 0.4 * ((p.time * 14.0).sin() * 0.5 + 0.5);
+        } else if lunge > 0.0 {
+            layers.push(Layer {
+                clip: "attack",
+                time: 0.0,
+                weight: lunge,
+            });
         }
+        p.character(id, root, &layers, glow);
     }
     for c in &run.corpses {
         let k = (c.ticks as f32 / 14.0).min(1.0);
@@ -1043,11 +1114,11 @@ fn enemies(p: &mut Painter, run: &Run) {
             EnemyKind::Skitter => ModelId::Skitter,
             EnemyKind::Bloater => continue,
         };
-        p.rig(id, root, 0.0, |_| Mat4::IDENTITY);
+        p.character(id, root, &[Layer::full("idle", 0.0)], 0.0);
     }
 }
 
-fn projectiles(p: &mut Painter, run: &Run) {
+fn projectiles(p: &mut Painter<'_, '_>, run: &Run) {
     let mut lights = 0;
     for pr in &run.projectiles {
         match pr.kind {
@@ -1115,7 +1186,7 @@ fn projectiles(p: &mut Painter, run: &Run) {
     }
 }
 
-fn effects(p: &mut Painter, run: &Run) {
+fn effects(p: &mut Painter<'_, '_>, run: &Run) {
     for b in &run.blasts {
         let t01 = 1.0 - b.ttl as f32 / b.total as f32;
         let (color, alpha) = match b.kind {
@@ -1130,7 +1201,7 @@ fn effects(p: &mut Painter, run: &Run) {
         let n = 18;
         for i in 0..n {
             let a = i as f32 / n as f32 * std::f32::consts::TAU + b.pos[0];
-            let q = [b.pos[0] + a.sin() * r, b.pos[1] + a.cos() * r];
+            let q = b.pos + V2::new(a.sin(), a.cos()) * r;
             let k = 0.18 * fade + 0.04;
             p.glow(
                 at(q, 0.4 + t01 * 0.8) * Mat4::rotation_y(a) * s(k, k, k * 2.5),
@@ -1139,14 +1210,12 @@ fn effects(p: &mut Painter, run: &Run) {
         }
         let core = b.radius * 0.45 * fade;
         if core > 0.02 {
-            let shell = p.models.get(ModelId::Planet);
-            for mut d in shell.draws(at(b.pos, 0.6) * s(core, core * 0.8, core)) {
-                d.material.lit.base.tint = [0.0, 0.0, 0.0, 1.0];
-                d.material.lit.emissive = math_scale3(color, 1.2);
-                d.material.lit.shading = ShadingModel::Unlit;
-                d.material.receives_shadows = false;
-                p.draws.push(d);
-            }
+            p.halo(
+                at(b.pos, 0.6) * s(core, core * 0.8, core),
+                color,
+                0.9 * fade,
+            );
+            p.halo(at(b.pos, 0.4) * s(r, r * 0.35, r), color, 0.25 * fade);
         }
         p.point([b.pos[0], 1.5, b.pos[1]], color, 6.0 * fade, b.radius * 3.0);
     }
@@ -1168,7 +1237,7 @@ fn effects(p: &mut Painter, run: &Run) {
     }
 }
 
-fn objective_markers(p: &mut Painter, game: &Game, run: &Run) {
+fn objective_markers(p: &mut Painter<'_, '_>, game: &Game, run: &Run) {
     let Some(target) = game.tutorial_prompt().and_then(|pr| pr.target) else {
         return;
     };
@@ -1186,7 +1255,7 @@ fn objective_markers(p: &mut Painter, game: &Game, run: &Run) {
 }
 
 /// Markers for ship tutorial steps (drawn in ship space).
-pub fn ship_markers(p: &mut Painter, game: &Game) {
+pub fn ship_markers(p: &mut Painter<'_, '_>, game: &Game) {
     let Some(target) = game.tutorial_prompt().and_then(|pr| pr.target) else {
         return;
     };

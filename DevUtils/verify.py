@@ -17,7 +17,15 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 # Ticks chosen to land on distinct phases with the default headless seed.
-SHOTS = {"ship": 150, "ftl": 300, "descent": 520, "surface": 2400, "debrief": 2749}
+SHOTS = {
+    "ship": 150,
+    "ftl": 300,
+    "descent": 660,
+    "surface": 2400,
+    "debrief": 3247,
+    "construct": 3395,
+    "build": 5470,
+}
 
 
 def step(title: str, command: list[str]) -> str:

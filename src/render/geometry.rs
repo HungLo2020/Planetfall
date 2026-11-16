@@ -1,14 +1,12 @@
-//! Procedural GPU resources: a unit cube and small tiling textures.
+//! Procedural GPU resources: primitive meshes and small tiling textures.
 
 use quasar_frame::{Gpu, GraphicsResult, texture_2d};
-use quasar_render_3d::{Mesh, Vertex};
+use quasar_render_3d::{Mesh, MeshData};
 use vulkanic_gal::{TexelCopyBufferLayout, Texture, TextureFormat, TextureUsages, TextureView};
 
 pub struct Textures3D {
     _white: Texture,
     pub white: TextureView,
-    _rock: Texture,
-    pub rock_normal: TextureView,
     _metal: Texture,
     pub metal_normal: TextureView,
 }
@@ -16,12 +14,6 @@ pub struct Textures3D {
 impl Textures3D {
     pub fn new(gal: &Gpu) -> GraphicsResult<Self> {
         let (_white, white) = upload_rgba(gal, 1, 1, &[255; 4])?;
-        let (_rock, rock_normal) = upload_normal(gal, 64, |u, v| {
-            // Chunky voxel-like rock: layered value noise with blocky steps.
-            let n = |x: f32, y: f32, f: f32| value_noise(x * f, y * f);
-            let h = n(u, v, 4.0) * 0.6 + n(u, v, 9.0) * 0.3 + n(u, v, 17.0) * 0.1;
-            (h * 6.0).floor() / 6.0 * 0.05
-        })?;
         let (_metal, metal_normal) = upload_normal(gal, 64, |u, v| {
             // Deck plating: panel seams and rivets.
             let seam = |t: f32| {
@@ -42,8 +34,6 @@ impl Textures3D {
         Ok(Self {
             _white,
             white,
-            _rock,
-            rock_normal,
             _metal,
             metal_normal,
         })
@@ -58,17 +48,7 @@ fn hash(x: i32, y: i32) -> f32 {
     (h & 0xFFFF) as f32 / 65535.0
 }
 
-/// Tileable (period 64 lattice) value noise in 0..1.
-fn value_noise(x: f32, y: f32) -> f32 {
-    let (xi, yi) = (x.floor() as i32, y.floor() as i32);
-    let (fx, fy) = (x - xi as f32, y - yi as f32);
-    let s = |t: f32| t * t * (3.0 - 2.0 * t);
-    let p = |a: i32, b: i32| hash(a.rem_euclid(64), b.rem_euclid(64));
-    let a = p(xi, yi) + (p(xi + 1, yi) - p(xi, yi)) * s(fx);
-    let b = p(xi, yi + 1) + (p(xi + 1, yi + 1) - p(xi, yi + 1)) * s(fx);
-    a + (b - a) * s(fy)
-}
-
+/// Deterministic 0..1 hash of a tile, for per-block variation.
 pub fn tile_hash(x: i32, y: i32) -> f32 {
     hash(x, y)
 }
@@ -124,62 +104,12 @@ fn upload_rgba(
     Ok((texture, view))
 }
 
-/// Unit cube spanning [-1, 1] with per-face UVs.
+/// Unit cube spanning [-1, 1] with per-face UVs (`quasar-render-3d` primitive).
 pub fn cube(gal: &Gpu) -> GraphicsResult<Mesh> {
-    let faces: [([f32; 3], [[f32; 3]; 4]); 6] = [
-        (
-            [0., 0., 1.],
-            [[-1., -1., 1.], [1., -1., 1.], [1., 1., 1.], [-1., 1., 1.]],
-        ),
-        (
-            [0., 0., -1.],
-            [
-                [1., -1., -1.],
-                [-1., -1., -1.],
-                [-1., 1., -1.],
-                [1., 1., -1.],
-            ],
-        ),
-        (
-            [1., 0., 0.],
-            [[1., -1., 1.], [1., -1., -1.], [1., 1., -1.], [1., 1., 1.]],
-        ),
-        (
-            [-1., 0., 0.],
-            [
-                [-1., -1., -1.],
-                [-1., -1., 1.],
-                [-1., 1., 1.],
-                [-1., 1., -1.],
-            ],
-        ),
-        (
-            [0., 1., 0.],
-            [[-1., 1., 1.], [1., 1., 1.], [1., 1., -1.], [-1., 1., -1.]],
-        ),
-        (
-            [0., -1., 0.],
-            [
-                [-1., -1., -1.],
-                [1., -1., -1.],
-                [1., -1., 1.],
-                [-1., -1., 1.],
-            ],
-        ),
-    ];
-    let uvs = [[0., 1.], [1., 1.], [1., 0.], [0., 0.]];
-    let mut vertices = Vec::with_capacity(24);
-    let mut indices = Vec::with_capacity(36);
-    for (normal, corners) in faces {
-        let base = vertices.len() as u32;
-        for (position, uv) in corners.into_iter().zip(uvs) {
-            vertices.push(Vertex {
-                position,
-                normal,
-                uv,
-            });
-        }
-        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-    }
-    Mesh::upload(gal, &vertices, &indices)
+    MeshData::cuboid([1.0; 3]).upload(gal)
+}
+
+/// Unit-radius sphere for blasts and glows.
+pub fn sphere(gal: &Gpu) -> GraphicsResult<Mesh> {
+    MeshData::sphere(1.0, 12, 16).upload(gal)
 }

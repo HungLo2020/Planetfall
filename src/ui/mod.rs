@@ -6,9 +6,9 @@ pub mod overlay;
 
 use quasar_text::{FontData, FontStack};
 use quasar_ui::{
-    Color, Edges, Layer as UiLayer, LayoutItem, Length, NodeId, PanelLayout, ShapedTextMeasure,
-    StackDirection, TextMeasure, TextRenderer, TextRendererOptions, TextStyle, Theme, Ui, UiText,
-    UiTextStyles, Widget,
+    Color, Edges, Layer as UiLayer, LayoutItem, Length, NodeId, NodeStyle, PanelLayout,
+    ShapedTextMeasure, StackDirection, TextMeasure, TextRenderer, TextRendererOptions, TextStyle,
+    Theme, Ui, UiText, UiTextStyles, Widget,
 };
 use std::cell::RefCell;
 use std::path::Path;
@@ -44,7 +44,7 @@ pub fn theme() -> Theme {
     let mut t = Theme::modern();
     t.name = "planetfall".into();
     t.background = Color::rgba(6, 10, 16, 215);
-    // Panel backgrounds are painted by the renderer from `Layer::boxes`.
+    // Structural panels are invisible; cards and dimmers set a `NodeStyle`.
     t.panel = Color::TRANSPARENT;
     t.panel_alt = Color::TRANSPARENT;
     t.text = Color::rgb(226, 236, 240);
@@ -64,86 +64,29 @@ pub fn theme() -> Theme {
     t
 }
 
-/// Replace input placeholders with labels for the active device.
-pub fn device_text(text: &str, gamepad: bool) -> String {
-    let labels: [(&str, &str, &str); 4] = [
-        ("{move}", "WASD", "the left stick"),
-        ("{interact}", "[E]", "(A)"),
-        ("{dash}", "[Space]", "(B)"),
-        ("{extract}", "[F]", "(Y)"),
-    ];
-    let mut out = text.to_owned();
-    for (key, kb, pad) in labels {
-        out = out.replace(key, if gamepad { pad } else { kb });
-    }
-    out
-}
+pub const CARD: Color = Color::rgba(10, 18, 28, 218);
+pub const CARD_BORDER: Color = Color::rgba(255, 142, 48, 150);
+pub const DIM: Color = Color::rgba(0, 3, 8, 170);
 
-/// Greedy word wrap against the real shaped font metrics.
-pub fn wrap(
-    measure: &dyn TextMeasure,
-    text: &str,
-    style: TextStyle,
-    size: f32,
-    width: f32,
-) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in text.split('\n') {
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            let candidate = if line.is_empty() {
-                word.to_owned()
-            } else {
-                format!("{line} {word}")
-            };
-            if !line.is_empty() && measure.measure_style(&candidate, style, size).x > width {
-                lines.push(std::mem::take(&mut line));
-                line = word.to_owned();
-            } else {
-                line = candidate;
-            }
-        }
-        lines.push(line);
-    }
-    lines
-}
-
-/// A painted rectangle behind a laid-out UI node.
-#[derive(Clone, Copy, Debug)]
-pub struct UiBox {
-    pub node: NodeId,
-    pub fill: [u8; 4],
-    pub border: Option<[u8; 4]>,
-}
-
-pub const CARD: [u8; 4] = [10, 18, 28, 218];
-pub const CARD_BORDER: [u8; 4] = [255, 142, 48, 150];
-pub const DIM: [u8; 4] = [0, 3, 8, 170];
-
-/// One UI tree plus the panel backgrounds to paint under it.
+/// One UI tree drawn over the 3D scene.
 pub struct Layer {
     pub ui: Ui,
-    pub boxes: Vec<UiBox>,
 }
 
 /// Small builder helpers shared by the HUD and menus.
-pub struct Builder<'m> {
+pub struct Builder {
     pub ui: Ui,
-    pub boxes: Vec<UiBox>,
-    pub measure: &'m dyn TextMeasure,
-    pub scale: f32,
 }
 
-impl<'m> Builder<'m> {
-    pub fn new(measure: &'m dyn TextMeasure, scale: f32) -> Self {
+impl Default for Builder {
+    fn default() -> Self {
         Self {
             ui: Ui::new(theme()),
-            boxes: Vec::new(),
-            measure,
-            scale,
         }
     }
+}
 
+impl Builder {
     /// Full-screen root; `dim` darkens the game behind a menu.
     pub fn root(&mut self, modal: bool) -> NodeId {
         let id = self.ui.add_root(
@@ -158,11 +101,7 @@ impl<'m> Builder<'m> {
             modal,
         );
         if modal {
-            self.boxes.push(UiBox {
-                node: id,
-                fill: DIM,
-                border: None,
-            });
+            let _ = self.ui.set_style(id, Some(NodeStyle::filled(DIM)));
         }
         id
     }
@@ -170,11 +109,10 @@ impl<'m> Builder<'m> {
     /// A card panel with the standard background and accent edge.
     pub fn card(&mut self, parent: NodeId, item: LayoutItem, gap: f32, padding: f32) -> NodeId {
         let id = self.panel(parent, item, gap, padding);
-        self.boxes.push(UiBox {
-            node: id,
-            fill: CARD,
-            border: Some(CARD_BORDER),
-        });
+        let style = NodeStyle::filled(CARD)
+            .with_border(1.5, CARD_BORDER)
+            .with_radius(3.0);
+        let _ = self.ui.set_style(id, Some(style));
         id
     }
 
@@ -197,24 +135,29 @@ impl<'m> Builder<'m> {
     }
 
     pub fn label(&mut self, parent: NodeId, text: impl Into<String>, style: TextStyle) -> NodeId {
-        self.ui
-            .add_child(
-                parent,
-                Widget::Label {
-                    text: UiText::literal(text.into()),
-                    style,
-                },
-                LayoutItem::size(Length::Fill, Length::Auto),
-            )
-            .expect("valid parent")
+        self.add_label(parent, Widget::label(UiText::literal(text.into()), style))
     }
 
-    /// Wrapped paragraph as one label per line.
-    pub fn paragraph(&mut self, parent: NodeId, text: &str, style: TextStyle, width: f32) {
-        let size = self.ui.theme().size(style) * self.scale;
-        for line in wrap(self.measure, text, style, size, width * self.scale) {
-            self.label(parent, line, style);
-        }
+    /// A label that word-wraps at `width` logical units. (quasar-ui 0.2.24
+    /// measures wrapped labels against the screen, not a fixed-width parent,
+    /// so the card's inner width is passed explicitly.)
+    pub fn paragraph(
+        &mut self,
+        parent: NodeId,
+        text: &str,
+        style: TextStyle,
+        width: f32,
+    ) -> NodeId {
+        self.add_label(
+            parent,
+            Widget::wrapped_label(UiText::literal(text), style, Some(width)),
+        )
+    }
+
+    fn add_label(&mut self, parent: NodeId, widget: Widget) -> NodeId {
+        self.ui
+            .add_child(parent, widget, LayoutItem::size(Length::Fill, Length::Auto))
+            .expect("valid parent")
     }
 
     pub fn progress(
@@ -262,10 +205,18 @@ impl<'m> Builder<'m> {
     }
 
     pub fn finish(self) -> Layer {
-        Layer {
-            ui: self.ui,
-            boxes: self.boxes,
-        }
+        Layer { ui: self.ui }
+    }
+
+    /// Finish and lay the tree out for a `size` viewport (physical pixels),
+    /// ready to draw. Layers that are not driven by `Ui::update` every frame
+    /// (the HUD, offscreen title cards) must be laid out this way, or they
+    /// have no layout entries and draw nothing.
+    pub fn finish_laid_out(self, size: (f32, f32), scale: f32, measure: &dyn TextMeasure) -> Layer {
+        let mut layer = self.finish();
+        let viewport = quasar_ui::Rect::new(0.0, 0.0, size.0, size.1);
+        layer.ui.layout(viewport, scale, Edges::ZERO, measure);
+        layer
     }
 }
 
@@ -291,40 +242,5 @@ pub fn format_cost(m: &planetfall_sim::content::Materials) -> String {
         "free".into()
     } else {
         parts.join(" · ")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct Mono;
-    impl TextMeasure for Mono {
-        fn measure(&self, text: &str, size: f32) -> quasar_ui::Vec2 {
-            quasar_ui::Vec2::new(text.chars().count() as f32 * size * 0.5, size)
-        }
-    }
-
-    #[test]
-    fn wraps_to_width() {
-        let lines = wrap(
-            &Mono,
-            "one two three four five six",
-            TextStyle::Body,
-            10.0,
-            60.0,
-        );
-        assert!(lines.len() > 1);
-        assert!(
-            lines
-                .iter()
-                .all(|l| l.chars().count() as f32 * 5.0 <= 60.0 || !l.contains(' '))
-        );
-    }
-
-    #[test]
-    fn device_labels() {
-        assert_eq!(device_text("press {interact}", false), "press [E]");
-        assert_eq!(device_text("press {interact}", true), "press (A)");
     }
 }

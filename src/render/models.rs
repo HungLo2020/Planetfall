@@ -1,6 +1,7 @@
 //! Model registry: GLB files decoded by `quasar-assets` and uploaded with
 //! `quasar-render-3d`'s model adapter.
 
+use quasar_assets::model::Model3D;
 use quasar_assets::{AssetServer, CacheBudget, GltfLoader};
 use quasar_frame::{Gpu, GraphicsResult, error};
 use quasar_render_3d::{
@@ -60,6 +61,8 @@ models! {
 
 pub struct Models {
     gpu: BTreeMap<ModelId, UploadedModel>,
+    /// Decoded skinned characters, kept for their skins and clips.
+    sources: BTreeMap<ModelId, Model3D>,
 }
 
 impl Models {
@@ -68,12 +71,14 @@ impl Models {
         server
             .mount_file("", root)
             .map_err(|e| error(format!("mount {}: {e}", root.display())))?;
+        // Characters carry skins and clips; Kenney crates ship opening clips
+        // that are imported but never played.
         server.register(GltfLoader {
-            // Kenney crates ship opening clips; import their rest pose only.
             allow_animation_default_pose: true,
-            ..GltfLoader::default()
+            ..GltfLoader::animated()
         });
         let mut gpu = BTreeMap::new();
+        let mut sources = BTreeMap::new();
         for &id in ModelId::ALL {
             let model = server
                 .load::<GltfLoader>(id.file())
@@ -87,12 +92,20 @@ impl Models {
                 },
             )?;
             gpu.insert(id, uploaded);
+            if super::skins::CHARACTERS.contains(&id) {
+                sources.insert(id, (*model).clone());
+            }
         }
-        Ok(Self { gpu })
+        Ok(Self { gpu, sources })
     }
 
     pub fn get(&self, id: ModelId) -> &UploadedModel {
         &self.gpu[&id]
+    }
+
+    /// The decoded glTF of a skinned character.
+    pub fn source(&self, id: ModelId) -> &Model3D {
+        &self.sources[&id]
     }
 
     /// Samplers must be installed on each renderer before drawing.
@@ -123,15 +136,20 @@ mod tests {
     use super::*;
 
     /// Every model decodes on the CPU (no GPU needed) and has drawable parts.
-    #[test]
-    fn all_models_decode() {
+    fn server() -> AssetServer {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
         server.mount_file("", &root).unwrap();
         server.register(GltfLoader {
             allow_animation_default_pose: true,
-            ..GltfLoader::default()
+            ..GltfLoader::animated()
         });
+        server
+    }
+
+    #[test]
+    fn all_models_decode() {
+        let mut server = server();
         for &id in ModelId::ALL {
             let model = server
                 .load::<GltfLoader>(id.file())
@@ -144,31 +162,64 @@ mod tests {
         }
     }
 
+    /// Characters are skinned with the clips the painter plays; props keep
+    /// the named pivots the renderer turns.
     #[test]
-    fn rigs_expose_their_joints() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
-        let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
-        server.mount_file("", &root).unwrap();
-        server.register(GltfLoader::default());
-        for (id, joints) in [
+    fn rigs_expose_their_joints_and_clips() {
+        use quasar_animation::model::{clips_from_model, skeleton_from_model};
+        let mut server = server();
+        for (id, joints, clips) in [
             (
                 ModelId::Astronaut,
                 &["leg_l", "leg_r", "arm_l", "arm_r", "head", "torso"][..],
+                &["idle", "walk", "aim"][..],
             ),
             (
                 ModelId::Husk,
-                &["leg_l", "leg_r", "arm_l", "arm_r", "head"][..],
+                &["leg_l", "arm_r", "head"][..],
+                &["idle", "walk", "attack"][..],
             ),
-            (ModelId::Skitter, &["leg_l0", "leg_r2", "head"][..]),
-            (ModelId::DropPod, &["door", "thruster"][..]),
+            (
+                ModelId::Brute,
+                &["leg_r", "arm_l"][..],
+                &["idle", "walk", "attack"][..],
+            ),
+            (
+                ModelId::Skitter,
+                &["leg_l0", "leg_r2", "head"][..],
+                &["idle", "walk", "attack"][..],
+            ),
+            (
+                ModelId::Bloater,
+                &["body", "leg_l"][..],
+                &["walk", "pulse"][..],
+            ),
         ] {
             let model = server.load::<GltfLoader>(id.file()).unwrap();
+            let (skeleton, binding) = skeleton_from_model(&model, 0).unwrap();
             for joint in joints {
                 assert!(
-                    model.instances.iter().any(|i| i.name == *joint),
-                    "{id:?} missing {joint}"
+                    skeleton.bones().iter().any(|b| b.name == *joint),
+                    "{id:?} missing joint {joint}"
                 );
             }
+            assert_eq!(binding.inverse_bind_matrices.len(), skeleton.bones().len());
+            let names: Vec<String> = clips_from_model(&model)
+                .unwrap()
+                .iter()
+                .map(|c| c.name().to_owned())
+                .collect();
+            for clip in clips {
+                assert!(
+                    names.iter().any(|n| n == clip),
+                    "{id:?} missing clip {clip}"
+                );
+            }
+            assert!(model.primitives.iter().all(|p| p.skin.is_some()));
+        }
+        let pod = server.load::<GltfLoader>(ModelId::DropPod.file()).unwrap();
+        for joint in ["door", "thruster"] {
+            assert!(pod.instances.iter().any(|i| i.name == joint));
         }
     }
 }

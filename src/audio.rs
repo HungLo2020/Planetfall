@@ -11,6 +11,7 @@ use quasar_audio::{
     AudioEngine, BusId, Clip, EngineConfig, Listener, LoopMode, PlaybackConfig, SpatialConfig,
     SpatialModelKind, VoiceHandle,
 };
+use quasar_core::Rng;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -62,7 +63,8 @@ pub struct Audio {
     ambience: Option<(&'static str, VoiceHandle)>,
     last_played: BTreeMap<&'static str, u64>,
     frame: u64,
-    jitter: u32,
+    /// Per-play pitch and gain spread (`quasar_audio` Variation).
+    variation: Rng,
 }
 
 impl Audio {
@@ -97,7 +99,7 @@ impl Audio {
             ambience: None,
             last_played: BTreeMap::new(),
             frame: 0,
-            jitter: 0x1234_5678,
+            variation: Rng::seed_from_u64(0x1234_5678),
         };
         audio.apply(prefs);
         Some(audio)
@@ -121,13 +123,6 @@ impl Audio {
         });
     }
 
-    fn pitch(&mut self, spread: f32) -> f32 {
-        self.jitter ^= self.jitter << 13;
-        self.jitter ^= self.jitter >> 17;
-        self.jitter ^= self.jitter << 5;
-        1.0 + ((self.jitter % 1000) as f32 / 1000.0 - 0.5) * spread
-    }
-
     /// Play a one-shot effect; `min_gap` frames throttles rapid repeats.
     pub fn play(&mut self, name: &'static str, volume: f32, at: Option<V2>, min_gap: u64) {
         if let Some(&last) = self.last_played.get(name)
@@ -139,7 +134,6 @@ impl Audio {
             return;
         };
         self.last_played.insert(name, self.frame);
-        let pitch = self.pitch(0.12);
         let spatial = at.map(|p| SpatialConfig {
             position: [p[0], 0.0, p[1]],
             model: SpatialModelKind::Inverse {
@@ -154,10 +148,10 @@ impl Audio {
             PlaybackConfig {
                 bus: self.effects_bus,
                 volume,
-                pitch,
                 spatial,
                 ..PlaybackConfig::default()
-            },
+            }
+            .with_variation(0.06, 0.08, &mut self.variation),
         );
     }
 
@@ -271,6 +265,9 @@ impl Audio {
                 GameEvent::TutorialStep | GameEvent::TutorialComplete => {
                     self.play("tutorial", 0.6, None, 10)
                 }
+                GameEvent::BuildMode { .. } => self.play("console", 0.4, None, 2),
+                GameEvent::BlockPlaced { .. } => self.play("construct", 0.45, None, 2),
+                GameEvent::BlockRemoved => self.play("block_break", 0.45, None, 2),
                 GameEvent::FtlArrived { .. }
                 | GameEvent::RunEnded { .. }
                 | GameEvent::ProfileChanged => {}

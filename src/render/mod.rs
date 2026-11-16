@@ -1,23 +1,35 @@
-//! Rendering: one caller-owned VulkanicGAL device shared by a lit 3D world
-//! pass with directional shadows (`quasar-render-3d`) and a 2D HUD/UI pass
-//! (`quasar-render-2d` + `quasar-ui`), submitted together each frame.
+//! Rendering: one caller-owned VulkanicGAL device shared by every pass,
+//! submitted together each frame:
+//!
+//! 1. GPU skinning for characters;
+//! 2. one directional shadow map with mesh and voxel casters;
+//! 3. opaque voxel terrain / ship hull (`quasar-render-voxel`), then opaque
+//!    lit surfaces on the same depth, into a linear HDR [`SceneTarget`];
+//! 4. translucent voxels (windows), then sorted transparent draws (glows,
+//!    beams, holograms, previews);
+//! 5. the post chain (bloom, ACES tonemap, grade, vignette, one sRGB encode)
+//!    onto the output;
+//! 6. the 2D overlay and `quasar-ui` layers on top.
 
 pub mod camera;
 mod geometry;
 mod models;
 pub mod scene;
+mod skins;
+mod voxels;
 
 use crate::ui::Layer;
 use camera::{Camera, CameraRig};
+use planetfall_sim::math::V2;
 use planetfall_sim::{Game, Phase};
 use quasar_frame::{Gpu, GraphicsResult, RenderTarget, error};
 use quasar_render_2d::{Canvas, DisplayOptions, LoadOp, RenderState2D, Textures};
-use quasar_render_2d::{Color, Rect};
 use quasar_render_3d::{
-    ColorSpace, Lighting, LitCamera3D, Mat4, Mesh, PassOptions, PreparedShadows, ShadingModel,
-    ShadowConfig, ShadowRenderState3D, ShadowSettings, ShadowTarget, ShadowView, SubmissionConfig,
-    SurfaceDraw3D, SurfaceRenderState3D,
+    ColorSpace, Lighting, LitCamera3D, LitRenderState3D, Mat4, Mesh, PassOptions, PostChain,
+    PreparedShadows, SceneTarget, ShadingModel, ShadowConfig, ShadowRenderState3D, ShadowSettings,
+    ShadowTarget, ShadowView, SubmissionConfig, SurfaceDraw3D, SurfaceRenderState3D,
 };
+use quasar_render_voxel::PreparedVoxels;
 use quasar_ui::{TextRenderer, UiRenderer};
 use scene::{Painter, SUN_DIRECTION};
 use std::path::Path;
@@ -40,14 +52,21 @@ pub struct Frame<'a> {
 
 pub struct Graphics {
     world: SurfaceRenderState3D,
+    /// Blended draws after the opaque pass.
+    transparent: LitRenderState3D,
+    post: PostChain,
+    scene: Option<SceneTarget>,
     shadows: ShadowRenderState3D,
     shadow_target: Option<ShadowTarget>,
     two_d: RenderState2D,
     textures_2d: Textures,
     ui: UiRenderer,
     cube: Mesh,
+    sphere: Mesh,
     tex: geometry::Textures3D,
     models: models::Models,
+    skins: skins::Skins,
+    voxels: voxels::VoxelWorld,
     rig: CameraRig,
     pub shadows_enabled: bool,
 }
@@ -74,16 +93,24 @@ impl Graphics {
         if let Some(text) = text {
             ui.enable_text(text);
         }
+        let models = models::Models::load(gal, asset_root)?;
+        let skins = skins::Skins::new(gal, &models)?;
         Ok(Self {
             world,
+            transparent: LitRenderState3D::new(gal, 24)?,
+            post: PostChain::new(gal)?,
+            scene: None,
             shadows,
             shadow_target: None,
             two_d: RenderState2D::new(gal).map_err(|e| error(e.to_string()))?,
             textures_2d: Textures::default(),
             ui,
             cube: geometry::cube(gal)?,
+            sphere: geometry::sphere(gal)?,
             tex: geometry::Textures3D::new(gal)?,
-            models: models::Models::load(gal, asset_root)?,
+            models,
+            skins,
+            voxels: voxels::VoxelWorld::new(),
             rig: CameraRig::default(),
             shadows_enabled: true,
         })
@@ -101,24 +128,62 @@ impl Graphics {
             .update(frame.game, frame.dt, frame.shake, frame.time, w, h);
         self.models.bind(gal, &mut self.world, &mut self.shadows)?;
 
-        let mut painter = Painter::new(&self.cube, &self.tex, &self.models, frame.time);
+        let mut painter = Painter::new(
+            &self.cube,
+            &self.sphere,
+            &self.tex,
+            &self.models,
+            &self.skins,
+            frame.time,
+        );
         let game = frame.game;
         let mut out = match (game.phase, &game.run) {
             (Phase::Ftl { ticks, to }, _) => scene::ftl(&mut painter, ticks, to),
             (Phase::Ship, _) => scene::ship(&mut painter, game),
             (_, Some(run)) => {
-                let center = [camera.target[0], camera.target[2]];
+                let center = V2::new(camera.target[0], camera.target[2]);
                 scene::surface(&mut painter, game, run, center)
             }
             (_, None) => scene::ship(&mut painter, game),
         };
+        drop(painter);
+        // Characters: pose on the GPU, then draw like any other surface.
+        let (skinning, skinned) = self.skins.prepare(gal, &self.models, &out.skinned)?;
+        out.draws.extend(skinned);
         if out.draws.len() > MAX_DRAWS {
             out.draws.truncate(MAX_DRAWS);
+        }
+        // Terrain or hull blocks: swap worlds and re-mesh edited chunks.
+        if let Some(world) = &out.voxels {
+            match (world.key, &game.run) {
+                (voxels::WorldKey::Planet { .. }, Some(run)) => self.voxels.sync(
+                    gal,
+                    world.key,
+                    world.palette,
+                    run.terrain.blocks(),
+                    run.terrain.chunk_revisions(),
+                )?,
+                _ => {
+                    let ship = &game.ship;
+                    self.voxels.sync(
+                        gal,
+                        world.key,
+                        world.palette,
+                        &ship.layout.blocks,
+                        ship.layout
+                            .blocks
+                            .volume
+                            .chunk_coords()
+                            .into_iter()
+                            .map(|c| (c, ship.revision)),
+                    )?
+                }
+            }
         }
 
         // Directional shadows follow the view.
         let focus = out.shadow_focus;
-        let shadow_frame: Option<PreparedShadows> =
+        let shadow_frame: Option<(PreparedShadows, Option<PreparedVoxels>)> =
             if self.shadows_enabled && !matches!(game.phase, Phase::Ftl { .. }) {
                 let casters: Vec<_> = out
                     .draws
@@ -154,36 +219,95 @@ impl Graphics {
                     self.shadow_target = Some(self.shadows.create_target(gal)?);
                 }
                 let target = self.shadow_target.as_ref().expect("created above");
-                Some(self.shadows.prepare_into(gal, &views, target)?)
+                let meshes = self.shadows.prepare_into(gal, &views, target)?;
+                let blocks = match (&out.voxels, target.layer_view(0)) {
+                    (Some(_), Some(layer)) => {
+                        self.voxels
+                            .prepare_depth(gal, layer, (projection * view).to_glam())?
+                    }
+                    _ => None,
+                };
+                Some((meshes, blocks))
             } else {
                 None
             };
 
+        // Opaque and transparent passes share one linear HDR target.
+        let scene = match &mut self.scene {
+            Some(scene) => {
+                scene.resize(gal, target.width, target.height)?;
+                scene
+            }
+            none => none.insert(SceneTarget::new(gal, target.width, target.height)?),
+        };
+        let lit_camera = LitCamera3D {
+            view_projection: Mat4::from_glam(camera.view_projection),
+            position: camera.eye.to_array(),
+        };
+        let lighting = Lighting {
+            ambient: out.ambient,
+            lights: &out.lights,
+            output_color_space: ColorSpace::Linear,
+        };
+        let clear = out.clear.map(srgb_to_linear);
+        let clear = Some([clear[0], clear[1], clear[2], 1.0]);
+        let shadow_binding = shadow_frame.as_ref().map(|(s, _)| s.binding());
+        let voxel_camera = voxels::camera(camera.eye, camera.target, camera.projection)?;
+        let voxel_pass = |overlays: Vec<_>, clear| voxels::VoxelPass {
+            camera: &voxel_camera,
+            lighting,
+            shadow: shadow_binding,
+            fog: out.voxels.as_ref().and_then(|v| v.fog),
+            clear,
+            overlays,
+        };
+        // Opaque blocks clear the scene; meshes then share their depth.
+        let blocks = match &out.voxels {
+            Some(world) => self.voxels.prepare(
+                gal,
+                scene.target(),
+                voxel_pass(world.overlays.clone(), clear),
+                false,
+            )?,
+            None => None,
+        };
         let world = self.world.prepare(
             gal,
-            target,
-            LitCamera3D {
-                view_projection: camera.view_projection(),
-                position: camera.eye,
-            },
-            Lighting {
-                ambient: out.ambient,
-                lights: &out.lights,
-                output_color_space: ColorSpace::Srgb,
-            },
+            scene.target(),
+            lit_camera,
+            lighting,
             &out.draws,
-            shadow_frame.as_ref().map(PreparedShadows::binding),
-            PassOptions {
-                clear_color: Some(out.clear),
-                clear_depth: true,
+            shadow_binding,
+            if blocks.is_some() {
+                PassOptions::load()
+            } else {
+                PassOptions {
+                    clear_color: clear,
+                    clear_depth: true,
+                }
             },
         )?;
+        let windows = match &out.voxels {
+            Some(_) => {
+                self.voxels
+                    .prepare(gal, scene.target(), voxel_pass(Vec::new(), None), true)?
+            }
+            None => None,
+        };
+        let blended = self.transparent.prepare_transparent(
+            gal,
+            scene.target(),
+            lit_camera,
+            lighting,
+            &out.transparent,
+            PassOptions::load(),
+        )?;
+        let post = self.post.prepare_scene(gal, scene, target, &out.post)?;
 
         let mut canvas =
             Canvas::new(target.width, target.height).map_err(|e| error(e.to_string()))?;
         (frame.overlay)(&mut canvas, &camera);
         for layer in frame.layers {
-            paint_boxes(&mut canvas, layer);
             self.ui
                 .prepare_text(&mut self.two_d, gal, &mut self.textures_2d, &layer.ui)?;
             self.ui.draw(&mut canvas, &layer.ui);
@@ -196,45 +320,67 @@ impl Graphics {
             DisplayOptions::default(),
             LoadOp::Load,
         )?;
-        let mut commands: Vec<CommandBuffer> =
-            shadow_frame.into_iter().map(|s| s.commands).collect();
+        let mut commands: Vec<CommandBuffer> = skinning.into_iter().collect();
+        if let Some((meshes, blocks)) = shadow_frame {
+            commands.push(meshes.commands);
+            commands.extend(blocks.map(|b| b.commands));
+        }
+        commands.extend(blocks.map(|b| b.commands));
         commands.push(world.commands);
+        commands.extend(windows.map(|b| b.commands));
+        commands.push(blended.commands);
+        commands.push(post);
         commands.push(hud.commands);
         Ok(commands)
     }
 
+    /// Rasterise every glyph the layers will draw. quasar-ui 0.2.24 warms
+    /// glyphs from unwrapped layouts, so wrapped lines would otherwise appear
+    /// one frame late; offscreen renders only get one frame.
+    pub fn warm_text(&mut self, gal: &Gpu, layers: &[&Layer]) -> GraphicsResult<()> {
+        let mut scratch = Canvas::new(16, 16).map_err(|e| error(e.to_string()))?;
+        for layer in layers {
+            self.ui
+                .prepare_text(&mut self.two_d, gal, &mut self.textures_2d, &layer.ui)?;
+            self.ui.draw(&mut scratch, &layer.ui);
+        }
+        Ok(())
+    }
+
+    /// Call after the frame's command buffers were submitted.
+    pub fn submitted(&mut self, gal: &Gpu) {
+        self.voxels.submitted(gal);
+    }
+
     pub fn release_targets(&mut self, gal: &Gpu) -> GraphicsResult<()> {
+        self.scene = None;
         self.world.release_targets(gal)?;
         self.two_d.release_targets(gal)
     }
 
     pub fn release(&mut self, gal: &Gpu) -> GraphicsResult<()> {
         self.world.release(gal)?;
+        self.transparent.release(gal)?;
+        self.post.release(gal)?;
+        self.scene = None;
         self.shadows.release(gal)?;
         self.two_d.release(gal)?;
+        self.skins.release(gal)?;
+        self.voxels.release(gal)?;
         self.models.release(gal)?;
         self.cube.release(gal)?;
+        self.sphere.release(gal)?;
         self.shadow_target = None;
         Ok(())
     }
 }
 
-fn paint_boxes(canvas: &mut Canvas, layer: &Layer) {
-    canvas.set_clip(None);
-    for b in &layer.boxes {
-        let Some(entry) = layer.ui.layout_entries().iter().find(|e| e.id == b.node) else {
-            continue;
-        };
-        let r = entry.rect;
-        canvas.rect(Rect::new(r.x, r.y, r.width, r.height), Color(b.fill));
-        if let Some(border) = b.border {
-            canvas.rect(Rect::new(r.x, r.y, 3.0, r.height), Color(border));
-            canvas.outline_rect(
-                Rect::new(r.x, r.y, r.width, r.height),
-                1.0,
-                Color([border[0], border[1], border[2], border[3] / 3]),
-            );
-        }
+/// Display-referred (sRGB) colour channel to linear.
+pub(crate) fn srgb_to_linear(v: f32) -> f32 {
+    if v <= 0.040_45 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
     }
 }
 
@@ -250,25 +396,25 @@ pub fn screenshot(
 ) -> Result<(), String> {
     let gal = Gpu::headless().map_err(|e| format!("headless GPU: {e}"))?;
     let mut graphics = Graphics::new(&gal, asset_root, text).map_err(|e| e.to_string())?;
-    let target =
-        quasar_frame::OffscreenTarget::new(&gal, size.0, size.1).map_err(|e| e.to_string())?;
-    let image = target
-        .render(&gal, |gpu, target| {
-            graphics.commands(
-                gpu,
-                target,
-                &Frame {
-                    game,
-                    time: game.tick as f32 / 60.0,
-                    dt: 1.0 / 60.0,
-                    shake: 0.0,
-                    layers,
-                    overlay,
-                },
-            )
-        })
+    graphics
+        .warm_text(&gal, layers)
         .map_err(|e| e.to_string())?;
-    quasar_render_2d::write_png(path, size.0, size.1, &image.rgba).map_err(|e| e.to_string())?;
+    let image = quasar_frame::render_offscreen(&gal, size.0, size.1, |gpu, target| {
+        graphics.commands(
+            gpu,
+            target,
+            &Frame {
+                game,
+                time: game.tick as f32 / 60.0,
+                dt: 1.0 / 60.0,
+                shake: 0.0,
+                layers,
+                overlay,
+            },
+        )
+    })
+    .map_err(|e| e.to_string())?;
+    image.write_png(path).map_err(|e| e.to_string())?;
     graphics.release(&gal).map_err(|e| e.to_string())?;
     Ok(())
 }

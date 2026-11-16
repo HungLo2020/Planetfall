@@ -3,6 +3,8 @@
 
 #[cfg(feature = "desktop")]
 mod audio;
+#[cfg(feature = "graphics")]
+mod bindings;
 #[cfg(feature = "desktop")]
 mod controls;
 #[cfg(feature = "desktop")]
@@ -102,7 +104,7 @@ fn headless(
         game.profile.materials,
         game.ship.layout.rooms.len().saturating_sub(3),
         run.map_or(0, |r| r.player.level),
-        game.state_hash(),
+        game.state_hash().value(),
     );
     if let Some(path) = &settings.screenshot {
         #[cfg(feature = "graphics")]
@@ -110,15 +112,15 @@ fn headless(
             let size = settings.resolution.unwrap_or((1600, 900));
             let (measure, text) = ui::build_text(asset_root)?;
             let scale = size.1 as f32 / 900.0;
-            let mut hud = ui::hud::build(&ui::hud::HudContext {
+            let prompts = bindings::Prompts::default();
+            let hud = ui::hud::build(&ui::hud::HudContext {
                 game: &game,
                 measure: &measure,
                 size: (size.0 as f32, size.1 as f32),
                 scale,
-                gamepad: false,
+                prompts: &prompts,
                 menu_open: false,
             });
-            layout(&mut hud, &measure, size, scale);
             // Terminals and level-up choices render as they would on screen.
             use ui::menu::{Content, Screen};
             let surface = game.phase == Phase::Surface;
@@ -146,7 +148,7 @@ fn headless(
                 effects: 1.0,
                 shake: true,
             });
-            menu.show(content, &game, &measure, scale, false);
+            menu.show(content, &game, &measure, scale, &prompts);
             let mut layers = if settings.menu.as_deref() == Some("title") {
                 vec![]
             } else {
@@ -211,7 +213,7 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
                     && run
                         .enemies
                         .iter()
-                        .filter(|e| planetfall_sim::math::distance(e.pos, run.player.pos) < 9.0)
+                        .filter(|e| e.pos.distance(run.player.pos) < 9.0)
                         .count()
                         >= 7
                     && !run.beams.is_empty()
@@ -231,7 +233,7 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
         let size = (900, 1200);
         let (measure, text) = ui::build_text(asset_root)?;
         let scale = 2.6;
-        let mut b = ui::Builder::new(&measure, scale);
+        let mut b = ui::Builder::default();
         let root = b.root(false);
         let title = b.card(
             root,

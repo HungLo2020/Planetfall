@@ -1,9 +1,11 @@
 //! Screen-space 2D effects drawn on the `quasar-render-2d` canvas beneath the UI:
-//! damage vignette, mining progress, off-screen markers, boss bars and fades.
+//! mining progress, off-screen markers, boss bars and fades. (The damage
+//! vignette is part of the post chain's grade.)
 
 use crate::render::camera::Camera;
 use planetfall_sim::content::EnemyKind;
 use planetfall_sim::game::{ASCENT_TICKS, DESCENT_TICKS, FTL_TICKS, LOST_TICKS};
+use planetfall_sim::math::V2;
 use planetfall_sim::run::Extraction;
 use planetfall_sim::terrain::Terrain;
 use planetfall_sim::{Game, Phase};
@@ -57,21 +59,6 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
         return;
     }
     let p = &run.player;
-    // Low-health and hit vignette.
-    let danger = (1.0 - p.health / p.max_health).max(0.0);
-    let hurt = p.hurt_ticks as f32 / 18.0;
-    let edge = (danger * danger * 0.5 + hurt * 0.4).min(0.75);
-    if edge > 0.01 {
-        let pulse = 0.8 + 0.2 * (time * 6.0).sin();
-        for i in 0..6 {
-            let k = i as f32 * 10.0;
-            let a = edge * pulse * (1.0 - i as f32 / 6.0) * 0.5;
-            c.rect(Rect::new(0.0, k, w, 10.0), rgba(190, 20, 10, a));
-            c.rect(Rect::new(0.0, h - k - 10.0, w, 10.0), rgba(190, 20, 10, a));
-            c.rect(Rect::new(k, 0.0, 10.0, h), rgba(190, 20, 10, a));
-            c.rect(Rect::new(w - k - 10.0, 0.0, 10.0, h), rgba(190, 20, 10, a));
-        }
-    }
     // Mining progress over the block being drilled.
     if let Some(m) = p.mining {
         let center = Terrain::center_of(m.tile.0, m.tile.1);
@@ -111,7 +98,7 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
         }
     }
     // Off-screen arrows: tutorial target, extraction zone, unopened caches.
-    let mut targets: Vec<([f32; 2], Color)> = Vec::new();
+    let mut targets: Vec<(V2, Color)> = Vec::new();
     if let Some(t) = game.tutorial_prompt().and_then(|p| p.target) {
         targets.push((t, rgba(255, 210, 90, 0.95)));
     }

@@ -23,10 +23,12 @@ cargo run --release
 
 | Action | Keyboard / mouse | Controller |
 |---|---|---|
-| Move | WASD / arrows | Left stick |
+| Move | WASD / arrows | Left stick / D-pad |
 | Use station / deploy | E / Enter | A (South) |
 | Dash (brief invulnerability) | Space / Shift | B (East) / RB |
 | Call extraction pod | F | Y (North) |
+| Ship build mode (after the tutorial) | B | X (West) |
+| Build: place / remove / next block | E / Space / F | A / B / Y |
 | Pause / back | Esc | Start / B |
 | Menus | Arrows, Enter, mouse | D-pad, A, B |
 | Fullscreen | F11 | — |
@@ -38,24 +40,30 @@ Weapons aim and fire automatically. Walk into rock to drill through it.
 - **Tutorial**: a ship AI walks a new commander from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
   cache, extraction and the first module build. It only runs once.
-- **Ship hub**: a walkable block-built ship with a navigation console,
-  fabricator and drop bay. Five modules (Med Bay, Armory, Drill Workshop,
-  Tractor Array, Reactor & Nav Core) are *constructed* as new rooms that
-  assemble block by block when you first buy them, then upgrade further.
+- **Ship hub**: a walkable voxel ship with a navigation console, fabricator
+  and drop bay. Five modules (Med Bay, Armory, Drill Workshop, Tractor Array,
+  Reactor & Nav Core) are *constructed* as new rooms whose blocks drop into
+  place when you first buy them, then upgrade further.
+- **Free-form building**: in build mode, place and remove deck plating, hull
+  walls, windows and lamps around the ship, paid from the hold and refunded
+  on removal; the hull can never be split or a station walled off.
 - **Three planets**: Verdant-7, Cinder Reach and Hollow Frost, each with its own
   palette, ore mix, hazard level and objective; later worlds unlock with the
   Reactor.
-- **Surface runs**: procedurally generated caves of minable blocks; ferrite,
+- **Surface runs**: procedurally generated voxel caves of minable blocks; ferrite,
   lumite and voidstone ore; four enemy types (husks, skitters, bloaters, brutes)
   driven by a flow field; five auto-firing weapons with five levels each;
   weapon caches; XP shards and level-up perk choices; a timed extraction where
   the pod lands at your drop site and you must hold the zone.
-- **Persistence**: materials, modules, stats and tutorial state save to
-  `data/save/profile.json`. Dying or abandoning a drop loses everything carried.
-- **Presentation**: original low-poly GLB models (plus CC0 Kenney props),
-  rigid-part animation, directional shadows, dynamic point lights, FTL and
-  drop-pod cinematics, synthesized sound effects and music, and a shaped-font
-  HUD and menus.
+- **Persistence**: materials, modules, ship edits, stats and tutorial state
+  save to `data/save/profile.json`. Dying or abandoning a drop loses
+  everything carried.
+- **Presentation**: original low-poly GLB models (plus CC0 Kenney props) with
+  GPU-skinned characters and authored clips, voxel terrain and hull with
+  fog, directional shadows over meshes and voxels, dynamic point lights, HDR
+  bloom, filmic tonemapping and see-through effects, FTL and drop-pod
+  cinematics, synthesized sound effects and music, and a shaped-font HUD and
+  menus with device-aware button prompts.
 
 ## Command line
 
@@ -114,6 +122,11 @@ to this README.
 - Only change this repository. Quasar and Basalt are upstream dependencies:
   Quasar is pinned by git tag in the root `Cargo.toml`; the Basalt catalog entry
   lives here as `planetfall.json` and is copied into Basalt by its maintainer.
+- Prefer Quasar over hand-rolled code: math (`quasar-math`), RNG
+  (`quasar-core`), replay (`quasar-sim`), voxels (`quasar-voxel*`), paths
+  (`quasar-nav`), animation (`quasar-animation`), UI layout and prompts
+  (`quasar-ui`, `quasar-input`). Record gaps and workarounds in
+  [QUASAR-ISSUES.md](QUASAR-ISSUES.md).
 - Game rules live in `crates/planetfall-sim` and must stay free of window, GPU,
   audio and file I/O. Presentation (rendering, UI, audio, input, storage) lives
   in the root `planetfall` crate. New gameplay must be drivable through

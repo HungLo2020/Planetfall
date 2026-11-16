@@ -208,6 +208,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block2"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
+dependencies = [
+ "objc2 0.6.5",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -775,10 +784,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "gl_generator"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a95dfc23a2b4a9a2f5ab41d194f8bfda3cabec42af4e39f08c339eb2a0c124d"
+dependencies = [
+ "khronos_api",
+ "log",
+ "xml-rs",
+]
+
+[[package]]
+name = "glam"
+version = "0.33.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37bfe73dc8ec21f54d181e5a60554327ec3f1c600c455a75ccbfc65d2106a6c4"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
+name = "glow"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5"
+dependencies = [
+ "js-sys",
+ "slotmap",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "gltf"
@@ -817,6 +858,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glutin_wgl_sys"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
+dependencies = [
+ "gl_generator",
+]
+
+[[package]]
 name = "gpu-allocator"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,6 +877,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -1046,6 +1097,23 @@ dependencies = [
  "futures-util",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "khronos-egl"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6aae1df220ece3c0ada96b8153459b67eebe9ae9212258bb0134ae60416fdf76"
+dependencies = [
+ "libc",
+ "libloading",
+ "pkg-config",
+]
+
+[[package]]
+name = "khronos_api"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "lazy_static"
@@ -1395,7 +1463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4e89ad9e3d7d297152b17d39ed92cd50ca8063a89a9fa569046d41568891eff"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "libc",
  "objc2 0.5.3",
  "objc2-core-data",
@@ -1411,7 +1479,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74dd3b56391c7a0596a295029734d3c1c5e7e510a4cb30245f8221ccea96b009"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-core-location",
  "objc2-foundation 0.2.2",
@@ -1423,7 +1491,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5ff520e9c33812fd374d8deecef01d4a840e7b41862d849513de77e44aa4889"
 dependencies = [
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
 ]
@@ -1435,7 +1503,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "617fbf49e071c178c0b24c080767db52958f716d9eabdf0890523aeae54773ef"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
 ]
@@ -1452,12 +1520,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-core-graphics"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
+dependencies = [
+ "dispatch2",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-io-surface",
+]
+
+[[package]]
 name = "objc2-core-image"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55260963a527c99f1819c4f8e3b47fe04f9650694ef348ffd2227e8196d34c80"
 dependencies = [
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
  "objc2-metal 0.2.2",
@@ -1469,7 +1549,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "000cfee34e683244f284252ee206a27953279d370e309649dc3ee317b37e5781"
 dependencies = [
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-contacts",
  "objc2-foundation 0.2.2",
@@ -1488,7 +1568,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ee638a5da3799329310ad4cfa62fbf045d5f56e3ef5ba4149e7452dcf89d5a8"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "dispatch",
  "libc",
  "objc2 0.5.3",
@@ -1517,12 +1597,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-surface"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "180788110936d59bab6bd83b6060ffdfffb3b922ba1396b312ae795e1de9d81d"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-link-presentation"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1a1ae721c5e35be65f01a03b6d2ac13a54cb4fa70d8a5da293d7b0020261398"
 dependencies = [
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-app-kit",
  "objc2-foundation 0.2.2",
@@ -1535,7 +1626,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd0cba1276f6023976a406a14ffa85e1fdd19df6b0f737b063b95f6c8c7aadd6"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
 ]
@@ -1547,6 +1638,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0125f776a10d00af4152d74616409f0d4a2053a6f57fa5b7d6aa2854ac04794"
 dependencies = [
  "bitflags 2.13.2",
+ "block2 0.6.2",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
 ]
@@ -1558,7 +1650,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e42bee7bff906b14b167da2bac5efe6b6a07e6f7c0a21a7308d40c960242dc7a"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
  "objc2-metal 0.2.2",
@@ -1573,6 +1665,7 @@ dependencies = [
  "bitflags 2.13.2",
  "objc2 0.6.5",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "objc2-metal 0.3.2",
 ]
@@ -1594,7 +1687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8bb46798b20cd6b91cbd113524c490f1686f4c4e8f49502431415f3512e2b6f"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-cloud-kit",
  "objc2-core-data",
@@ -1614,7 +1707,7 @@ version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44fa5f9748dbfe1ca6c0b79ad20725a11eca7c2218bceb4b005cb1be26273bfe"
 dependencies = [
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-foundation 0.2.2",
 ]
@@ -1626,7 +1719,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76cfcbf642358e8689af64cee815d139339f3ed8ad05103ed5eaf73db8d84cb3"
 dependencies = [
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "objc2 0.5.3",
  "objc2-core-location",
  "objc2-foundation 0.2.2",
@@ -1770,6 +1863,7 @@ name = "planetfall"
 version = "0.1.0"
 dependencies = [
  "planetfall-sim",
+ "quasar-animation",
  "quasar-app",
  "quasar-assets",
  "quasar-audio",
@@ -1778,11 +1872,15 @@ dependencies = [
  "quasar-diagnostics",
  "quasar-frame",
  "quasar-input",
+ "quasar-math",
  "quasar-render-2d",
  "quasar-render-3d",
+ "quasar-render-voxel",
  "quasar-storage",
  "quasar-text",
  "quasar-ui",
+ "quasar-voxel",
+ "quasar-voxel-mesh",
  "quasar-window",
  "serde",
  "serde_json",
@@ -1794,8 +1892,12 @@ dependencies = [
 name = "planetfall-sim"
 version = "0.1.0"
 dependencies = [
+ "quasar-core",
+ "quasar-math",
  "quasar-nav",
+ "quasar-sim",
  "quasar-spatial",
+ "quasar-voxel",
  "serde",
  "serde_json",
 ]
@@ -1892,9 +1994,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "quasar-animation"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-assets",
+]
+
+[[package]]
 name = "quasar-app"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "quasar-core",
  "quasar-input",
@@ -1903,8 +2013,8 @@ dependencies = [
 
 [[package]]
 name = "quasar-assets"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "base64",
  "gltf",
@@ -1914,21 +2024,22 @@ dependencies = [
 
 [[package]]
 name = "quasar-audio"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "cpal",
  "crossbeam-channel",
  "hound",
  "lewton",
+ "quasar-core",
  "quasar-storage",
  "serde",
 ]
 
 [[package]]
 name = "quasar-config"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "serde",
  "serde_json",
@@ -1936,40 +2047,56 @@ dependencies = [
 
 [[package]]
 name = "quasar-core"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "quasar-diagnostics"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 
 [[package]]
 name = "quasar-frame"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
+ "png 0.17.16",
  "vulkanic-gal",
 ]
 
 [[package]]
 name = "quasar-input"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "gilrs",
  "serde",
 ]
 
 [[package]]
+name = "quasar-math"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "glam",
+]
+
+[[package]]
 name = "quasar-nav"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-math",
+ "quasar-voxel",
+]
 
 [[package]]
 name = "quasar-render-2d"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "png 0.17.16",
  "quasar-core",
@@ -1981,24 +2108,48 @@ dependencies = [
 
 [[package]]
 name = "quasar-render-3d"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "quasar-assets",
  "quasar-frame",
+ "quasar-math",
  "quasar-spatial",
  "vulkanic-gal",
 ]
 
 [[package]]
+name = "quasar-render-voxel"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-frame",
+ "quasar-math",
+ "quasar-render-3d",
+ "quasar-spatial",
+ "quasar-voxel",
+ "quasar-voxel-mesh",
+ "quasar-voxel-view",
+ "vulkanic-gal",
+]
+
+[[package]]
+name = "quasar-sim"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-core",
+]
+
+[[package]]
 name = "quasar-spatial"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 
 [[package]]
 name = "quasar-storage"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "serde",
  "serde_json",
@@ -2007,8 +2158,8 @@ dependencies = [
 
 [[package]]
 name = "quasar-text"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "cosmic-text",
  "unicode-script",
@@ -2017,8 +2168,8 @@ dependencies = [
 
 [[package]]
 name = "quasar-ui"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "quasar-input",
  "quasar-render-2d",
@@ -2026,9 +2177,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "quasar-voxel"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-core",
+ "quasar-math",
+]
+
+[[package]]
+name = "quasar-voxel-mesh"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-math",
+ "quasar-voxel",
+]
+
+[[package]]
+name = "quasar-voxel-view"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
+dependencies = [
+ "quasar-math",
+ "quasar-spatial",
+ "quasar-voxel",
+]
+
+[[package]]
 name = "quasar-window"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "quasar-input",
  "raw-window-handle",
@@ -2065,6 +2244,12 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "range-alloc"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 
 [[package]]
 name = "rangemap"
@@ -2702,8 +2887,8 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vulkanic-gal"
-version = "0.2.21"
-source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.21#9cebc586dba5e422b16b42580deb32894e221f99"
+version = "0.2.24"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.24#0fdbb193ccd85639c8419f3d6e8932c02ff1f20c"
 dependencies = [
  "wgpu",
 ]
@@ -2966,10 +3151,30 @@ dependencies = [
  "rustc-hash 1.1.0",
  "smallvec",
  "thiserror 2.0.21",
+ "wgpu-core-deps-apple",
+ "wgpu-core-deps-emscripten",
  "wgpu-core-deps-windows-linux-android",
  "wgpu-hal",
  "wgpu-naga-bridge",
  "wgpu-types",
+]
+
+[[package]]
+name = "wgpu-core-deps-apple"
+version = "30.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d3f2f24aee039ffe9ef527300daf6b7428c58edeefdaa1700f4fa0fd754df16"
+dependencies = [
+ "wgpu-hal",
+]
+
+[[package]]
+name = "wgpu-core-deps-emscripten"
+version = "30.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55ccf093bd215ae9dc4f96df293e675513ac1f2569f8293a2911cc34ca3505d1"
+dependencies = [
+ "wgpu-hal",
 ]
 
 [[package]]
@@ -2990,31 +3195,51 @@ dependencies = [
  "android_system_properties",
  "arrayvec",
  "ash",
+ "bit-set",
  "bitflags 2.13.2",
+ "block2 0.6.2",
  "bytemuck",
  "cfg-if",
  "cfg_aliases",
+ "glow",
+ "glutin_wgl_sys",
  "gpu-allocator",
  "hashbrown 0.17.1",
+ "js-sys",
+ "khronos-egl",
  "libc",
  "libloading",
  "log",
  "naga",
  "naga-types",
+ "ndk-sys 0.6.0+11769913",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-metal 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "once_cell",
  "ordered-float",
  "parking_lot",
  "portable-atomic",
  "portable-atomic-util",
  "profiling",
+ "range-alloc",
  "raw-window-handle",
  "raw-window-metal",
  "renderdoc-sys",
  "smallvec",
  "static_assertions",
  "thiserror 2.0.21",
+ "wasm-bindgen",
+ "wayland-sys",
+ "web-sys",
  "wgpu-naga-bridge",
  "wgpu-types",
  "windows 0.62.2",
+ "windows-core 0.62.2",
+ "windows-result 0.4.1",
 ]
 
 [[package]]
@@ -3358,7 +3583,7 @@ dependencies = [
  "android-activity",
  "atomic-waker",
  "bitflags 2.13.2",
- "block2",
+ "block2 0.5.1",
  "bytemuck",
  "calloop",
  "cfg_aliases",
@@ -3471,6 +3696,12 @@ name = "xkeysym"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "yazi"

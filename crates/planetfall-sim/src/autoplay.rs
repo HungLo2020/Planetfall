@@ -1,10 +1,10 @@
 //! A simple autopilot that plays the whole loop. Used for headless runs,
 //! soak tests and CI, so every feature is drivable without a window.
 
-use crate::content::{Material, PlanetId, ShipUpgrade};
+use crate::content::{Material, PlanetId, ShipBlock, ShipUpgrade};
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
-use crate::math::{self, V2};
+use crate::math::V2;
 use crate::run::Extraction;
 use crate::ship::StationKind;
 use crate::terrain::TILE;
@@ -57,6 +57,9 @@ impl Autopilot {
                 ..GameInput::default()
             };
         }
+        if let Some(input) = self.build(game, pulse) {
+            return input;
+        }
         let goal = if game.profile.orbiting.is_none()
             || game.profile.orbiting.is_some_and(|o| {
                 PlanetId::ALL
@@ -81,15 +84,64 @@ impl Autopilot {
         let pos = game.ship.player.pos;
         let spine = 7.5 * TILE;
         let waypoint = if (pos[1] - station.pos[1]).abs() > 1.0 && (pos[0] - spine).abs() > 0.4 {
-            [spine, pos[1]]
+            V2::new(spine, pos[1])
         } else if (pos[1] - station.pos[1]).abs() > 1.0 {
-            [spine, station.pos[1]]
+            V2::new(spine, station.pos[1])
         } else {
             station.pos
         };
         GameInput {
-            movement: math::normalize(math::sub(waypoint, pos)),
+            movement: (waypoint - pos).normalize_or_zero(),
             ..GameInput::default()
+        }
+    }
+
+    /// Exercise free-form building once: after the first extraction, place a
+    /// lamp on the bridge, then leave build mode.
+    fn build(&self, game: &Game, pulse: bool) -> Option<GameInput> {
+        let profile = &game.profile;
+        let ship = &game.ship;
+        let wanted = profile.tutorial_complete
+            && profile.ship_edits.is_empty()
+            && profile.stats.extractions >= 1
+            && profile.materials.covers(ShipBlock::Lamp.cost());
+        let press = |input: GameInput| Some(if pulse { input } else { GameInput::default() });
+        match ship.build {
+            None if wanted => press(GameInput {
+                build: true,
+                ..GameInput::default()
+            }),
+            None => None,
+            Some(_) if !wanted => press(GameInput {
+                build: true,
+                ..GameInput::default()
+            }),
+            Some(block) if block != ShipBlock::Lamp => press(GameInput {
+                call_extraction: true,
+                ..GameInput::default()
+            }),
+            // A bridge corner, clear of the walking routes.
+            Some(_) if ship.build_cursor() == (5, 3) && ship.can_place(profile).is_ok() => {
+                press(GameInput {
+                    interact: true,
+                    ..GameInput::default()
+                })
+            }
+            Some(_) => {
+                // Up the spine to the bridge, then west along row 3.
+                let pos = ship.player.pos;
+                let spine = 7.5 * TILE;
+                let row = 3.5 * TILE;
+                let waypoint = if (pos[1] - row).abs() > 0.3 {
+                    V2::new(spine, row)
+                } else {
+                    V2::new(5.5 * TILE, row)
+                };
+                Some(GameInput {
+                    movement: (waypoint - pos).normalize_or_zero(),
+                    ..GameInput::default()
+                })
+            }
         }
     }
 
@@ -109,26 +161,26 @@ impl Autopilot {
         } else if let Some(cache) = run
             .caches
             .iter()
-            .find(|c| !c.opened && math::distance(c.pos, player) < 14.0)
+            .find(|c| !c.opened && c.pos.distance(player) < 14.0)
         {
             Some(cache.pos)
         } else {
             nearest_ore(run, Material::Lumite)
         };
-        let mut movement = goal.map_or([0.0, 0.0], |g| math::normalize(math::sub(g, player)));
-        if run.objective_done && math::distance(run.landing, player) < 1.5 {
-            movement = [0.0, 0.0];
+        let mut movement = goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero());
+        if run.objective_done && run.landing.distance(player) < 1.5 {
+            movement = V2::new(0.0, 0.0);
         }
         // Sidestep nearby hostiles.
         for e in &run.enemies {
-            let away = math::sub(player, e.pos);
-            let d = math::length(away);
+            let away = player - e.pos;
+            let d = away.length();
             if d < 3.0 && d > 1e-3 {
-                movement = math::add(movement, math::scale(away, 0.6 / d));
+                movement += away * 0.6 / d;
             }
         }
         GameInput {
-            movement: math::clamp_unit(movement),
+            movement: movement.clamp_length_max(1.0),
             call_extraction: run.objective_done
                 && matches!(run.extraction, Extraction::Idle)
                 && pulse,

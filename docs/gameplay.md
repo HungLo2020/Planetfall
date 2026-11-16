@@ -16,10 +16,12 @@
    (leaving drains progress) to lift off.
 6. **Debrief.** Carried materials are banked in the hold. Death or abandoning
    loses all cargo.
-7. **Upgrade.** Spend ferrite, lumite and voidstone at the Fabricator.
+7. **Upgrade.** Spend ferrite, lumite and voidstone at the Fabricator, or
+   build onto the hull yourself in build mode.
 
-Persistent: materials, ship modules and levels, stats, tutorial completion,
-current orbit. Per-run only: weapons, weapon levels, perks, XP level.
+Persistent: materials, ship modules and levels, player-built ship blocks,
+stats, tutorial completion, current orbit. Per-run only: weapons, weapon
+levels, perks, XP level.
 
 ## Tutorial
 
@@ -28,7 +30,9 @@ Verdant-7 → FTL → drop pod → survive (the horde is held back until now) �
 mine lumite → level up → open a weapon cache → finish the objective → call
 extraction → hold the zone → debrief → build a first module. The tutorial
 drop spawns half as many enemies, guarantees lumite and ferrite near the pod
-and places a weapon cache close by. Dying restarts from the drop bay. Prompts
+and places a weapon cache close by. After the tutorial extraction the ship AI
+adds hull salvage to the hold if needed, so the cheapest module is always
+affordable (the debrief shows it). Dying restarts from the drop bay. Prompts
 show keyboard or controller labels depending on the last device used.
 
 ## Planets
@@ -64,7 +68,8 @@ Weapons only fire with line of sight (the mortar arcs over walls).
 | Brute | Late-game tank; drops voidstone and ferrite |
 
 Enemies follow a flow field toward the player, separate from each other and
-climb out of the ground when they spawn.
+climb out of the ground when they spawn. Weapons and enemies check line of
+sight with voxel raycasts, and mining a block repairs the flow field locally.
 
 ## Field perks (on level-up)
 
@@ -83,8 +88,30 @@ Repair (+1 HP/s).
 | Tractor Array | +1.25 m pickup range | 3 |
 | Reactor & Nav Core | Unlocks the next planet | 2 |
 
-The first purchase of each constructs a new room on the ship, assembling
-block by block. Costs are in `crates/planetfall-sim/src/content.rs`.
+The first purchase of each constructs a new room on the ship: its blocks
+drop into place over a second and a half, and the room joins the walkable
+hull when complete. Costs are in `crates/planetfall-sim/src/content.rs`.
+
+## Building the ship
+
+After the tutorial, press B / (X) aboard the ship for build mode. The block
+in front of you is outlined (green: placeable, red: not, with the reason in
+the hint). E / (A) places the selected block, Space / (B) removes the one in
+front, F / (Y) cycles blocks, and B / (X) leaves build mode.
+
+| Block | Cost | Notes |
+|---|---|---|
+| Deck plating | 2 ferrite | Extends the hull; must touch existing deck |
+| Hull wall | 2 ferrite | Cut-away height like the original walls |
+| Window | 1 ferrite, 1 lumite | Translucent glass panel |
+| Lamp | 1 ferrite, 1 lumite | Emissive fixture that lights the deck |
+
+Rules: building stays within a margin around the hull; module rooms (built
+or not) are reserved; nothing may be placed next to a station, under you, or
+where it would wall any station off from you; deck can only be removed if the
+hull stays in one piece; the original room floors stay. Blocks you placed are
+refunded when removed; original hull walls can be knocked out (for free, no
+refund) to open rooms or build outward. Edits are saved with the profile.
 
 ## Tuning
 

@@ -7,9 +7,10 @@ use crate::content::{
 };
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
-use crate::math::{self, V2};
-use crate::rng::Rng;
+use crate::math::{self, FloatExt, V2};
 use crate::terrain::{FlowField, TILE, Terrain, Tile};
+use quasar_core::Rng;
+use quasar_sim::{StateHash, StateHasher};
 use quasar_spatial::{Aabb, GridConfig, SpatialGrid};
 
 pub const PLAYER_RADIUS: f32 = 0.45;
@@ -134,7 +135,7 @@ pub struct Projectile {
 
 impl Projectile {
     pub fn direction(&self) -> V2 {
-        math::normalize(self.vel)
+        self.vel.normalize_or_zero()
     }
 }
 
@@ -232,6 +233,7 @@ pub enum RunState {
     Ended(RunOutcome),
 }
 
+#[derive(Clone)]
 pub struct Run {
     pub planet: PlanetId,
     pub tutorial: bool,
@@ -273,8 +275,7 @@ pub struct Run {
 impl Run {
     pub fn new(config: RunConfig) -> Self {
         let (terrain, layout) = Terrain::generate(config.planet, config.seed, config.tutorial);
-        let mut flow = FlowField::new(&terrain);
-        flow.update(&terrain, layout.landing);
+        let flow = FlowField::new(&terrain, layout.landing);
         let info = config.planet.info();
         let objective = if config.tutorial { 4 } else { info.objective };
         Self {
@@ -283,7 +284,7 @@ impl Run {
             flow,
             landing: layout.landing,
             player: Player {
-                pos: math::add(layout.landing, [0.0, 2.2]),
+                pos: (layout.landing + V2::new(0.0, 2.2)),
                 yaw: 0.0,
                 health: config.max_health,
                 max_health: config.max_health,
@@ -291,7 +292,7 @@ impl Run {
                 moving: false,
                 dash_ticks: 0,
                 dash_cooldown: 0,
-                dash_dir: [0.0, 1.0],
+                dash_dir: V2::new(0.0, 1.0),
                 invulnerable_ticks: seconds(2.0),
                 hurt_ticks: 0,
                 level: 1,
@@ -344,7 +345,7 @@ impl Run {
             hazard: info.hazard,
             spawn_timer: 0.0,
             next_id: 1,
-            rng: Rng::new(config.seed ^ 0xA5A5_5A5A),
+            rng: Rng::seed_from_u64(config.seed ^ 0xA5A5_5A5A),
             index: SpatialGrid::new(GridConfig::new(4.0, 64, 4096).expect("valid grid config"))
                 .expect("valid spatial grid"),
             scratch: Vec::new(),
@@ -386,10 +387,7 @@ impl Run {
         (0..stats.count)
             .map(|i| {
                 let a = self.drone_angle + i as f32 * std::f32::consts::TAU / stats.count as f32;
-                math::add(
-                    self.player.pos,
-                    [a.sin() * stats.range, a.cos() * stats.range],
-                )
+                self.player.pos + V2::new(a.sin() * stats.range, a.cos() * stats.range)
             })
             .collect()
     }
@@ -417,7 +415,7 @@ impl Run {
         }
         self.ticks += 1;
         self.update_player(input, events);
-        self.flow.update(&self.terrain, self.player.pos);
+        self.flow.update(&mut self.terrain, self.player.pos);
         self.rebuild_index();
         self.fire_weapons(events);
         self.update_projectiles(events);
@@ -448,8 +446,8 @@ impl Run {
 
     fn update_player(&mut self, input: &GameInput, events: &mut Vec<GameEvent>) {
         let p = &mut self.player;
-        let movement = math::clamp_unit(input.movement);
-        let moving = math::length(movement) > 0.15;
+        let movement = input.movement.clamp_length_max(1.0);
+        let moving = movement.length() > 0.15;
         p.dash_cooldown = p.dash_cooldown.saturating_sub(1);
         p.invulnerable_ticks = p.invulnerable_ticks.saturating_sub(1);
         p.hurt_ticks = p.hurt_ticks.saturating_sub(1);
@@ -457,7 +455,7 @@ impl Run {
             p.dash_ticks = DASH_TICKS;
             p.dash_cooldown = DASH_COOLDOWN;
             p.dash_dir = if moving {
-                math::normalize(movement)
+                movement.normalize_or_zero()
             } else {
                 math::from_yaw(p.yaw)
             };
@@ -466,17 +464,17 @@ impl Run {
         }
         let velocity = if p.dash_ticks > 0 {
             p.dash_ticks -= 1;
-            math::scale(p.dash_dir, DASH_SPEED)
+            p.dash_dir * DASH_SPEED
         } else {
-            math::scale(movement, p.move_speed)
+            movement * p.move_speed
         };
-        let target = math::add(p.pos, math::scale(velocity, DT));
+        let target = p.pos + (velocity * DT);
         let (resolved, hit) = self.terrain.resolve_circle(target, PLAYER_RADIUS);
         p.pos = resolved;
         p.moving = moving;
         if moving {
             p.yaw = math::turn_toward(p.yaw, math::yaw_of(movement), 0.35);
-            p.walk += math::length(velocity) * DT * 1.6;
+            p.walk += velocity.length() * DT * 1.6;
         }
         if p.regeneration > 0.0 {
             p.health = (p.health + p.regeneration * DT).min(p.max_health);
@@ -487,8 +485,8 @@ impl Run {
             && let Some((x, y)) = hit
             && self.terrain.tile(x, y).minable()
         {
-            let to_block = math::normalize(math::sub(Terrain::center_of(x, y), p.pos));
-            if math::dot(to_block, math::normalize(movement)) > 0.35 {
+            let to_block = (Terrain::center_of(x, y) - p.pos).normalize_or_zero();
+            if to_block.dot(movement.normalize_or_zero()) > 0.35 {
                 mining = Some((x, y));
             }
         }
@@ -506,10 +504,7 @@ impl Run {
                 Tile::Ore { material, .. } => SparkKind::Ore(material),
                 _ => SparkKind::Rock,
             };
-            let face = math::add(
-                p.pos,
-                math::scale(math::normalize(math::sub(at, p.pos)), 0.8),
-            );
+            let face = p.pos + (((at - p.pos).normalize_or_zero()) * 0.8);
             spawn_sparks(&mut self.sparks, &mut self.rng, kind, face, 1.0, 3);
         }
         match self.terrain.mine(x, y, amount) {
@@ -614,7 +609,7 @@ impl Run {
             if cooldown > 0.0 {
                 continue;
             }
-            let origin = math::add(self.player.pos, [0.0, 0.0]);
+            let origin = self.player.pos + V2::new(0.0, 0.0);
             let Some(target) = self.nearest_enemy(origin, stats.range) else {
                 continue;
             };
@@ -622,7 +617,7 @@ impl Run {
             if !self.terrain.line_clear(origin, target_pos) && w.kind != WeaponKind::PlasmaMortar {
                 continue;
             }
-            let dir = math::normalize(math::sub(target_pos, origin));
+            let dir = (target_pos - origin).normalize_or_zero();
             let damage = stats.damage * self.player.damage_multiplier;
             match w.kind {
                 WeaponKind::PulseBlaster => {
@@ -640,7 +635,7 @@ impl Run {
                 WeaponKind::Scattergun => {
                     for i in 0..stats.count {
                         let t = i as f32 / (stats.count - 1).max(1) as f32 - 0.5;
-                        let spread = t * 0.75 + self.rng.range(-0.04, 0.04);
+                        let spread = t * 0.75 + self.rng.range_f32(-0.04..0.04);
                         self.spawn_projectile(
                             ProjectileKind::Pellet,
                             origin,
@@ -663,8 +658,10 @@ impl Run {
                             .into_iter()
                             .filter(|i| !hit.contains(i))
                             .min_by(|&a, &b| {
-                                math::distance_sq(self.enemies[a].pos, from)
-                                    .total_cmp(&math::distance_sq(self.enemies[b].pos, from))
+                                self.enemies[a]
+                                    .pos
+                                    .distance_squared(from)
+                                    .total_cmp(&self.enemies[b].pos.distance_squared(from))
                             });
                         let Some(next) = next else { break };
                         self.damage_enemy(next, damage * 0.85, events);
@@ -680,7 +677,7 @@ impl Run {
                         let pick = if candidates.is_empty() {
                             target
                         } else {
-                            candidates[self.rng.below(candidates.len())]
+                            candidates[self.rng.range_usize(0..candidates.len())]
                         };
                         let to = self.enemies[pick].pos;
                         let total = seconds(stats.speed).max(1);
@@ -692,7 +689,7 @@ impl Run {
                             },
                             pos: origin,
                             height: 1.2,
-                            vel: math::scale(math::sub(to, origin), 1.0 / stats.speed),
+                            vel: ((to - origin) * 1.0 / stats.speed),
                             damage,
                             radius: stats.radius,
                             age: 0,
@@ -723,12 +720,12 @@ impl Run {
         stats: &crate::content::WeaponStats,
         damage: f32,
     ) {
-        let start = math::add(origin, math::scale(dir, 0.6));
+        let start = origin + (dir * 0.6);
         self.projectiles.push(Projectile {
             kind,
             pos: start,
             height: 1.1,
-            vel: math::scale(dir, stats.speed),
+            vel: (dir * stats.speed),
             damage,
             radius: stats.radius,
             age: 0,
@@ -745,7 +742,7 @@ impl Run {
             match p.kind {
                 ProjectileKind::Mortar { from, to, total } => {
                     let t = (p.age as f32 / total as f32).min(1.0);
-                    p.pos = [math::lerp(from[0], to[0], t), math::lerp(from[1], to[1], t)];
+                    p.pos = V2::new(from[0].lerp(to[0], t), from[1].lerp(to[1], t));
                     p.height = 1.2 + 6.0 * t * (1.0 - t) - 1.2 * t;
                     if p.age >= total {
                         self.blasts.push(Blast {
@@ -767,7 +764,7 @@ impl Run {
                     true
                 }
                 ProjectileKind::Bolt | ProjectileKind::Pellet => {
-                    p.pos = math::add(p.pos, math::scale(p.vel, DT));
+                    p.pos += p.vel * DT;
                     if p.age > p.ttl {
                         return false;
                     }
@@ -787,7 +784,7 @@ impl Run {
                         if p.hit.contains(&e.id) {
                             continue;
                         }
-                        if math::distance(e.pos, p.pos) > p.radius + e.kind.stats().radius {
+                        if e.pos.distance(p.pos) > p.radius + e.kind.stats().radius {
                             continue;
                         }
                         p.hit.push(e.id);
@@ -817,7 +814,7 @@ impl Run {
             for i in self.enemies_near(drone, stats.radius + 1.0) {
                 let e = self.enemies[i];
                 if e.drone_cooldown > 0
-                    || math::distance(e.pos, drone) > stats.radius + e.kind.stats().radius
+                    || e.pos.distance(drone) > stats.radius + e.kind.stats().radius
                 {
                     continue;
                 }
@@ -870,8 +867,8 @@ impl Run {
                 continue;
             }
             let stats = e.kind.stats();
-            let to_player = math::sub(player, e.pos);
-            let dist = math::length(to_player);
+            let to_player = player - e.pos;
+            let dist = to_player.length();
             let direct = dist < TILE * 2.5 && self.terrain.line_clear(e.pos, player);
             let goal = if direct {
                 player
@@ -880,21 +877,21 @@ impl Run {
                     .next_waypoint(&self.terrain, e.pos)
                     .unwrap_or(player)
             };
-            let dir = math::normalize(math::sub(goal, e.pos));
+            let dir = (goal - e.pos).normalize_or_zero();
             // Separation from neighbours so hordes spread around the player.
-            let mut push = [0.0, 0.0];
+            let mut push = V2::ZERO;
             for j in self.enemies_near(e.pos, stats.radius + 1.0) {
                 if j == i {
                     continue;
                 }
                 let o = self.enemies[j];
                 let min = stats.radius + o.kind.stats().radius;
-                let d = math::sub(e.pos, o.pos);
-                let l = math::length(d);
+                let d = e.pos - o.pos;
+                let l = d.length();
                 if l < min && l > 1e-4 {
-                    push = math::add(push, math::scale(d, (min - l) / l));
+                    push += d * (min - l) / l;
                 } else if l <= 1e-4 {
-                    push = math::add(push, [((i as f32) * 1.7).sin(), ((i as f32) * 1.3).cos()]);
+                    push += V2::new(((i as f32) * 1.7).sin(), ((i as f32) * 1.3).cos());
                 }
             }
             let reach = stats.radius + PLAYER_RADIUS + 0.2;
@@ -908,10 +905,10 @@ impl Run {
             if e.kind == EnemyKind::Skitter && dist < 5.0 && dist > reach {
                 speed *= 1.35;
             }
-            let step = math::add(math::scale(dir, speed * DT), math::scale(push, 0.35));
+            let step = (dir * speed * DT) + (push * 0.35);
             let (pos, _) = self
                 .terrain
-                .resolve_circle(math::add(e.pos, step), stats.radius * 0.9);
+                .resolve_circle(e.pos + step, stats.radius * 0.9);
             let en = &mut self.enemies[i];
             en.pos = pos;
             en.spawn_ticks = en.spawn_ticks.saturating_sub(1);
@@ -919,7 +916,7 @@ impl Run {
             en.attack_ticks = en.attack_ticks.saturating_sub(1);
             en.attack_cooldown = en.attack_cooldown.saturating_sub(1);
             en.drone_cooldown = en.drone_cooldown.saturating_sub(1);
-            if math::length(to_player) > 1e-3 {
+            if to_player.length() > 1e-3 {
                 en.yaw = math::turn_toward(en.yaw, math::yaw_of(to_player), 0.18);
             }
             en.walk += speed * DT * 1.7;
@@ -1025,7 +1022,7 @@ impl Run {
                     at,
                     radius: BLOATER_BLAST,
                 });
-                if math::distance(at, self.player.pos) < BLOATER_BLAST + PLAYER_RADIUS {
+                if at.distance(self.player.pos) < BLOATER_BLAST + PLAYER_RADIUS {
                     self.hurt_player(
                         EnemyKind::Bloater.stats().damage * self.damage_scale(),
                         events,
@@ -1045,14 +1042,14 @@ impl Run {
     // -- loot ---------------------------------------------------------------
 
     fn drop_pickup(&mut self, kind: PickupKind, at: V2) {
-        let angle = self.rng.range(0.0, std::f32::consts::TAU);
-        let speed = self.rng.range(1.0, 3.0);
+        let angle = self.rng.range_f32(0.0..std::f32::consts::TAU);
+        let speed = self.rng.range_f32(1.0..3.0);
         self.pickups.push(Pickup {
             kind,
             pos: at,
             height: 0.6,
-            vel: [angle.sin() * speed, angle.cos() * speed],
-            vy: self.rng.range(3.0, 5.0),
+            vel: V2::new(angle.sin() * speed, angle.cos() * speed),
+            vy: self.rng.range_f32(3.0..5.0),
             magnet: false,
             age: 0,
         });
@@ -1064,24 +1061,24 @@ impl Run {
         let mut collected = Vec::new();
         for (i, p) in self.pickups.iter_mut().enumerate() {
             p.age += 1;
-            let to = math::sub(player, p.pos);
-            let dist = math::length(to);
+            let to = player - p.pos;
+            let dist = to.length();
             if p.age > 20 && dist < range {
                 p.magnet = true;
             }
             if p.magnet {
                 let speed = 8.0 + p.age.min(240) as f32 * 0.05;
-                let step = math::scale(math::normalize(to), (speed * DT).min(dist));
-                p.pos = math::add(p.pos, step);
-                p.height = math::lerp(p.height, 0.9, 0.2);
+                let step = (to.normalize_or_zero()) * (speed * DT).min(dist);
+                p.pos += step;
+                p.height = p.height.lerp(0.9, 0.2);
             } else {
                 p.vy -= 18.0 * DT;
                 p.height = (p.height + p.vy * DT).max(0.35);
                 if p.height <= 0.35 {
                     p.vy = 0.0;
-                    p.vel = math::scale(p.vel, 0.8);
+                    p.vel *= 0.8;
                 }
-                let next = math::add(p.pos, math::scale(p.vel, DT));
+                let next = p.pos + (p.vel * DT);
                 if !self.terrain.solid_at(next) {
                     p.pos = next;
                 }
@@ -1117,7 +1114,7 @@ impl Run {
                 self.caches[i].open_ticks += 1;
                 continue;
             }
-            if math::distance(c.pos, self.player.pos) > 1.9 {
+            if c.pos.distance(self.player.pos) > 1.9 {
                 continue;
             }
             self.caches[i].opened = true;
@@ -1127,7 +1124,7 @@ impl Run {
                 .filter(|k| self.weapon_level(*k).is_none())
                 .collect();
             let weapon = if self.weapons.len() < MAX_WEAPONS && !unowned.is_empty() {
-                let kind = unowned[self.rng.below(unowned.len())];
+                let kind = unowned[self.rng.range_usize(0..unowned.len())];
                 self.weapons.push(WeaponSlot {
                     kind,
                     level: 1,
@@ -1191,7 +1188,7 @@ impl Run {
         let mut choices = Vec::new();
         while choices.len() < 3 && !pool.is_empty() {
             let total: u32 = pool.iter().map(|(_, w)| w).sum();
-            let mut roll = self.rng.below(total as usize) as u32;
+            let mut roll = self.rng.range_usize(0..total as usize) as u32;
             let index = pool
                 .iter()
                 .position(|(_, w)| {
@@ -1271,23 +1268,23 @@ impl Run {
         self.spawn_timer -= SPAWN_PERIOD;
         let minutes = self.minutes();
         let late = minutes > 2.5 || !matches!(self.extraction, Extraction::Idle);
-        let roll = self.rng.f32();
+        let roll = self.rng.next_f32();
         let (kind, count) = if !self.tutorial && late && roll < 0.06 {
             (EnemyKind::Brute, 1)
         } else if minutes > 1.0 && roll < 0.2 {
             (EnemyKind::Bloater, 1 + usize::from(self.rng.chance(0.3)))
         } else if roll < 0.5 {
-            (EnemyKind::Skitter, 3 + self.rng.below(3))
+            (EnemyKind::Skitter, 3 + self.rng.range_usize(0..3))
         } else {
-            (EnemyKind::Husk, 2 + self.rng.below(3))
+            (EnemyKind::Husk, 2 + self.rng.range_usize(0..3))
         };
         let Some(center) = self.find_spawn_point() else {
             return;
         };
         let health_scale = (1.0 + minutes * 0.22) * (0.6 + 0.4 * self.hazard);
         for n in 0..count {
-            let jitter = [self.rng.range(-1.2, 1.2), self.rng.range(-1.2, 1.2)];
-            let pos = math::add(center, jitter);
+            let jitter = V2::new(self.rng.range_f32(-1.2..1.2), self.rng.range_f32(-1.2..1.2));
+            let pos = center + jitter;
             let pos = if self.terrain.solid_at(pos) {
                 center
             } else {
@@ -1300,7 +1297,7 @@ impl Run {
                 id,
                 kind,
                 pos,
-                yaw: self.rng.range(0.0, std::f32::consts::TAU),
+                yaw: self.rng.range_f32(0.0..std::f32::consts::TAU),
                 health: stats.health * health_scale,
                 max_health: stats.health * health_scale,
                 hit_ticks: 0,
@@ -1309,7 +1306,7 @@ impl Run {
                 spawn_ticks: 24,
                 attack_cooldown: 30,
                 drone_cooldown: 0,
-                speed_scale: self.rng.range(0.85, 1.15),
+                speed_scale: self.rng.range_f32(0.85..1.15),
                 alerted: false,
             });
         }
@@ -1317,9 +1314,9 @@ impl Run {
 
     fn find_spawn_point(&mut self) -> Option<V2> {
         for _ in 0..40 {
-            let angle = self.rng.range(0.0, std::f32::consts::TAU);
-            let dist = self.rng.range(17.0, 26.0);
-            let p = math::add(self.player.pos, [angle.sin() * dist, angle.cos() * dist]);
+            let angle = self.rng.range_f32(0.0..std::f32::consts::TAU);
+            let dist = self.rng.range_f32(17.0..26.0);
+            let p = self.player.pos + V2::new(angle.sin() * dist, angle.cos() * dist);
             let (x, y) = Terrain::tile_of(p);
             if self.terrain.tile(x, y).solid() {
                 continue;
@@ -1370,7 +1367,7 @@ impl Run {
                 }
             }
             Extraction::Waiting { pos, hold } => {
-                let inside = math::distance(self.player.pos, pos) < EXTRACTION_RADIUS;
+                let inside = self.player.pos.distance(pos) < EXTRACTION_RADIUS;
                 let hold = if inside {
                     hold + 1
                 } else {
@@ -1409,22 +1406,31 @@ impl Run {
     }
 
     /// Order-sensitive digest for determinism checks.
-    pub fn state_hash(&self) -> u64 {
-        let mut h = Fnv::default();
-        h.f(self.player.pos[0]);
-        h.f(self.player.pos[1]);
-        h.f(self.player.health);
-        h.u(u64::from(self.ticks));
-        h.u(u64::from(self.kills));
-        h.u(u64::from(self.carried.total()));
-        h.u(self.terrain.revision);
-        for e in &self.enemies {
-            h.u(u64::from(e.id));
-            h.f(e.pos[0]);
-            h.f(e.pos[1]);
-            h.f(e.health);
+    /// Feed everything that steers the run into `h` (positions as raw bits).
+    pub fn hash_into(&self, h: &mut StateHasher) {
+        for v in [self.player.pos.x, self.player.pos.y, self.player.health] {
+            h.write_f32_bits(v);
         }
-        h.0
+        h.write_u32(self.ticks);
+        h.write_u32(self.kills);
+        h.write_u32(self.carried.total());
+        h.write_u64(self.terrain.revision);
+        h.write_rng(&self.rng);
+        h.write_u64(self.enemies.len() as u64);
+        for e in &self.enemies {
+            h.write_u32(e.id);
+            for v in [e.pos.x, e.pos.y, e.health] {
+                h.write_f32_bits(v);
+            }
+        }
+        h.write_u64(self.projectiles.len() as u64);
+        h.write_u64(self.pickups.len() as u64);
+    }
+
+    pub fn state_hash(&self) -> StateHash {
+        let mut h = StateHasher::new();
+        self.hash_into(&mut h);
+        h.finish()
     }
 }
 
@@ -1440,31 +1446,14 @@ fn spawn_sparks(
         if sparks.len() >= MAX_SPARKS {
             sparks.remove(0);
         }
-        let a = rng.range(0.0, std::f32::consts::TAU);
-        let s = rng.range(1.5, 4.5);
+        let a = rng.range_f32(0.0..std::f32::consts::TAU);
+        let s = rng.range_f32(1.5..4.5);
         sparks.push(Spark {
             kind,
             pos: [at[0], height, at[1]],
-            vel: [a.sin() * s, rng.range(2.0, 6.0), a.cos() * s],
-            ttl: 20 + rng.below(25) as u32,
+            vel: [a.sin() * s, rng.range_f32(2.0..6.0), a.cos() * s],
+            ttl: 20 + rng.range_usize(0..25) as u32,
         });
-    }
-}
-
-#[derive(Default)]
-struct Fnv(u64);
-impl Fnv {
-    fn u(&mut self, v: u64) {
-        if self.0 == 0 {
-            self.0 = 0xcbf2_9ce4_8422_2325;
-        }
-        for b in v.to_le_bytes() {
-            self.0 ^= u64::from(b);
-            self.0 = self.0.wrapping_mul(0x0100_0000_01b3);
-        }
-    }
-    fn f(&mut self, v: f32) {
-        self.u(u64::from(v.to_bits()));
     }
 }
 
@@ -1505,7 +1494,7 @@ mod tests {
     #[test]
     fn deterministic_for_seed() {
         let input = GameInput {
-            movement: [0.3, -0.7],
+            movement: V2::new(0.3, -0.7),
             ..GameInput::default()
         };
         let mut a = Run::new(config(5));
@@ -1532,7 +1521,7 @@ mod tests {
         let mut run = Run::new(config(2));
         run.spawning_enabled = false;
         let mut events = Vec::new();
-        for dir in [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]] {
+        for dir in [V2::X, V2::NEG_X, V2::Y, V2::NEG_Y] {
             events.extend(step(
                 &mut run,
                 GameInput {
@@ -1569,12 +1558,12 @@ mod tests {
         run.invulnerable = true;
         // Walk back to the landing site and wait for liftoff.
         for _ in 0..(EXTRACTION_INBOUND + EXTRACTION_HOLD + 600) {
-            let to = math::sub(run.landing, run.player.pos);
+            let to = run.landing - run.player.pos;
             let input = GameInput {
-                movement: if math::length(to) > 0.5 {
-                    math::normalize(to)
+                movement: if to.length() > 0.5 {
+                    to.normalize_or_zero()
                 } else {
-                    [0.0, 0.0]
+                    V2::new(0.0, 0.0)
                 },
                 ..GameInput::default()
             };
