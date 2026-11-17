@@ -2,6 +2,7 @@
 //! held weapons come from content data.
 
 use super::*;
+use crate::render::effects::outline;
 
 impl Painter<'_, '_> {
     #[allow(
@@ -27,7 +28,13 @@ impl Painter<'_, '_> {
         if weapon.is_some() {
             layers.push(Layer::full("aim", 0.0));
         }
-        let posed = self.character(names::ASTRONAUT, root, &layers, flash);
+        let posed = self.character(
+            names::ASTRONAUT,
+            root,
+            &layers,
+            flash,
+            Some(outline::PLAYER),
+        );
         if let Some(weapon) = weapon {
             let info = weapon.info();
             let k = info.model_scale;
@@ -84,7 +91,12 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             let danger = (1.0 - (e.pos.distance(run.player.pos) / 5.0)).clamp(0.0, 1.0);
             glow += danger * 0.4 * ((p.time * 14.0).sin() * 0.5 + 0.5);
         }
-        p.character(&info.model, root, &layers, glow);
+        let style = if info.behavior == EnemyBehavior::Exploder {
+            outline::EXPLODER
+        } else {
+            outline::ENEMY
+        };
+        p.character(&info.model, root, &layers, glow, Some(style));
     }
     for c in &run.corpses {
         let info = c.kind.info();
@@ -95,6 +107,6 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         let k = (c.ticks as f32 / 14.0).min(1.0);
         let sink = ((c.ticks as f32 - 30.0) / 20.0).clamp(0.0, 1.0) * 1.2;
         let root = at(c.pos, -sink) * Mat4::rotation_y(c.yaw) * Mat4::rotation_x(k * 1.5);
-        p.character(&info.model, root, &[Layer::full("idle", 0.0)], 0.0);
+        p.character(&info.model, root, &[Layer::full("idle", 0.0)], 0.0, None);
     }
 }

@@ -4,10 +4,13 @@
 //! Every `assets/models/<name>.glb` is loaded under its file stem, plus the
 //! named entries in `assets/data/models.toml` (Kenney props). Content data
 //! refers to models by these names, so new content needs no code here.
-//! Models that carry a skin are characters (see `skins`).
+//! Characters (the astronaut and every enemy model) load through a named
+//! animated loader configuration that imports skins and clips; props use
+//! the static loader, which rejects a stray skin instead of drawing it in
+//! its bind pose.
 
 use quasar_assets::model::Model3D;
-use quasar_assets::{AssetServer, CacheBudget, GltfLoader};
+use quasar_assets::{AssetServer, CacheBudget, GltfLoader, Handle};
 use quasar_frame::{Gpu, GraphicsResult, error};
 use quasar_render_3d::{
     MaterialConversion, ModelUploadOptions, ShadowRenderState3D, SurfaceRenderState3D,
@@ -103,13 +106,46 @@ pub struct Models {
     sources: BTreeMap<String, Model3D>,
 }
 
-fn loader() -> GltfLoader {
-    // Characters carry skins and clips; Kenney crates ship opening clips
-    // that are imported but never played.
-    GltfLoader {
+/// The asset server's loader configuration for skinned characters.
+const ANIMATED: &str = "animated";
+
+/// Models that are skinned characters: the player and every enemy.
+pub fn character_names() -> Vec<String> {
+    use planetfall_sim::content::EnemyId;
+    let mut names = vec![names::ASTRONAUT.to_owned()];
+    names.extend(EnemyId::all().map(|e| e.info().model.clone()));
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// A server with the static prop loader and the named animated one.
+fn server(root: &Path) -> GraphicsResult<AssetServer> {
+    let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
+    server
+        .mount_file("", root)
+        .map_err(|e| error(format!("mount {}: {e}", root.display())))?;
+    // Kenney crates ship opening clips; props keep their authored pose.
+    server.register(GltfLoader {
         allow_animation_default_pose: true,
-        ..GltfLoader::animated()
-    }
+        ..GltfLoader::default()
+    });
+    server.register_named(ANIMATED, GltfLoader::animated());
+    Ok(server)
+}
+
+fn load(
+    server: &mut AssetServer,
+    name: &str,
+    file: &str,
+    characters: &[String],
+) -> Result<Handle<Model3D>, String> {
+    let handle = if characters.iter().any(|c| c == name) {
+        server.load_named::<GltfLoader>(ANIMATED, file)
+    } else {
+        server.load::<GltfLoader>(file)
+    };
+    handle.map_err(|e| format!("load {file}: {e}"))
 }
 
 impl Models {
@@ -122,17 +158,12 @@ impl Models {
         if !missing.is_empty() {
             return Err(error(format!("models not found: {}", missing.join(", "))));
         }
-        let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
-        server
-            .mount_file("", root)
-            .map_err(|e| error(format!("mount {}: {e}", root.display())))?;
-        server.register(loader());
+        let mut server = server(root)?;
+        let characters = character_names();
         let mut gpu = BTreeMap::new();
         let mut sources = BTreeMap::new();
         for (name, file) in catalog {
-            let model = server
-                .load::<GltfLoader>(&file)
-                .map_err(|e| error(format!("load {file}: {e}")))?;
+            let model = load(&mut server, &name, &file, &characters).map_err(error)?;
             let uploaded = UploadedModel::upload(
                 gal,
                 &model,
@@ -194,10 +225,7 @@ mod tests {
     }
 
     fn server() -> AssetServer {
-        let mut server = AssetServer::with_budget(CacheBudget::new(64 * 1024 * 1024, 64));
-        server.mount_file("", root()).unwrap();
-        server.register(loader());
-        server
+        super::server(&root()).unwrap()
     }
 
     /// Every catalogued model decodes on the CPU, and every model the
@@ -209,9 +237,9 @@ mod tests {
             assert!(catalog.contains_key(&name), "missing model {name:?}");
         }
         let mut server = server();
+        let characters = character_names();
         for (name, file) in &catalog {
-            let model = server
-                .load::<GltfLoader>(file)
+            let model = load(&mut server, name, file, &characters)
                 .unwrap_or_else(|e| panic!("{name}: {e}"));
             assert!(!model.instances.is_empty(), "{name} has no instances");
         }
@@ -250,7 +278,7 @@ mod tests {
                 &["walk", "pulse"][..],
             ),
         ] {
-            let model = server.load::<GltfLoader>(file).unwrap();
+            let model = server.load_named::<GltfLoader>(ANIMATED, file).unwrap();
             let (skeleton, binding) = skeleton_from_model(&model, 0).unwrap();
             for joint in joints {
                 assert!(

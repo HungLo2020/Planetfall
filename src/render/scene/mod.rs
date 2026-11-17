@@ -29,7 +29,7 @@ use planetfall_sim::content::{
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};
 use planetfall_sim::run::{
-    BlastKind, Extraction, ProjectileKind, Run, SparkKind, extraction_hold, extraction_inbound,
+    BlastKind, Extraction, ProjectileKind, Run, extraction_hold, extraction_inbound,
     extraction_radius,
 };
 use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};
@@ -38,7 +38,7 @@ use planetfall_sim::voxel;
 use planetfall_sim::{Game, Phase};
 use quasar_render_3d::{
     Attenuation, BlendMode, BloomSettings, ColorGrade, Light, LitMaterial, Mat4, Mesh, NormalMap,
-    PostSettings, ShadingModel, SurfaceDraw3D, SurfaceMaterial, TransparentDraw3D,
+    PostSettings, ShadingModel, SurfaceDraw3D, SurfaceMaterial, SurfaceTransparentDraw3D,
     VignetteSettings,
 };
 use quasar_render_voxel::{Fog, OverlayBox};
@@ -47,7 +47,7 @@ use quasar_render_voxel::{Fog, OverlayBox};
 pub struct SceneOutput<'a> {
     pub draws: Vec<SurfaceDraw3D<'a>>,
     /// Blended draws, sorted back to front by the renderer.
-    pub transparent: Vec<TransparentDraw3D<'a>>,
+    pub transparent: Vec<SurfaceTransparentDraw3D<'a>>,
     pub lights: Vec<Light>,
     pub ambient: [f32; 3],
     pub clear: [f32; 4],
@@ -73,7 +73,7 @@ pub struct Painter<'a, 's> {
     models: &'a Models,
     skins: &'s Skins,
     pub draws: Vec<SurfaceDraw3D<'a>>,
-    pub transparent: Vec<TransparentDraw3D<'a>>,
+    pub transparent: Vec<SurfaceTransparentDraw3D<'a>>,
     /// Characters to pose on the GPU this frame.
     pub skinned: Vec<SkinRequest>,
     pub lights: Vec<Light>,
@@ -120,7 +120,7 @@ impl<'a, 's> Painter<'a, 's> {
             skinned: Vec::with_capacity(128),
             draws: Vec::with_capacity(2048),
             transparent: Vec::with_capacity(512),
-            lights: Vec::with_capacity(24),
+            lights: Vec::with_capacity(super::MAX_LIGHTS),
             time,
         }
     }
@@ -193,7 +193,7 @@ impl<'a, 's> Painter<'a, 's> {
         lit.base.tint = [color[0], color[1], color[2], alpha];
         lit.specular = [0.6; 3];
         lit.shininess = 96.0;
-        self.transparent.push(TransparentDraw3D::new(
+        self.transparent.push(SurfaceTransparentDraw3D::new(
             self.cube,
             model,
             lit,
@@ -207,7 +207,7 @@ impl<'a, 's> Painter<'a, 's> {
         lit.emissive = math_scale3(color, GLOW);
         lit.shading = ShadingModel::Unlit;
         self.transparent
-            .push(TransparentDraw3D::new(mesh, model, lit, mode));
+            .push(SurfaceTransparentDraw3D::new(mesh, model, lit, mode));
     }
 
     fn model(&mut self, id: &str, root: Mat4) {
@@ -228,14 +228,23 @@ impl<'a, 's> Painter<'a, 's> {
     }
 
     /// Pose a skinned character from clip layers and queue it for GPU
-    /// skinning. Returns the pose for attachments.
-    fn character(&mut self, id: &'static str, root: Mat4, layers: &[Layer], flash: f32) -> Posed {
+    /// skinning, optionally outlined where walls hide it. Returns the pose
+    /// for attachments.
+    fn character(
+        &mut self,
+        id: &'static str,
+        root: Mat4,
+        layers: &[Layer],
+        flash: f32,
+        outline: Option<u8>,
+    ) -> Posed {
         let posed = self.skins.character(id).pose(layers);
         self.skinned.push(SkinRequest {
             id,
             palette: posed.palette.clone(),
             root,
             flash,
+            outline,
         });
         posed
     }
@@ -260,7 +269,7 @@ impl<'a, 's> Painter<'a, 's> {
     }
 
     fn point(&mut self, p: [f32; 3], color: [f32; 3], intensity: f32, range: f32) {
-        if self.lights.len() >= 24 {
+        if self.lights.len() >= super::MAX_LIGHTS {
             return;
         }
         self.lights.push(Light::Point {

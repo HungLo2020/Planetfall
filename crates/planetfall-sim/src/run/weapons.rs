@@ -1,7 +1,7 @@
 //! Weapons: targeting, firing by behaviour archetype, projectiles and
 //! orbiting drones. Numbers come from `weapons.toml`.
 
-use super::{Beam, Blast, BlastKind, Projectile, ProjectileKind, Run, SparkKind, spawn_sparks};
+use super::{Beam, Blast, BlastKind, Projectile, ProjectileKind, Run};
 use crate::content::{DT, WeaponBehavior, WeaponId, WeaponStats, seconds};
 use crate::events::GameEvent;
 use crate::math::{self, FloatExt, V2};
@@ -248,14 +248,11 @@ impl Run {
                         return false;
                     }
                     if self.terrain.solid_at(p.pos) {
-                        spawn_sparks(
-                            &mut self.sparks,
-                            &mut self.rng,
-                            SparkKind::Energy,
-                            p.pos,
-                            0.5,
-                            2,
-                        );
+                        events.push(GameEvent::Impact {
+                            weapon: p.weapon,
+                            at: p.pos,
+                            height: p.height,
+                        });
                         return false;
                     }
                     for i in self.enemies_near(p.pos, p.radius + 1.0) {

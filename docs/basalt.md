@@ -35,6 +35,7 @@ validates with Basalt's own `basalt-core::GameDefinition`.
 └── data/
     ├── save/slot-1.json … slot-5.json   five save slots   (synced, backed up)
     ├── config/shared/settings.toml      volumes, shake, last slot (synced)
+    ├── config/shared/controls.toml      rebound controls (synced)
     ├── config/display.toml              window, shadows, bloom (this machine)
     └── cache/                           currently unused  (disposable)
 ```
@@ -61,6 +62,9 @@ Save rules:
   listed as unusable and never overwritten. An unreadable slot is copied
   aside as `slot-N.corrupt-<time>.json` so the slot can be reused. Deleting a
   slot renames it `slot-N.deleted.json` (one level of undo by hand).
+- `controls.toml` is written by Quasar's `save_bindings` and read merged over
+  the defaults, so actions added by an update keep their default binding; an
+  unreadable file is ignored (never overwritten) until the player rebinds.
 - Settings files carry a `version`, are sanitized on load (volumes clamped,
   sizes bounded) and fall back to defaults when missing or unreadable.
 - Files from earlier builds (`save/profile.json`,

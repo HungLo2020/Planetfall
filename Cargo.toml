@@ -11,29 +11,29 @@ publish = false
 
 [workspace.dependencies]
 planetfall-sim = { path = "crates/planetfall-sim" }
-quasar-animation = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-app = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-assets = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-audio = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-config = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-core = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-diagnostics = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-frame = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-input = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-math = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-nav = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-voxel = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-voxel-mesh = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-render-voxel = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-render-2d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-sim = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-render-3d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-spatial = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-storage = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-quasar-text = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-ui = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
-quasar-window = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24" }
-vulkanic-gal = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.24", default-features = false }
+quasar-animation = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-app = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-assets = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-audio = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-config = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-core = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-diagnostics = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-frame = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-input = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-math = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-nav = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-voxel = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-voxel-mesh = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-render-voxel = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-render-2d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-sim = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-render-3d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-spatial = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-storage = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+quasar-text = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-ui = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-window = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
+vulkanic-gal = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
@@ -94,7 +94,7 @@ quasar-render-2d = { workspace = true, optional = true, features = ["gpu", "vulk
 quasar-render-3d = { workspace = true, optional = true, features = ["vulkan", "model-assets", "visibility"] }
 quasar-render-voxel = { workspace = true, optional = true, features = ["vulkan"] }
 quasar-text = { workspace = true, optional = true }
-quasar-ui = { workspace = true, optional = true, features = ["input", "text-render2d"] }
+quasar-ui = { workspace = true, optional = true, features = ["input", "text-render2d", "controls-file"] }
 quasar-voxel = { workspace = true, optional = true }
 quasar-voxel-mesh = { workspace = true, optional = true }
 quasar-window = { workspace = true, optional = true }

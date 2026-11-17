@@ -193,7 +193,7 @@ impl Audio {
                 GameEvent::PlayerHurt { .. } => self.play("player_hurt", 0.7, None, 8),
                 GameEvent::PlayerDied => self.play("player_die", 0.9, None, 0),
                 GameEvent::Dashed => self.play("dash", 0.5, None, 0),
-                GameEvent::MineHit { at } => self.play("mine_hit", 0.4, Some(at), 4),
+                GameEvent::MineHit { at, .. } => self.play("mine_hit", 0.4, Some(at), 4),
                 GameEvent::BlockBroken { at, .. } => self.play("block_break", 0.6, Some(at), 2),
                 GameEvent::PickedUpXp => self.play("pickup_xp", 0.25, None, 3),
                 GameEvent::PickedUpMaterial { .. } => self.play("pickup_material", 0.5, None, 3),
@@ -205,6 +205,8 @@ impl Audio {
                     self.play("ui_deny", 0.6, None, 6)
                 }
                 GameEvent::PodLanded { at } => self.play("pod_impact", 0.9, Some(at), 0),
+                // Wall hits are visual only (sparks); the shot already sounded.
+                GameEvent::Impact { .. } => {}
                 GameEvent::Liftoff => self.play("liftoff", 0.9, None, 0),
                 GameEvent::TerminalOpened => self.play("console", 0.5, None, 4),
                 GameEvent::TerminalClosed => self.play("ui_move", 0.5, None, 2),

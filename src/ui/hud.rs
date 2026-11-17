@@ -192,7 +192,7 @@ pub fn build(cx: &HudContext) -> Layer {
                 if let Some(title) = title {
                     b.label(card, title, TextStyle::Small);
                 }
-                b.paragraph(card, &body, TextStyle::Body, 620.0 - 24.0);
+                b.paragraph(card, &body, TextStyle::Body);
             }
         }
     }

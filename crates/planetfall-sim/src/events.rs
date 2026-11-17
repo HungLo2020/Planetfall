@@ -32,8 +32,16 @@ pub enum GameEvent {
     PlayerDied,
     Dashed,
     // Mining and loot.
+    /// A drill bite on the block face (`material` is `None` for plain rock).
     MineHit {
         at: V2,
+        material: Option<Material>,
+    },
+    /// A bolt or pellet struck a wall.
+    Impact {
+        weapon: WeaponId,
+        at: V2,
+        height: f32,
     },
     BlockBroken {
         at: V2,

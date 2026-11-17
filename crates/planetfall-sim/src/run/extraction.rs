@@ -1,8 +1,8 @@
 //! Extraction (pod inbound, hold the zone, liftoff) and short-lived visual
-//! state (blasts, beams, sparks). Timings come from `tuning.toml`.
+//! state (blasts, beams). Timings come from `tuning.toml`.
 
 use super::{Blast, BlastKind, Extraction, Run, RunOutcome, RunState};
-use crate::content::{DT, content, seconds};
+use crate::content::{content, seconds};
 use crate::events::GameEvent;
 use crate::input::GameInput;
 
@@ -88,17 +88,5 @@ impl Run {
             b.ttl = b.ttl.saturating_sub(1);
         }
         self.beams.retain(|b| b.ttl > 0);
-        for s in &mut self.sparks {
-            s.vel[1] -= 14.0 * DT;
-            for axis in 0..3 {
-                s.pos[axis] += s.vel[axis] * DT;
-            }
-            if s.pos[1] < 0.05 {
-                s.pos[1] = 0.05;
-                s.vel = [s.vel[0] * 0.5, -s.vel[1] * 0.3, s.vel[2] * 0.5];
-            }
-            s.ttl = s.ttl.saturating_sub(1);
-        }
-        self.sparks.retain(|s| s.ttl > 0);
     }
 }

@@ -94,6 +94,36 @@ fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
     content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())
 }
 
+/// Events of the last few seconds before an offscreen render, so a single
+/// frame still shows the drop's recent scorch marks and splats. The final
+/// tick's own events are passed separately (they also emit particles).
+#[derive(Default)]
+struct History {
+    ticks: std::collections::VecDeque<Vec<planetfall_sim::events::GameEvent>>,
+}
+
+impl History {
+    const TICKS: usize = 60 * 20;
+
+    fn record(&mut self, game: &Game) {
+        // Marks belong to one drop.
+        if game.run.is_none() {
+            self.ticks.clear();
+            return;
+        }
+        if self.ticks.len() == Self::TICKS {
+            self.ticks.pop_front();
+        }
+        self.ticks.push_back(game.events.clone());
+    }
+
+    /// Everything but the last tick, oldest first.
+    fn events(mut self) -> Vec<planetfall_sim::events::GameEvent> {
+        self.ticks.pop_back();
+        self.ticks.into_iter().flatten().collect()
+    }
+}
+
 /// Run the simulation without a window, optionally under the autopilot.
 fn headless(
     settings: &Settings,
@@ -102,6 +132,7 @@ fn headless(
 ) -> Result<(), String> {
     let mut game = Game::new(profile, settings.seed);
     let mut pilot = Autopilot::new();
+    let mut history = History::default();
     for _ in 0..settings.ticks {
         let input = if settings.autoplay {
             pilot.input(&game)
@@ -109,7 +140,9 @@ fn headless(
             GameInput::default()
         };
         game.update(&input);
+        history.record(&game);
     }
+    let history = history.events();
     let run = game.run.as_ref();
     println!(
         "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} hash={:016x}",
@@ -156,6 +189,7 @@ fn headless(
                     "main" => Screen::Main,
                     "saves" => Screen::Saves(SavesMode::Load),
                     "pause" => Screen::Pause { surface },
+                    "controls" => Screen::Controls { gamepad: false },
                     _ => Screen::Settings,
                 }))
             } else if game
@@ -199,7 +233,16 @@ fn headless(
             let overlay = |c: &mut quasar_render_2d::Canvas, camera: &render::camera::Camera| {
                 ui::overlay::draw(c, camera, &game, game.tick as f32 / 60.0);
             };
-            render::screenshot(&game, asset_root, Some(text), size, &layers, &overlay, path)?;
+            render::screenshot(
+                &game,
+                &history,
+                asset_root,
+                Some(text),
+                size,
+                &layers,
+                &overlay,
+                path,
+            )?;
             println!("wrote {}", path.display());
         }
         #[cfg(not(feature = "graphics"))]
@@ -274,6 +317,7 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
         }
         let mut game = Game::new(profile, 77);
         let mut pilot = Autopilot::new();
+        let mut history = History::default();
         // Play until a fight is under way on the surface.
         for _ in 0..60 * 60 * 10 {
             if let Some(run) = &mut game.run {
@@ -294,7 +338,9 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
             }
             let input = pilot.input(&game);
             game.update(&input);
+            history.record(&game);
         }
+        let history = history.events();
         println!(
             "cover scene: phase={:?} enemies={}",
             game.phase,
@@ -323,6 +369,7 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
         let overlay = |_: &mut quasar_render_2d::Canvas, _: &render::camera::Camera| {};
         render::screenshot(
             &game,
+            &history,
             asset_root,
             Some(text),
             size,

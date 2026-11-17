@@ -357,37 +357,6 @@ pub struct BlockCosts {
     pub lamp: Materials,
 }
 
-/// Top-level tables of the list files.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct PlanetFile {
-    pub planet: Vec<PlanetDef>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct WeaponFile {
-    pub weapon: Vec<WeaponDef>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct EnemyFile {
-    pub enemy: Vec<EnemyDef>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct PerkFile {
-    pub perk: Vec<PerkDef>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct UpgradeFile {
-    pub upgrade: Vec<UpgradeDef>,
-}
-
 fn one() -> f32 {
     1.0
 }

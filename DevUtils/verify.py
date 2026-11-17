@@ -67,7 +67,7 @@ def main() -> None:
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks", str(ticks),
                  "--screenshot", str(shots / f"{name}.png")],
             )
-        for menu in ["main", "saves", "settings"]:
+        for menu in ["main", "saves", "settings", "controls"]:
             step(
                 f"screenshot menu-{menu}",
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--ticks", "10", "--menu", menu,

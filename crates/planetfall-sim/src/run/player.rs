@@ -1,6 +1,6 @@
 //! The player: movement, dash, damage taken and auto-mining.
 
-use super::{Mining, PickupKind, Run, SparkKind, spawn_sparks};
+use super::{Mining, PickupKind, Run};
 use crate::content::{DT, Material, content};
 use crate::events::GameEvent;
 use crate::input::GameInput;
@@ -69,13 +69,12 @@ impl Run {
         let at = Terrain::center_of(x, y);
         p.mine_sound += 1;
         if p.mine_sound % 14 == 1 {
-            events.push(GameEvent::MineHit { at });
-            let kind = match tile {
-                Tile::Ore { material, .. } => SparkKind::Ore(material),
-                _ => SparkKind::Rock,
+            let material = match tile {
+                Tile::Ore { material, .. } => Some(material),
+                _ => None,
             };
             let face = p.pos + (at - p.pos).normalize_or_zero() * 0.8;
-            spawn_sparks(&mut self.sparks, &mut self.rng, kind, face, 1.0, 3);
+            events.push(GameEvent::MineHit { at: face, material });
         }
         match self.terrain.mine(x, y, amount) {
             Some(broken) => {
@@ -86,8 +85,6 @@ impl Run {
                     _ => None,
                 };
                 events.push(GameEvent::BlockBroken { at, material });
-                let kind = material.map_or(SparkKind::Rock, SparkKind::Ore);
-                spawn_sparks(&mut self.sparks, &mut self.rng, kind, at, 1.4, 12);
                 let drops: &[(Material, u32)] = match material {
                     Some(Material::Ferrite) => &[(Material::Ferrite, 2), (Material::Ferrite, 2)],
                     Some(Material::Lumite) => &[(Material::Lumite, 1), (Material::Lumite, 1)],

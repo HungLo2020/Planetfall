@@ -1,4 +1,4 @@
-//! Projectiles, beams, blasts and sparks.
+//! Projectiles, beams and blasts (particles live in `render::effects`).
 
 use super::*;
 
@@ -14,7 +14,7 @@ pub(super) fn projectiles(p: &mut Painter<'_, '_>, run: &Run) {
                     at(pr.pos, pr.height) * Mat4::rotation_y(yaw) * s(0.07, 0.07, 0.42),
                     color,
                 );
-                if lights < 3 {
+                if lights < 16 {
                     p.point([pr.pos[0], pr.height, pr.pos[1]], color, 0.8, 4.0);
                     lights += 1;
                 }
@@ -99,21 +99,5 @@ pub(super) fn effects(p: &mut Painter<'_, '_>, run: &Run) {
             p.halo(at(b.pos, 0.4) * s(r, r * 0.35, r), color, 0.25 * fade);
         }
         p.point([b.pos[0], 1.5, b.pos[1]], color, 6.0 * fade, b.radius * 3.0);
-    }
-    for sp in &run.sparks {
-        let color = match sp.kind {
-            SparkKind::Rock => [0.55, 0.5, 0.45],
-            SparkKind::Ore(Material::Ferrite) => [1.0, 0.6, 0.3],
-            SparkKind::Ore(Material::Lumite) => [0.4, 0.95, 1.0],
-            SparkKind::Ore(Material::Voidstone) => [0.75, 0.4, 1.0],
-            SparkKind::Blood(e) => e.info().blood,
-            SparkKind::Energy => [0.6, 0.9, 1.0],
-        };
-        let k = 0.05 + (sp.ttl as f32 / 45.0) * 0.05;
-        if matches!(sp.kind, SparkKind::Rock | SparkKind::Blood(_)) {
-            p.cube(t(sp.pos[0], sp.pos[1], sp.pos[2]) * s(k, k, k), color);
-        } else {
-            p.glow(t(sp.pos[0], sp.pos[1], sp.pos[2]) * s(k, k, k), color);
-        }
     }
 }

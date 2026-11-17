@@ -2,7 +2,7 @@
 
 Planetfall is an ordinary Cargo workspace. There is no engine-owned project
 format, editor or runner requirement: `cargo run` plays, `cargo test` tests.
-Quasar crates are pinned by git tag (`v0.2.24`) in the root `Cargo.toml`.
+Quasar crates are pinned by git tag (`v0.2.25`) in the root `Cargo.toml`.
 
 ```
 Planetfall/
@@ -35,7 +35,7 @@ headless crates (`quasar-config` parses the content TOML from strings).
 |---|---|
 | `game` | Top-level state machine: `Ship → Ftl → Ship (orbit) → Descent → Surface → Ascent/Lost → Ship (debrief)`; terminals; build mode; tutorial driver; banking cargo; `quasar_sim::Simulation` impl |
 | `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations, module assembly, free-form building rules |
-| `run` | One drop, split by system: `player` (movement, dash, mining), `weapons`, `enemies`, `spawner` (weighted spawn tables), `loot` (pickups, caches, perks), `extraction`; `tests` |
+| `run` | One drop (no cosmetic state: particles are presentation), split by system: `player` (movement, dash, mining), `weapons`, `enemies`, `spawner` (weighted spawn tables), `loot` (pickups, caches, perks), `extraction`; `tests` |
 | `terrain` | Cave generation into a voxel volume, mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one `TILE` per voxel; ground at `y = -1`, walls at `y = 0`) |
 | `profile` | Persistent progress (including ship edits), purchase rules, module bonuses and versioned migration |
@@ -75,11 +75,16 @@ The simulation never reads the clock, filesystem or devices.
 ### Content
 
 Weapons, enemies, planets, perks, ship modules and global tuning are data in
-`assets/data/` (see [Gameplay](gameplay.md#adding-content)). The binary reads
-the files at startup and passes their text to `content::install`, which
-parses, validates (unique IDs, five weapon levels, known models are checked by
-the renderer's tests, every planet has a spawn table) and stores one
-immutable `Content` in a global `OnceLock`. `content()` falls back to the
+`assets/data/` (see [Gameplay](gameplay.md#tuning-and-adding-content)). The
+binary reads the files at startup and passes their text to
+`content::install`. The record tables go through
+`quasar_config::content::ContentRegistry`: each definition implements
+`ContentRecord` (its own field checks) and planets declare references to
+enemy ids, so a bad edit reports every problem at once as
+`table[record].field: message`. Checks across a table or against the tuning
+(a starter weapon, levels matching `max_level`, a planet at nav level 0)
+follow, and the result is stored as one immutable `Content` in a global
+`OnceLock`. The renderer's tests check that named models and sounds exist. `content()` falls back to the
 copy compiled into the sim crate (`include_str!`), which tests, the headless
 CLI and a missing data folder use.
 
@@ -114,16 +119,16 @@ the profile changes, and on pause-quit, suspend and exit.
 | Quasar crate | Use |
 |---|---|
 | quasar-app / quasar-window / quasar-core | Event loop, window, fixed-step timing, fullscreen, focus/suspend |
-| quasar-input | Named actions (keyboard axes, keys, D-pad button-pair axes), `GamepadHub` + gilrs, device families and `format_prompt` button names |
+| quasar-input | Named actions (keyboard axes, keys, D-pad button-pair axes), `GamepadHub` + gilrs, `most_recent_device` across window and hub for prompts, device families and `format_prompt` button names |
 | quasar-frame / vulkanic-gal | Device, swapchain, `render_offscreen` screenshots |
-| quasar-render-3d | Lit surfaces (Blinn-Phong, point + directional lights, normal maps), shadow maps, `SceneTarget` (linear HDR), sorted `TransparentDraw3D`, `PostChain` (bloom, ACES, grade, vignette), `SkinningPass`, mesh primitives |
-| quasar-render-voxel / quasar-voxel-mesh | Voxel terrain and hull: culled-model meshing (cut-away wall models), paged GPU arenas, GPU culling, translucent windows, fog, overlays, voxel shadow casters |
-| quasar-assets + quasar-animation | glTF decoding with skins and clips; skeletons, clip sampling, pose blending and joint palettes |
+| quasar-render-3d | Lit surfaces (Blinn-Phong, clustered point + directional lights, normal maps, fog), shadow maps, `SceneTarget` (linear HDR), sorted `SurfaceTransparentDraw3D`, `PostChain` (bloom, ACES, grade, vignette), `SkinningPass` + `SkinnedCrowd`, `ParticleSystem`, `DecalRenderer`, `OutlineRenderer`, mesh primitives |
+| quasar-render-voxel / quasar-voxel-mesh | Voxel terrain and hull: culled meshing with partial-height walls, paged GPU arenas, GPU culling, translucent windows, fog, overlays, voxel shadow casters, `HybridFrame` pass ordering |
+| quasar-assets + quasar-animation | glTF decoding (a static loader for props and a named animated configuration for characters); skeletons, clip sampling, pose blending and joint palettes |
 | quasar-math | Camera `look_at`/`perspective`/`project`, damping, glam types |
 | quasar-render-2d | HUD canvas: markers, bars, fades |
-| quasar-ui + quasar-text | Retained menus/terminals/HUD with anchored layout, `NodeStyle` cards and wrapped labels; shaped DejaVu fonts |
+| quasar-ui + quasar-text | Retained menus/terminals/HUD with anchored layout, `NodeStyle` cards and wrapped labels; `ControlsScreen` rebinding with `save_bindings`/`load_bindings`; shaped DejaVu fonts |
 | quasar-audio | WAV clips, music/effects buses, spatial panning, per-play pitch/gain `Variation`, looping music and ambience |
-| quasar-config | Common CLI flags (`--resolution`, `--headless`, `--no-audio`, ...); TOML content parsing; settings read and written with `load_file_typed`/`save_file_typed` |
+| quasar-config | Common CLI flags (`--resolution`, `--headless`, `--no-audio`, ...); content tables (`ContentRegistry`, validation, references); settings read and written with `load_file_typed`/`save_file_typed` |
 | quasar-storage | Basalt `GamePaths` discovery and atomic JSON writes for save slots |
 | quasar-diagnostics | `--log-level` structured logging (startup paths, phases, save errors) |
 
@@ -134,26 +139,37 @@ Each frame:
 
 1. `render/camera.rs` eases a top-down follow camera (cinematic framings for
    FTL, descent, ascent and death).
-2. `render/scene/` (`ship`, `space`, `surface`, `characters`, `effects`) turns game state into mesh draws, transparent draws,
-   lights, skinned-character requests, a `VoxelScene` (which world, overlays,
-   fog) and per-phase post settings (damage reddens and darkens the edges;
-   losing the signal drains colour).
+2. `render/scene/` (`ship`, `space`, `surface`, `characters`, `effects`)
+   turns game state into mesh draws, transparent draws, lights (up to 128,
+   clustered by Quasar past a dozen), skinned-character requests with an
+   optional outline style, a `VoxelScene` (which world, overlays, fog) and
+   per-phase post settings (damage reddens and darkens the edges; losing the
+   signal drains colour).
 3. `render/skins.rs` samples each character's clip layers
-   (`quasar-animation`), poses pooled `SkinnedMesh`es with one compute
-   dispatch each and returns ordinary surface draws.
-4. `render/voxels.rs` swaps the grid between ship and planet and re-meshes
-   chunks whose revision changed (mined rock, placed blocks).
-5. Passes, in submission order: skinning; one directional shadow map with mesh
-   casters then voxel casters; opaque voxels into the HDR `SceneTarget`;
-   opaque meshes on the same depth; translucent voxels (windows); sorted
-   transparent draws (beams, flames, blasts, holograms, build previews); the
-   post chain onto the output; the 2D overlay and UI layers.
+   (`quasar-animation`) and poses every instance of a character with one
+   `SkinnedCrowd` per primitive: one dispatch per crowd, and consecutive
+   slots draw as one instanced draw through the ordinary surface and shadow
+   passes.
+4. `render/effects.rs` turns the frame's `GameEvent`s into GPU particles
+   (blood, rock dust, ore glints, wall impacts, explosions, landing dust),
+   keeps scorch and blood decals for the current drop, and holds the outline
+   styles that mark the player and enemies hidden behind rock.
+5. `render/voxels.rs` swaps the grid between ship and planet and re-meshes
+   chunks whose revision changed (mined rock, placed blocks). Hull walls and
+   windows are native 0.6-high partial blocks (`BlockDef::with_height`).
+6. `quasar_render_voxel::HybridFrame` orders the passes and collects the
+   voxel submissions: compute (crowd skinning); shadows (mesh casters, then
+   voxel casters); opaque (voxels clear the HDR `SceneTarget`, meshes share
+   their depth, both fogged alike); decals; translucent (windows, then sorted
+   blended surfaces on the same `SurfaceRenderState3D`); effects (particles,
+   outlines); post (bloom, tonemap, grade) and the 2D overlay and UI.
 
 Characters are skinned; props with moving parts (pod door, drone rotor,
 holograms) turn named glTF nodes. Models and sounds are looked up by name:
 every `assets/models/*.glb` and `assets/sounds/*.wav` loads under its file
 stem, plus the aliases in `assets/data/models.toml`, and content data refers
-to those names. Any model with a skin is a character.
+to those names. The astronaut and every enemy model load through a named
+animated loader configuration (skins and clips); props use the static loader.
 
 ### UI
 
@@ -170,7 +186,7 @@ device family the player last used.
 - `--headless [--autoplay] --ticks N` runs only the simulation and prints a
   summary (with `--no-default-features` the binary has no graphics code).
 - `--screenshot FILE` renders the final state, HUD, open terminal or
-  level-up menu with a headless GPU; `--menu main|saves|settings|pause`
+  level-up menu with a headless GPU; `--menu main|saves|settings|controls|pause`
   renders that menu instead (with sample slots; nothing is read from disk).
 - Headless runs always use a fresh in-memory profile; `--slot N` picks the
   save slot a windowed session opens.

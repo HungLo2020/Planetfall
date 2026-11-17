@@ -18,10 +18,10 @@ use quasar_render_voxel::{
     VoxelCamera, VoxelMaterials, VoxelPassOptions, VoxelRenderer, VoxelRendererConfig,
     VoxelShading,
 };
-use quasar_voxel::{BlockCatalog, BlockDef, FaceShape, GridId, GridTransform, Layer, Snapshot};
+use quasar_voxel::{BlockCatalog, BlockDef, GridId, GridTransform, Layer, Snapshot};
 use quasar_voxel_mesh::{
     CatalogFaces, CatalogLayers, CatalogModels, CulledInput, CulledModelExtractor, MeshBuffers,
-    ModelLibrary, VertexShade, box_quads, opaque_table,
+    ModelLibrary, VertexShade, opaque_table,
 };
 use std::collections::BTreeMap;
 use vulkanic_gal::TextureView;
@@ -72,26 +72,12 @@ struct Content {
 impl Content {
     fn new() -> Self {
         let mut catalog = BlockCatalog::new();
-        let mut library = ModelLibrary::new();
+        let library = ModelLibrary::new();
         let sides = |side: u32, top: u32| [side, side, side, top, side, side];
         // Cut-away hull: walls stop at 0.6 of a block so the top-down camera
-        // sees into rooms; they only cull against each other.
-        let low = FaceShape::Shape(1);
-        let wall_faces = [low, low, FaceShape::Full, FaceShape::None, low, low];
-        let wall = |library: &mut ModelLibrary, side: u32, top: u32| {
-            library.add(box_quads(
-                Vec3::ZERO,
-                Vec3::new(1.0, 0.6, 1.0),
-                sides(side, top),
-            ))
-        };
-        let hull_model = wall(&mut library, tex::HULL, tex::HULL_TOP);
-        let window_model = wall(&mut library, tex::WINDOW, tex::WINDOW);
-        let lamp_model = library.add(box_quads(
-            Vec3::new(0.3, 0.0, 0.3),
-            Vec3::new(0.7, 0.45, 0.7),
-            [tex::LAMP; 6],
-        ));
+        // sees into rooms. Quasar derives the face shapes from the height,
+        // so equal walls cull each other and nothing else.
+        const WALL_HEIGHT: f32 = 0.6;
         let defs = [
             (voxel::GROUND, BlockDef::cube("ground", tex::GROUND)),
             (
@@ -122,21 +108,18 @@ impl Content {
             (
                 voxel::HULL,
                 BlockDef::cube("hull", tex::HULL)
-                    .with_model(hull_model)
-                    .with_faces(wall_faces),
+                    .with_materials(sides(tex::HULL, tex::HULL_TOP))
+                    .with_height(WALL_HEIGHT),
             ),
             (
                 voxel::WINDOW,
                 BlockDef::cube("window", tex::WINDOW)
-                    .with_model(window_model)
-                    .with_faces(wall_faces)
+                    .with_height(WALL_HEIGHT)
                     .with_layer(Layer::Translucent),
             ),
             (
                 voxel::LAMP,
-                BlockDef::cube("lamp", tex::LAMP)
-                    .with_model(lamp_model)
-                    .with_faces([FaceShape::None; 6])
+                BlockDef::partial("lamp", tex::LAMP, [0.3, 0.0, 0.3], [0.7, 0.45, 0.7])
                     .with_emission(14),
             ),
             (voxel::KEEL, BlockDef::cube("keel", tex::KEEL)),
@@ -379,7 +362,10 @@ impl VoxelWorld {
             let mut renderer = VoxelRenderer::new(
                 gal,
                 materials(gal, &palette)?,
-                VoxelRendererConfig::default(),
+                VoxelRendererConfig {
+                    max_lights: crate::render::MAX_LIGHTS,
+                    ..VoxelRendererConfig::default()
+                },
             )?;
             renderer.set_grid(GRID, GridTransform::default(), f64::from(TILE));
             self.renderer = Some(renderer);
@@ -445,7 +431,6 @@ impl VoxelWorld {
                 overlays: pass.overlays,
             },
         )?;
-        self.pending_submissions.push(prepared.submission);
         Ok(Some(prepared))
     }
 
@@ -461,8 +446,13 @@ impl VoxelWorld {
         };
         let prepared =
             renderer.prepare_depth(gal, depth, view_projection.as_dmat4(), DVec3::ZERO, false)?;
-        self.pending_submissions.push(prepared.submission);
         Ok(Some(prepared))
+    }
+
+    /// The voxel submissions of the frame being built (`HybridFrame`
+    /// collects them); reported to the renderer by [`Self::submitted`].
+    pub fn pending(&mut self, submissions: Vec<u64>) {
+        self.pending_submissions = submissions;
     }
 
     /// Call after the frame's commands were submitted.

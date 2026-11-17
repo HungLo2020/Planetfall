@@ -41,7 +41,13 @@ pub fn surface<'a>(
             let root = at(pl.pos, 0.0)
                 * Mat4::rotation_y(pl.yaw)
                 * Mat4::rotation_x((dying * 3.0).min(1.0) * 1.45);
-            p.character(names::ASTRONAUT, root, &[Layer::full("idle", 0.0)], 0.0);
+            p.character(
+                names::ASTRONAUT,
+                root,
+                &[Layer::full("idle", 0.0)],
+                0.0,
+                None,
+            );
         } else {
             let held = run
                 .weapons
@@ -154,7 +160,8 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
         }
     }
     glows.sort_by(|a, b| a.0.total_cmp(&b.0));
-    for (_, pos, color) in glows.into_iter().take(7) {
+    // Clustered lighting makes many small lights cheap; keep the nearest.
+    for (_, pos, color) in glows.into_iter().take(40) {
         let pulse = 1.0 + (p.time * 2.0 + pos[0]).sin() * 0.15;
         p.point(pos, color, 1.6 * pulse, 7.0);
     }

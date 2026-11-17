@@ -5,7 +5,44 @@
 //! `{interact}`, `{dash}`, `{extract}`, `{build}` and `{move}`. [`Prompts`] replaces them
 //! with the active device family's binding names (`E`, `A`, `Cross`, ...).
 
-use quasar_input::{Binding, Bindings, DeviceFamily, GamepadAxis, GamepadButton, Key};
+use quasar_input::{Binding, Bindings, DeviceFamily, GamepadAxis, GamepadButton, InputDevice, Key};
+
+/// Gameplay actions on the controls screen, with their labels. Movement is
+/// rebindable on the keyboard only (the stick is an analogue axis).
+pub const REBINDABLE: [(&str, &str, bool); 7] = [
+    ("move_x", "Move left / right", false),
+    ("move_z", "Move up / down", false),
+    ("interact", "Use / deploy", true),
+    ("dash", "Dash", true),
+    ("extract", "Call extraction pod", true),
+    ("build", "Ship build mode", true),
+    ("pause", "Pause", true),
+];
+
+/// Every default binding, keyboard/mouse and controller together. The
+/// controls screen edits this one set; each device reads its own part.
+pub fn defaults() -> Bindings {
+    let mut all = keyboard();
+    for (action, list) in gamepad().actions {
+        for binding in list {
+            all.bind(action.clone(), binding);
+        }
+    }
+    all
+}
+
+/// The bindings `device` reads (device-less bindings go to both).
+pub fn for_device(all: &Bindings, device: InputDevice) -> Bindings {
+    let mut out = Bindings::default();
+    for (action, list) in &all.actions {
+        for binding in list {
+            if binding.device().is_none_or(|d| d == device) {
+                out.bind(action.clone(), binding.clone());
+            }
+        }
+    }
+    out
+}
 
 /// Menu navigation shared by both devices.
 fn ui_actions(b: &mut Bindings, gamepad: bool) {
@@ -97,6 +134,12 @@ impl Default for Prompts {
 }
 
 impl Prompts {
+    /// Name the player's own bindings (after a rebind).
+    pub fn set_bindings(&mut self, all: &Bindings) {
+        self.keyboard = for_device(all, InputDevice::KeyboardMouse);
+        self.gamepad = for_device(all, InputDevice::Gamepad);
+    }
+
     pub fn gamepad(&self) -> bool {
         self.family != DeviceFamily::KeyboardMouse
     }
@@ -136,5 +179,29 @@ mod tests {
         assert_eq!(prompts.format("{move}"), "the left stick");
         prompts.family = DeviceFamily::PlayStation;
         assert_ne!(prompts.format("{dash}"), prompts.format("{interact}"));
+    }
+
+    #[test]
+    fn rebinds_reach_prompts_and_split_by_device() {
+        let mut all = defaults();
+        all.rebind(
+            "interact",
+            InputDevice::KeyboardMouse,
+            0,
+            Binding::key(Key::KeyG),
+        );
+        let mut prompts = Prompts::default();
+        prompts.set_bindings(&all);
+        assert_eq!(prompts.format("press {interact}"), "press [G]");
+        let pad = for_device(&all, InputDevice::Gamepad);
+        assert!(
+            pad.actions["interact"]
+                .iter()
+                .all(|b| b.device() == Some(InputDevice::Gamepad))
+        );
+        assert_eq!(
+            for_device(&defaults(), InputDevice::KeyboardMouse).actions,
+            keyboard().actions
+        );
     }
 }

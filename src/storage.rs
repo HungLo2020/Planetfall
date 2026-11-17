@@ -4,6 +4,7 @@
 //! |---|---|
 //! | `data/save/slot-1.json` … `slot-5.json` | game saves: synced and backed up |
 //! | `data/config/shared/settings.toml` | audio and gameplay settings: synced |
+//! | `data/config/shared/controls.toml` | rebound controls: synced |
 //! | `data/config/display.toml` | window and graphics settings: this machine only |
 //!
 //! Settings are typed TOML read with `quasar_config::load_file_typed` and
@@ -290,6 +291,32 @@ impl Storage {
             return Ok(());
         }
         quasar_config::save_file_typed(self.display_path(), display).map_err(|e| e.to_string())
+    }
+
+    // -- controls -----------------------------------------------------------
+
+    #[cfg(feature = "desktop")]
+    fn controls_path(&self) -> PathBuf {
+        self.paths.shared_config.join("controls.toml")
+    }
+
+    /// The player's bindings merged over `defaults` (so actions added by an
+    /// update keep their default). An unreadable file is left untouched and
+    /// the defaults are used.
+    #[cfg(feature = "desktop")]
+    pub fn load_controls(&self, defaults: &quasar_input::Bindings) -> quasar_input::Bindings {
+        quasar_ui::load_bindings(self.controls_path(), defaults).unwrap_or_else(|e| {
+            eprintln!("planetfall: ignoring controls file ({e}); using defaults");
+            defaults.clone()
+        })
+    }
+
+    #[cfg(feature = "desktop")]
+    pub fn save_controls(&self, bindings: &quasar_input::Bindings) -> Result<(), String> {
+        if !self.saving {
+            return Ok(());
+        }
+        quasar_ui::save_bindings(self.controls_path(), bindings).map_err(|e| e.to_string())
     }
 
     // -- migration from earlier versions -------------------------------------

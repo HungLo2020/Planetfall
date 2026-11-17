@@ -1,7 +1,7 @@
 //! The horde: flow-field steering, separation, behaviour-specific attacks,
 //! deaths, drops and explosions. Numbers come from `enemies.toml`.
 
-use super::{Blast, BlastKind, Corpse, PickupKind, Run, SparkKind, spawn_sparks};
+use super::{Blast, BlastKind, Corpse, PickupKind, Run};
 use crate::content::{DT, EnemyBehavior, content};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
@@ -130,14 +130,6 @@ impl Run {
                     yaw: e.yaw,
                     ticks: 0,
                 });
-                spawn_sparks(
-                    &mut self.sparks,
-                    &mut self.rng,
-                    SparkKind::Blood(e.kind),
-                    e.pos,
-                    1.0,
-                    6,
-                );
                 self.drop_pickup(PickupKind::Xp(info.xp), e.pos);
                 for drop in &info.drops {
                     if drop.chance >= 1.0 || self.rng.chance(f64::from(drop.chance)) {

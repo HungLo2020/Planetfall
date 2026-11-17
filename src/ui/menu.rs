@@ -1,17 +1,19 @@
-//! Interactive screens: the main menu, save slots, settings, pause and
+//! Interactive screens: the main menu, save slots, settings, controls
+//! (Quasar's `ControlsScreen`: rebind, conflicts, reset), pause and
 //! confirmations, and the in-world terminals (navigation, fabricator,
 //! level-up, debrief).
 //! Keyboard, mouse and gamepad all navigate through `quasar-ui` focus.
 
 use super::{Builder, Layer, format_cost, format_materials, hud::roman};
-use crate::bindings::Prompts;
+use crate::bindings::{self, Prompts};
 use crate::storage::{SlotState, SlotSummary};
 use planetfall_sim::content::{PlanetId, UpgradeId};
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
+use quasar_input::{Bindings, Button, DeviceFamily, InputDevice};
 use quasar_ui::{
-    Align, LayoutItem, Length, NodeId, Rect, TextMeasure, TextStyle, UiEvent, UiInput, UiText,
-    Widget,
+    ActionId, Align, ControlEntry, ControlsOutcome, ControlsScreen, LayoutItem, Length, NodeId,
+    Rect, TextMeasure, TextStyle, UiEvent, UiInput, UiText, Widget,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +25,10 @@ pub enum Screen {
     ConfirmOverwrite(usize),
     ConfirmDelete(usize),
     Settings,
+    /// Rebind the keyboard/mouse or the controller column.
+    Controls {
+        gamepad: bool,
+    },
     Pause {
         surface: bool,
     },
@@ -60,6 +66,11 @@ pub enum MenuAction {
     Overwrite(usize),
     DeleteSlot(usize),
     OpenSettings,
+    OpenControls {
+        gamepad: bool,
+    },
+    /// The controls screen changed the bindings: install and save them.
+    ApplyBindings(Bindings),
     Back,
     ApplySettings,
     Resume,
@@ -99,6 +110,11 @@ pub struct Menu {
     sliders: Vec<(NodeId, Field)>,
     checks: Vec<(NodeId, Field)>,
     pub settings: SettingsState,
+    /// The player's bindings (both devices), edited by the controls screen.
+    pub bindings: Bindings,
+    controls: Option<ControlsScreen>,
+    /// Action id of the controls screen's reset button.
+    controls_reset: u64,
 }
 
 /// A settings control.
@@ -123,6 +139,31 @@ impl Menu {
             sliders: Vec::new(),
             checks: Vec::new(),
             settings,
+            bindings: bindings::defaults(),
+            controls: None,
+            controls_reset: u64::MAX,
+        }
+    }
+
+    /// Whether a controls row waits for a button (raw presses go to
+    /// [`Self::capture`] instead of menu navigation).
+    pub fn is_capturing(&self) -> bool {
+        self.controls
+            .as_ref()
+            .is_some_and(ControlsScreen::is_capturing)
+    }
+
+    /// Offer this frame's pressed buttons to a running rebind.
+    pub fn capture(&mut self, pressed: &[Button]) -> MenuAction {
+        let (Some(controls), Some(layer)) = (&mut self.controls, &mut self.layer) else {
+            return MenuAction::None;
+        };
+        match controls.capture(&mut layer.ui, pressed) {
+            Ok(ControlsOutcome::Rebound { .. }) => {
+                self.bindings = controls.bindings().clone();
+                MenuAction::ApplyBindings(self.bindings.clone())
+            }
+            _ => MenuAction::None,
         }
     }
 
@@ -155,6 +196,10 @@ impl Menu {
             self.signature.clear();
             return;
         };
+        // A rebind in progress owns the screen until it finishes.
+        if self.is_capturing() {
+            return;
+        }
         let signature = signature(content, game, prompts, context);
         if self.layer.is_some() && signature == self.signature {
             return;
@@ -169,6 +214,8 @@ impl Menu {
         self.actions.clear();
         self.sliders.clear();
         self.checks.clear();
+        self.controls = None;
+        self.controls_reset = u64::MAX;
         self.cancel = MenuAction::None;
         self.build(&mut b, content, game, prompts, context);
         let mut layer = b.finish();
@@ -224,7 +271,18 @@ impl Menu {
             }
         }
         for event in frame.events {
+            if let Some(controls) = &mut self.controls {
+                match controls.handle_event(&mut layer.ui, &event) {
+                    Ok(ControlsOutcome::Reset) => {
+                        self.bindings = controls.bindings().clone();
+                        return MenuAction::ApplyBindings(self.bindings.clone());
+                    }
+                    Ok(ControlsOutcome::Capturing { .. }) => continue,
+                    _ => {}
+                }
+            }
             match event {
+                UiEvent::Pressed(action) if action.0 == self.controls_reset => {}
                 UiEvent::Pressed(action) => {
                     if let Some(a) = self.actions.get(action.0 as usize) {
                         return a.clone();
@@ -555,7 +613,6 @@ impl Menu {
                         "{move} move · {dash} dash · {interact} use · {extract} call pod · weapons fire automatically",
                     ),
                     TextStyle::Small,
-                    476.0,
                 );
                 self.cancel = MenuAction::AskQuit;
             }
@@ -569,12 +626,7 @@ impl Menu {
                 b.label(card, title, TextStyle::Heading);
                 b.label(card, hint, TextStyle::Small);
                 if let Some(error) = &context.error {
-                    b.paragraph(
-                        card,
-                        &format!("Could not load: {error}"),
-                        TextStyle::Small,
-                        596.0,
-                    );
+                    b.paragraph(card, &format!("Could not load: {error}"), TextStyle::Small);
                 }
                 for (slot, state) in &context.slots {
                     let (label, enabled) = match state {
@@ -663,8 +715,58 @@ impl Menu {
                 b.label(card, "GAMEPLAY", TextStyle::Small);
                 let shake = self.check(b, card, "Screen shake", o.shake);
                 self.checks.push((shake, Field::Shake));
+                self.button(
+                    b,
+                    card,
+                    "CONTROLS…",
+                    MenuAction::OpenControls { gamepad: false },
+                    true,
+                );
                 self.button(b, card, "APPLY", MenuAction::ApplySettings, true);
                 self.button(b, card, "BACK", MenuAction::Back, true);
+                self.cancel = MenuAction::Back;
+            }
+            Screen::Controls { gamepad } => {
+                let card = Self::card(b, 600.0);
+                b.label(card, "CONTROLS", TextStyle::Heading);
+                let (device, other) = if gamepad {
+                    (InputDevice::Gamepad, "SHOW KEYBOARD & MOUSE")
+                } else {
+                    (InputDevice::KeyboardMouse, "SHOW CONTROLLER")
+                };
+                let entries = bindings::REBINDABLE
+                    .iter()
+                    .filter(|(_, _, pad)| !gamepad || *pad)
+                    .map(|(action, label, _)| ControlEntry::new(*action, UiText::literal(*label)))
+                    .collect();
+                let mut controls =
+                    ControlsScreen::new(entries, &self.bindings, bindings::defaults());
+                let family = if gamepad && prompts.gamepad() {
+                    prompts.family
+                } else if gamepad {
+                    DeviceFamily::GenericGamepad
+                } else {
+                    DeviceFamily::KeyboardMouse
+                };
+                self.controls_reset = self.action(MenuAction::None);
+                let _ = controls.set_device(&mut b.ui, device, family);
+                controls
+                    .build(&mut b.ui, card, ActionId::new(self.controls_reset))
+                    .expect("controls screen");
+                b.label(
+                    card,
+                    "Select an action, then press the new button. Esc cancels.",
+                    TextStyle::Small,
+                );
+                self.button(
+                    b,
+                    card,
+                    other,
+                    MenuAction::OpenControls { gamepad: !gamepad },
+                    true,
+                );
+                self.button(b, card, "BACK", MenuAction::Back, true);
+                self.controls = Some(controls);
                 self.cancel = MenuAction::Back;
             }
             Screen::Pause { surface } => {

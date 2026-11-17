@@ -138,19 +138,11 @@ impl Builder {
         self.add_label(parent, Widget::label(UiText::literal(text.into()), style))
     }
 
-    /// A label that word-wraps at `width` logical units. (quasar-ui 0.2.24
-    /// measures wrapped labels against the screen, not a fixed-width parent,
-    /// so the card's inner width is passed explicitly.)
-    pub fn paragraph(
-        &mut self,
-        parent: NodeId,
-        text: &str,
-        style: TextStyle,
-        width: f32,
-    ) -> NodeId {
+    /// A label that word-wraps at its parent's width.
+    pub fn paragraph(&mut self, parent: NodeId, text: &str, style: TextStyle) -> NodeId {
         self.add_label(
             parent,
-            Widget::wrapped_label(UiText::literal(text), style, Some(width)),
+            Widget::wrapped_label(UiText::literal(text), style, None),
         )
     }
 

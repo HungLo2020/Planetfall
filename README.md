@@ -34,11 +34,13 @@ cargo run --release
 | Fullscreen | F11 | — |
 
 Weapons aim and fire automatically. Walk into rock to drill through it.
+Rebind keys and buttons under Settings → Controls.
 
 ### What is in this first pass
 
 - **Main menu and five save slots**: continue, new game, load or delete a
-  slot, and settings (volumes, fullscreen, shadows, bloom, screen shake).
+  slot, settings (volumes, fullscreen, shadows, bloom, screen shake) and a
+  controls screen that rebinds keyboard and controller buttons.
   Progress autosaves, and quitting mid-drop resumes the drop later.
 - **Tutorial**: a ship AI walks a new commander from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
@@ -65,9 +67,11 @@ Weapons aim and fire automatically. Walk into rock to drill through it.
 - **Data-driven content**: weapons, enemies, planets, perks, ship modules and
   tuning are TOML files in `assets/data/` (see [Gameplay](docs/gameplay.md#tuning-and-adding-content)).
 - **Presentation**: original low-poly GLB models (plus CC0 Kenney props) with
-  GPU-skinned characters and authored clips, voxel terrain and hull with
-  fog, directional shadows over meshes and voxels, dynamic point lights, HDR
-  bloom, filmic tonemapping and see-through effects, FTL and drop-pod
+  GPU-skinned crowds and authored clips, voxel terrain and hull with fog on
+  blocks and meshes alike, directional shadows over meshes and voxels,
+  clustered point lights, GPU particles (blood, rock dust, ore glints,
+  explosions), scorch and blood decals, outlines on characters hidden behind
+  rock, HDR bloom, filmic tonemapping and see-through effects, FTL and drop-pod
   cinematics, synthesized sound effects and music, and a shaped-font HUD and
   menus with device-aware button prompts.
 
@@ -89,7 +93,7 @@ cargo run --no-default-features -- --headless --autoplay
 
 Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
 `--slot N` (load slot N, skipping the menu), `--no-save`,
-`--menu main|saves|settings|pause` (screenshot a menu), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
+`--menu main|saves|settings|controls|pause` (screenshot a menu), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
 ## Build, verify and package

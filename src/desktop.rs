@@ -38,6 +38,7 @@ const AUTOSAVE_SECONDS: u32 = 60;
 pub fn run(launch: Launch) -> Result<(), String> {
     let display = launch.storage.load_display();
     let prefs = launch.storage.load_preferences();
+    let bindings = launch.storage.load_controls(&bindings::defaults());
     let size = launch
         .settings
         .resolution
@@ -112,7 +113,7 @@ pub fn run(launch: Launch) -> Result<(), String> {
         shake: prefs.screen_shake,
     };
     let slots = launch.storage.slots();
-    let app = App {
+    let mut app = App {
         autopilot: launch.settings.autoplay.then(Autopilot::new),
         screens: if skip_menu {
             Vec::new()
@@ -146,13 +147,18 @@ pub fn run(launch: Launch) -> Result<(), String> {
         time: 0.0,
         dt: 1.0 / 60.0,
         shake: 0.0,
+        frame_events: Vec::new(),
         frames: 0,
         size: (size.0 as f32, size.1 as f32),
         scale: 1.0,
         failure: None,
         diagnostics,
         last_phase: None,
+        keyboard_bindings: Default::default(),
+        pending_bindings: None,
     };
+    app.install_bindings(bindings);
+    app.pending_bindings = None;
     quasar_app::run(app, config).map_err(|e| e.to_string())
 }
 
@@ -185,12 +191,18 @@ struct App {
     time: f32,
     dt: f32,
     shake: f32,
+    /// Game events since the last rendered frame (particles and marks).
+    frame_events: Vec<GameEvent>,
     frames: u64,
     size: (f32, f32),
     scale: f32,
     failure: Option<String>,
     diagnostics: Diagnostics,
     last_phase: Option<std::mem::Discriminant<Phase>>,
+    /// The keyboard/mouse part of the player's bindings (window input).
+    keyboard_bindings: quasar_input::Bindings,
+    /// Rebound keyboard bindings for the runner to install (`take_bindings`).
+    pending_bindings: Option<quasar_input::Bindings>,
 }
 
 impl App {
@@ -280,6 +292,14 @@ impl App {
         if let Some(graphics) = &mut self.graphics {
             graphics.reset_world();
         }
+    }
+
+    /// Install the player's bindings on every device and in the prompts.
+    fn install_bindings(&mut self, all: quasar_input::Bindings) {
+        let keyboard = self.controls.set_bindings(&all);
+        self.keyboard_bindings = keyboard.clone();
+        self.pending_bindings = Some(keyboard);
+        self.menu.bindings = all;
     }
 
     /// Start a new commander in `slot`.
@@ -404,6 +424,23 @@ impl App {
                 };
                 self.screens.push(Screen::Settings);
             }
+            MenuAction::OpenControls { gamepad } => {
+                if matches!(self.screens.last(), Some(Screen::Controls { .. })) {
+                    self.screens.pop();
+                }
+                self.screens.push(Screen::Controls { gamepad });
+            }
+            MenuAction::ApplyBindings(all) => {
+                self.install_bindings(all);
+                if let Err(e) = self.storage.save_controls(&self.menu.bindings) {
+                    self.diagnostics.event_with(
+                        Level::Error,
+                        "planetfall.storage",
+                        "controls_save_failed",
+                        [Field::new("error", e)],
+                    );
+                }
+            }
             MenuAction::Back => {
                 self.screens.pop();
             }
@@ -465,6 +502,11 @@ impl App {
     }
 
     fn react(&mut self) {
+        // Keep a bounded backlog in case frames stop (minimised window).
+        if self.frame_events.len() > 4096 {
+            self.frame_events.clear();
+        }
+        self.frame_events.extend_from_slice(&self.game.events);
         let mut save = false;
         for e in &self.game.events {
             match e {
@@ -553,11 +595,16 @@ impl Application for App {
             &self.menu_context(),
         );
         if self.menu.is_open() {
-            let input = self.controls.ui_input(c.input);
-            let viewport = Rect::new(0.0, 0.0, self.size.0, self.size.1);
-            let action = self
-                .menu
-                .update(&input, viewport, self.scale, &self.measure, self.dt);
+            let action = if self.menu.is_capturing() {
+                // A controls row waits for a button: raw presses, no navigation.
+                let pressed = self.controls.pressed_buttons(c.input);
+                self.menu.capture(&pressed)
+            } else {
+                let input = self.controls.ui_input(c.input);
+                let viewport = Rect::new(0.0, 0.0, self.size.0, self.size.1);
+                self.menu
+                    .update(&input, viewport, self.scale, &self.measure, self.dt)
+            };
             c.input.consume_all();
             self.controls.clear();
             if let Some(flow) = self.apply_menu(action, c) {
@@ -642,11 +689,13 @@ impl Application for App {
         } else {
             0.0
         };
+        let events = std::mem::take(&mut self.frame_events);
         let frame = Frame {
             game,
             time,
             dt: self.dt,
             shake,
+            events: &events,
             layers: &layers,
             overlay: &overlay,
         };
@@ -699,10 +748,14 @@ impl DesktopApplication for App {
         Ok(self.initialize(c)?)
     }
 
+    fn take_bindings(&mut self) -> Option<quasar_input::Bindings> {
+        self.pending_bindings.take()
+    }
+
     fn configure_window(&mut self, window: &mut quasar_window::GameWindow) -> Result<(), AppError> {
         window
             .input
-            .set_bindings(bindings::keyboard())
+            .set_bindings(self.keyboard_bindings.clone())
             .map_err(|e| AppError(format!("install controls: {e}")))?;
         let _ = window.capture_cursor(false);
         Ok(())

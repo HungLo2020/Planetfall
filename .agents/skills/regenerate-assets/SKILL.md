@@ -29,8 +29,10 @@ outputs in `assets/models` or `assets/sounds`.
 3. Every `assets/models/<name>.glb` loads automatically as `<name>`; models
    kept elsewhere get a name in `assets/data/models.toml`. Refer to the name
    from content data (`model = "..."` in `weapons.toml`, `enemies.toml`,
-   `upgrades.toml`). Any model with a skin is a character; enemies play
-   `walk`, plus `attack` or `pulse` if the model has them.
+   `upgrades.toml`). The astronaut and every model an enemy names load as
+   characters (skins and clips); everything else loads through the static
+   loader, which rejects a skin. Enemies play `walk`, plus `attack` or
+   `pulse` if the model has them.
 4. `cargo test` checks that every model decodes, that characters expose
    their joints and clips, and that every model named in the data exists
    (`all_models_decode_and_content_models_exist`,

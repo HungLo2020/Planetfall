@@ -5,21 +5,23 @@
 //! Each character model carries a skeleton (one joint per body part), a lit
 //! body primitive, an unlit glow primitive and its clips (see
 //! `DevUtils/assets/generate_models.py`). The painter samples a pose and asks
-//! for a skinned draw; the renderer gives every on-screen character its own
-//! pooled `SkinnedMesh` per primitive, records one compute dispatch per mesh
-//! and draws the posed vertices through the ordinary surface and shadow
-//! passes.
+//! for a skinned draw; every instance of a character shares one
+//! `SkinnedCrowd` per primitive, posed by a single dispatch, and its slots
+//! draw through the ordinary surface and shadow passes (instanced).
 
 use super::models::Models;
 use quasar_animation::model::{SkinBinding, clips_from_model, skeleton_from_model};
 use quasar_animation::{Clip, Pose, Skeleton};
 use quasar_assets::model::Model3D;
 use quasar_frame::{Gpu, GraphicsResult, error};
-use quasar_render_3d::{Mat4, ShadingModel, SkinnedMesh, SkinningPass, SurfaceDraw3D};
+use quasar_render_3d::{
+    Mat4, OutlineDraw, ShadingModel, SkinnedCrowd, SkinningPass, SurfaceDraw3D,
+};
 use std::collections::BTreeMap;
 use vulkanic_gal::CommandBuffer;
 
-/// Upper bound on simultaneously posed instances of one character.
+/// Upper bound on simultaneously posed instances of one character (the
+/// horde cap is 160 enemies across every kind).
 const MAX_INSTANCES: usize = 160;
 
 /// HDR boost for the unlit glow primitive so eyes and lamps bloom.
@@ -140,13 +142,26 @@ pub struct SkinRequest {
     pub root: Mat4,
     /// Added red-white emission (hit flash).
     pub flash: f32,
+    /// Outline style (see `effects::OUTLINE_STYLES`) to keep the character
+    /// readable behind walls.
+    pub outline: Option<u8>,
 }
 
-/// Rigs plus the per-instance GPU meshes they pose into.
+/// One frame's posed characters.
+pub struct Skinned<'a> {
+    /// Compute work to submit before any pass that draws the characters.
+    pub commands: Option<CommandBuffer>,
+    pub draws: Vec<SurfaceDraw3D<'a>>,
+    pub outlines: Vec<OutlineDraw<'a>>,
+}
+
+/// Rigs plus one crowd per skinned primitive of each character: every
+/// instance of a character is posed by one dispatch per primitive and
+/// consecutive draws of a crowd merge into one instanced draw.
 pub struct Skins {
     characters: BTreeMap<String, Character>,
-    /// Per character: pooled instances, each one mesh per skinned primitive.
-    pool: BTreeMap<&'static str, Vec<Vec<SkinnedMesh>>>,
+    /// Per character: one crowd per skinned primitive.
+    crowds: BTreeMap<&'static str, Vec<SkinnedCrowd>>,
     pass: SkinningPass,
 }
 
@@ -158,7 +173,7 @@ impl Skins {
         }
         Ok(Self {
             characters,
-            pool: BTreeMap::new(),
+            crowds: BTreeMap::new(),
             pass: SkinningPass::new(gal)?,
         })
     }
@@ -169,94 +184,112 @@ impl Skins {
             .unwrap_or_else(|| panic!("{name:?} is not a skinned character"))
     }
 
-    /// Pose every request on the GPU and return the command buffer to submit
-    /// before the passes that draw them, plus their draws.
+    /// Pose every request on the GPU and return the compute work plus the
+    /// characters' surface and outline draws.
     pub fn prepare<'a>(
         &'a mut self,
         gal: &Gpu,
         models: &'a Models,
         requests: &[SkinRequest],
-    ) -> GraphicsResult<(Option<CommandBuffer>, Vec<SurfaceDraw3D<'a>>)> {
+    ) -> GraphicsResult<Skinned<'a>> {
         if requests.is_empty() {
-            return Ok((None, Vec::new()));
+            return Ok(Skinned {
+                commands: None,
+                draws: Vec::new(),
+                outlines: Vec::new(),
+            });
         }
-        // Grow pools to this frame's counts, then record one dispatch per mesh.
-        let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-        let mut slots = Vec::with_capacity(requests.len());
+        // Group requests by character; extra instances beyond a crowd's
+        // capacity are skipped.
+        let mut groups: BTreeMap<&'static str, Vec<&SkinRequest>> = BTreeMap::new();
         for request in requests {
-            let n = counts.entry(request.id).or_default();
-            slots.push((*n < MAX_INSTANCES).then_some(*n));
-            *n += 1;
-        }
-        for (&id, &count) in &counts {
-            let character = &self.characters[id];
-            let pool = self.pool.entry(id).or_default();
-            while pool.len() < count.min(MAX_INSTANCES) {
-                let meshes = character
-                    .primitives
-                    .iter()
-                    .map(|&p| {
-                        SkinnedMesh::from_model_primitive(
-                            gal,
-                            &character.model.primitives[p],
-                            character.binding.inverse_bind_matrices.len(),
-                        )
-                    })
-                    .collect::<GraphicsResult<Vec<_>>>()?;
-                pool.push(meshes);
+            let group = groups.entry(request.id).or_default();
+            if group.len() < MAX_INSTANCES {
+                group.push(request);
             }
         }
-        let mut encoder = gal.encoder("character skinning");
-        for (request, slot) in requests.iter().zip(&slots) {
-            let Some(slot) = slot else { continue };
-            for mesh in &mut self.pool.get_mut(request.id).expect("grown above")[*slot] {
+        for &id in groups.keys() {
+            if self.crowds.contains_key(id) {
+                continue;
+            }
+            let character = &self.characters[id];
+            let crowds = character
+                .primitives
+                .iter()
+                .map(|&p| {
+                    SkinnedCrowd::from_model_primitive(
+                        gal,
+                        &character.model.primitives[p],
+                        character.binding.inverse_bind_matrices.len(),
+                        MAX_INSTANCES,
+                    )
+                })
+                .collect::<GraphicsResult<Vec<_>>>()?;
+            self.crowds.insert(id, crowds);
+        }
+        let mut encoder = gal.encoder("character crowds");
+        for (id, group) in &groups {
+            let palettes: Vec<&[Mat4]> = group.iter().map(|r| r.palette.as_slice()).collect();
+            for crowd in self.crowds.get_mut(id).expect("created above") {
                 self.pass
-                    .record(gal, &mut encoder, mesh, &request.palette)?;
+                    .record_crowd(gal, &mut encoder, crowd, &palettes)?;
             }
         }
         let commands = encoder.finish();
 
+        // Draw each crowd's slots consecutively so they instance together.
         let mut draws = Vec::new();
-        for (request, slot) in requests.iter().zip(slots) {
-            let Some(slot) = slot else { continue };
-            let character = &self.characters[request.id];
-            let uploaded = models.get(request.id);
-            for (mesh, &primitive) in self.pool[request.id][slot]
-                .iter()
-                .zip(&character.primitives)
-            {
-                let Some(mut draw) = uploaded.primitive_draw(primitive, request.root) else {
-                    continue;
-                };
-                draw.mesh = mesh.mesh();
-                let lit = &mut draw.material.lit;
-                if lit.shading == ShadingModel::Unlit {
-                    lit.base.tint = [GLOW, GLOW, GLOW, 1.0];
-                    draw.material.receives_shadows = false;
+        let mut outlines = Vec::new();
+        for (id, group) in &groups {
+            let character = &self.characters[*id];
+            let uploaded = models.get(id);
+            for (crowd, &primitive) in self.crowds[id].iter().zip(&character.primitives) {
+                for (slot, request) in group.iter().enumerate() {
+                    let Some(mut draw) = uploaded.primitive_draw(primitive, request.root) else {
+                        continue;
+                    };
+                    draw.mesh = crowd.instance(slot);
+                    let lit = &mut draw.material.lit;
+                    let glow = lit.shading == ShadingModel::Unlit;
+                    if glow {
+                        lit.base.tint = [GLOW, GLOW, GLOW, 1.0];
+                        draw.material.receives_shadows = false;
+                    }
+                    if request.flash > 0.0 {
+                        let f = request.flash;
+                        lit.emissive = [
+                            lit.emissive[0] + f,
+                            lit.emissive[1] + f * 0.35,
+                            lit.emissive[2] + f * 0.3,
+                        ];
+                    }
+                    if let Some(style) = request.outline
+                        && !glow
+                    {
+                        outlines.push(OutlineDraw {
+                            mesh: draw.mesh,
+                            model: draw.model,
+                            style,
+                        });
+                    }
+                    draws.push(draw);
                 }
-                if request.flash > 0.0 {
-                    let f = request.flash;
-                    lit.emissive = [
-                        lit.emissive[0] + f,
-                        lit.emissive[1] + f * 0.35,
-                        lit.emissive[2] + f * 0.3,
-                    ];
-                }
-                draws.push(draw);
             }
         }
-        Ok((Some(commands), draws))
+        Ok(Skinned {
+            commands: Some(commands),
+            draws,
+            outlines,
+        })
     }
 
     pub fn release(&mut self, gal: &Gpu) -> GraphicsResult<()> {
-        for instances in self.pool.values_mut() {
-            for meshes in instances {
-                for mesh in meshes {
-                    mesh.release(gal)?;
-                }
+        for crowds in self.crowds.values_mut() {
+            for crowd in crowds {
+                crowd.release(gal)?;
             }
         }
-        self.pool.clear();
+        self.crowds.clear();
         Ok(())
     }
 }

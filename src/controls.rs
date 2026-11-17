@@ -8,8 +8,7 @@ use crate::bindings::{self, Prompts};
 use planetfall_sim::math::V2;
 use planetfall_sim::{Command, GameInput};
 use quasar_input::{
-    ACTIVE_AXIS_THRESHOLD, DeviceFamily, FrameInput, GamepadHub, GilrsGamepads, InputDevice,
-    InputState, PlayerId,
+    DeviceFamily, FrameInput, GamepadHub, GilrsGamepads, InputDevice, InputState, PlayerId,
 };
 use quasar_ui::{UiBindings, UiInput, from_frame_input};
 
@@ -39,6 +38,7 @@ impl Controls {
         if let Some(p) = hub.player_mut(PLAYER) {
             let _ = p.input.set_bindings(bindings::gamepad());
         }
+
         let gilrs = match GilrsGamepads::new() {
             Ok(g) => Some(g),
             Err(e) => {
@@ -55,6 +55,27 @@ impl Controls {
         }
     }
 
+    /// Install the player's bindings on the controller and in the prompts;
+    /// returns the keyboard/mouse part for the window.
+    pub fn set_bindings(&mut self, all: &quasar_input::Bindings) -> quasar_input::Bindings {
+        if let Some(p) = self.hub.player_mut(PLAYER) {
+            let _ = p
+                .input
+                .set_bindings(bindings::for_device(all, InputDevice::Gamepad));
+        }
+        self.prompts.set_bindings(all);
+        bindings::for_device(all, InputDevice::KeyboardMouse)
+    }
+
+    /// Buttons pressed this frame on either device (rebind capture).
+    pub fn pressed_buttons(&self, keyboard: &FrameInput) -> Vec<quasar_input::Button> {
+        let mut pressed = keyboard.pressed_buttons();
+        if let Some(p) = self.pad() {
+            pressed.extend(p.pressed_buttons());
+        }
+        pressed
+    }
+
     fn pad(&self) -> Option<&InputState> {
         self.hub.player(PLAYER).map(|p| &p.input)
     }
@@ -64,30 +85,13 @@ impl Controls {
         if let Some(g) = &mut self.gilrs {
             let _ = g.poll(&mut self.hub);
         }
-        // The window and the controller hub keep separate input states, so
-        // the active device is whichever produced input this frame.
-        let active = |state: &dyn Fn(&str) -> quasar_input::ActionState| {
-            [
-                "move_x",
-                "move_z",
-                "interact",
-                "dash",
-                "extract",
-                "build",
-                "pause",
-                "ui_activate",
-            ]
-            .iter()
-            .any(|a| {
-                let s = state(a);
-                s.pressed || s.value.abs() > ACTIVE_AXIS_THRESHOLD
-            })
-        };
-        let pad_used = self.pad().is_some_and(|p| active(&|a| p.action(a)));
-        let key_used = active(&|a| keyboard.action(a))
-            || keyboard.mouse_pressed(quasar_input::MouseButton::Left)
-            || (keyboard.active_device_changed()
-                && keyboard.last_active_device() == Some(InputDevice::KeyboardMouse));
+        // Every input state stamps activity from one process-wide counter,
+        // so the most recent device across the window and the hub decides
+        // which button names the prompts use.
+        let recent =
+            quasar_input::most_recent_device([keyboard.last_activity(), self.hub.last_activity()]);
+        let pad_used = recent == Some(InputDevice::Gamepad);
+        let key_used = recent == Some(InputDevice::KeyboardMouse);
         if pad_used {
             self.prompts.family = self
                 .hub

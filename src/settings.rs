@@ -40,7 +40,7 @@ const GAME_HELP: &str = "Planetfall options:
   --seed N               World seed (default: time-based when windowed, 1 headless)
   --screenshot FILE      Headless: render the final frame to FILE (PNG)
   --cover FILE           Render 900x1200 Basalt cover art to FILE and exit
-  --menu NAME            With --screenshot: draw the main, saves, pause or settings screen
+  --menu NAME            With --screenshot: draw the main, saves, settings, controls or pause screen
   --asset-root DIR       Load models/sounds/fonts from DIR
   --fresh                Start a new unsaved game, skipping the main menu
   --slot N               Load save slot N (1-5), skipping the main menu
@@ -105,9 +105,10 @@ impl Settings {
                 "--cover" => settings.cover = Some(value("--cover")?.into()),
                 "--menu" => {
                     let name = value("--menu")?;
-                    if !["main", "saves", "pause", "settings"].contains(&name.as_str()) {
+                    if !["main", "saves", "pause", "settings", "controls"].contains(&name.as_str())
+                    {
                         return Err(format!(
-                            "--menu must be main, saves, pause or settings, got {name:?}"
+                            "--menu must be main, saves, settings, controls or pause, got {name:?}"
                         ));
                     }
                     settings.menu = Some(name);

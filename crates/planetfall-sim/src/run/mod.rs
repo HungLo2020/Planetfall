@@ -37,8 +37,6 @@ use serde::{Deserialize, Serialize};
 
 pub use extraction::{extraction_hold, extraction_inbound, extraction_radius};
 
-const MAX_SPARKS: usize = 400;
-
 /// Profile-derived numbers a run starts with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RunConfig {
@@ -216,22 +214,6 @@ pub struct Cache {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub enum SparkKind {
-    Rock,
-    Ore(Material),
-    Blood(EnemyId),
-    Energy,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Spark {
-    pub kind: SparkKind,
-    pub pos: [f32; 3],
-    vel: [f32; 3],
-    pub ttl: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Extraction {
     Idle,
     /// Pod inbound; it lands at `pos` when `ticks` reaches zero.
@@ -286,7 +268,6 @@ pub struct Run {
     pub blasts: Vec<Blast>,
     pub pickups: Vec<Pickup>,
     pub caches: Vec<Cache>,
-    pub sparks: Vec<Spark>,
     pub carried: Materials,
     pub objective: u32,
     pub objective_done: bool,
@@ -367,7 +348,6 @@ impl Run {
                     open_ticks: 0,
                 })
                 .collect(),
-            sparks: Vec::new(),
             carried: Materials::default(),
             objective,
             objective_done: false,
@@ -493,29 +473,6 @@ impl Run {
         let mut h = StateHasher::new();
         self.hash_into(&mut h);
         h.finish()
-    }
-}
-
-fn spawn_sparks(
-    sparks: &mut Vec<Spark>,
-    rng: &mut Rng,
-    kind: SparkKind,
-    at: V2,
-    height: f32,
-    count: usize,
-) {
-    for _ in 0..count {
-        if sparks.len() >= MAX_SPARKS {
-            sparks.remove(0);
-        }
-        let a = rng.range_f32(0.0..std::f32::consts::TAU);
-        let s = rng.range_f32(1.5..4.5);
-        sparks.push(Spark {
-            kind,
-            pos: [at[0], height, at[1]],
-            vel: [a.sin() * s, rng.range_f32(2.0..6.0), a.cos() * s],
-            ttl: 20 + rng.range_usize(0..25) as u32,
-        });
     }
 }
 

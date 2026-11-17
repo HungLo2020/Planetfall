@@ -6,7 +6,10 @@ The game opens on the main menu with the ship behind it. **Continue** resumes
 the last slot played, **New game** starts a commander in any of five slots
 (asking before overwriting one), **Load game** lists the slots with their
 location, progress and play time (and can delete one), and **Settings** holds
-volumes, fullscreen, shadows, bloom and screen shake. Esc / Start pauses;
+volumes, fullscreen, shadows, bloom and screen shake. **Settings → Controls**
+rebinds the keyboard/mouse and controller buttons (select an action, press
+the new button; conflicts are flagged and *Reset to defaults* restores them);
+the in-game button prompts follow the new bindings. Esc / Start pauses;
 from the pause menu you can open settings, abandon a drop, or save and quit to
 the main menu. A drop in progress is saved too and resumes where you left it.
 

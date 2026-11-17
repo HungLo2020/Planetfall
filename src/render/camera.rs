@@ -8,6 +8,7 @@ use quasar_math::{Mat4, Vec3, Viewport};
 #[derive(Clone, Copy, Debug)]
 pub struct Camera {
     pub view_projection: Mat4,
+    pub view: Mat4,
     pub projection: Mat4,
     pub eye: Vec3,
     pub target: Vec3,
@@ -158,6 +159,7 @@ impl CameraRig {
             .unwrap_or(Mat4::IDENTITY);
         Camera {
             view_projection: projection * view,
+            view,
             projection,
             eye,
             target,

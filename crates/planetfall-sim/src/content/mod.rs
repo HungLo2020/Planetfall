@@ -17,8 +17,10 @@ pub use defs::{
     PerkDef, PerkEffect, PlanetDef, Spawn, Spin, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior,
     WeaponDef, WeaponStats,
 };
+use quasar_config::content::{
+    ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 pub const TICK_RATE: f32 = 60.0;
@@ -212,25 +214,51 @@ pub const FILE_NAMES: [&str; 6] = [
     "tuning.toml",
 ];
 
-fn parse<T: serde::de::DeserializeOwned>(name: &str, text: &str) -> Result<T, String> {
-    quasar_config::load_toml_typed(text).map_err(|e| format!("{name}: {e}"))
-}
+/// Table names: the top-level key of each record file (`[[weapon]]`).
+const TABLES: [&str; 5] = ["planet", "weapon", "enemy", "perk", "upgrade"];
 
 impl Content {
-    /// Parse and validate the data files.
+    /// Parse and validate the data files. Record tables go through Quasar's
+    /// content registry, which checks every record's fields and the
+    /// references between tables and reports every problem at once as
+    /// `table[record].field: message`; checks spanning a whole table or the
+    /// tuning follow.
     pub fn from_toml(files: ContentFiles<'_>) -> Result<Self, String> {
-        let planets: defs::PlanetFile = parse("planets.toml", files.planets)?;
-        let weapons: defs::WeaponFile = parse("weapons.toml", files.weapons)?;
-        let enemies: defs::EnemyFile = parse("enemies.toml", files.enemies)?;
-        let perks: defs::PerkFile = parse("perks.toml", files.perks)?;
-        let upgrades: defs::UpgradeFile = parse("upgrades.toml", files.upgrades)?;
-        let tuning: Tuning = parse("tuning.toml", files.tuning)?;
+        let mut registry = ContentRegistry::new();
+        registry
+            .register::<PlanetDef>("planet")
+            .register::<WeaponDef>("weapon")
+            .register::<EnemyDef>("enemy")
+            .register::<PerkDef>("perk")
+            .register::<UpgradeDef>("upgrade");
+        let sources = [
+            files.planets,
+            files.weapons,
+            files.enemies,
+            files.perks,
+            files.upgrades,
+        ];
+        let tables: Vec<(&str, &str, ContentFormat)> = TABLES
+            .iter()
+            .zip(sources)
+            .map(|(name, source)| (*name, source, ContentFormat::Toml))
+            .collect();
+        registry.load_all(&tables).map_err(|e| e.to_string())?;
+        let tuning: Tuning = quasar_config::load_toml_typed(files.tuning)
+            .map_err(|e| format!("tuning.toml: {e}"))?;
+        let snapshot = registry.snapshot();
+        fn records<T: ContentRecord + Clone>(snapshot: &ContentSnapshot, name: &str) -> Vec<T> {
+            snapshot
+                .table::<T>(name)
+                .map(|t| t.records().to_vec())
+                .unwrap_or_default()
+        }
         let content = Self {
-            planets: planets.planet,
-            weapons: weapons.weapon,
-            enemies: enemies.enemy,
-            perks: perks.perk,
-            upgrades: upgrades.upgrade,
+            planets: records(&snapshot, "planet"),
+            weapons: records(&snapshot, "weapon"),
+            enemies: records(&snapshot, "enemy"),
+            perks: records(&snapshot, "perk"),
+            upgrades: records(&snapshot, "upgrade"),
             tuning,
         };
         content.validate()?;
@@ -242,100 +270,143 @@ impl Content {
         Self::from_toml(ContentFiles::BUILTIN).expect("built-in content is valid")
     }
 
-    /// Cross-checks the parser cannot express. Lists every problem found.
+    /// Checks across a whole table or against the tuning (per-record checks
+    /// run in each record's [`ContentRecord::validate`]).
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
-        let mut unique = |kind: &str, ids: Vec<&str>| {
-            let mut seen = BTreeSet::new();
-            if ids.is_empty() {
-                errors.push(format!("no {kind}s defined"));
+        for (table, empty) in TABLES.iter().zip([
+            self.planets.is_empty(),
+            self.weapons.is_empty(),
+            self.enemies.is_empty(),
+            self.perks.is_empty(),
+            self.upgrades.is_empty(),
+        ]) {
+            if empty {
+                errors.push(format!("{table}: no records"));
             }
-            for id in ids {
-                if id.is_empty() || !seen.insert(id) {
-                    errors.push(format!("{kind} id {id:?} is empty or duplicated"));
-                }
-            }
-        };
-        unique(
-            "planet",
-            self.planets.iter().map(|d| d.id.as_str()).collect(),
-        );
-        unique(
-            "weapon",
-            self.weapons.iter().map(|d| d.id.as_str()).collect(),
-        );
-        unique(
-            "enemy",
-            self.enemies.iter().map(|d| d.id.as_str()).collect(),
-        );
-        unique("perk", self.perks.iter().map(|d| d.id.as_str()).collect());
-        unique(
-            "upgrade",
-            self.upgrades.iter().map(|d| d.id.as_str()).collect(),
-        );
+        }
         let levels = usize::from(self.tuning.weapons.max_level);
         if !self.weapons.iter().any(|w| w.starter) {
-            errors.push("no weapon is marked starter".into());
+            errors.push("weapon: no weapon is marked starter".into());
         }
         for w in &self.weapons {
             if w.levels.len() != levels {
                 errors.push(format!(
-                    "weapon {}: {} levels, tuning.weapons.max_level is {levels}",
+                    "weapon[{}].levels: {} levels, tuning.weapons.max_level is {levels}",
                     w.id,
                     w.levels.len()
                 ));
             }
-            if w.levels.iter().any(|l| l.cooldown <= 0.0 || l.range <= 0.0) {
-                errors.push(format!(
-                    "weapon {}: cooldown and range must be positive",
-                    w.id
-                ));
-            }
-        }
-        for e in &self.enemies {
-            if e.health <= 0.0 || e.radius <= 0.0 {
-                errors.push(format!(
-                    "enemy {}: health and radius must be positive",
-                    e.id
-                ));
-            }
-            if e.behavior == EnemyBehavior::Exploder && e.explosion.is_none() {
-                errors.push(format!("enemy {}: exploders need an `explosion`", e.id));
-            }
-            if e.behavior == EnemyBehavior::Lunger && e.lunge.is_none() {
-                errors.push(format!("enemy {}: lungers need a `lunge`", e.id));
-            }
-            if e.spawn.count[0] == 0 || e.spawn.count[0] > e.spawn.count[1] {
-                errors.push(format!("enemy {}: spawn count must be 1..=max", e.id));
-            }
         }
         if !self.planets.iter().any(|p| p.nav_level == 0) {
-            errors.push("no planet is reachable at nav level 0".into());
-        }
-        for p in &self.planets {
-            for id in p.spawn_weights.keys() {
-                if !self.enemies.iter().any(|e| &e.id == id) {
-                    errors.push(format!(
-                        "planet {}: unknown enemy {id:?} in spawn_weights",
-                        p.id
-                    ));
-                }
-            }
-        }
-        for u in &self.upgrades {
-            if u.costs.is_empty() {
-                errors.push(format!("upgrade {}: needs at least one cost", u.id));
-            }
-            let [x0, y0, x1, y1] = u.room;
-            if x0 > x1 || y0 > y1 {
-                errors.push(format!("upgrade {}: room rect is inverted", u.id));
-            }
+            errors.push("planet: none is reachable at nav level 0".into());
         }
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("; "))
+            Err(errors.join("\n"))
         }
+    }
+}
+
+impl ContentRecord for PlanetDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .range("hazard", self.hazard, 0.1, 10.0)
+            .check(self.objective > 0, "objective", "must be at least 1");
+        for (enemy, weight) in &self.spawn_weights {
+            v.reference("spawn_weights", "enemy", enemy)
+                .finite("spawn_weights", f64::from(*weight))
+                .check(
+                    *weight >= 0.0,
+                    "spawn_weights",
+                    "weights cannot be negative",
+                );
+        }
+    }
+}
+
+impl ContentRecord for WeaponDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .non_empty("model", &self.model)
+            .non_empty("sound", &self.sound)
+            .check(
+                !self.levels.is_empty(),
+                "levels",
+                "needs at least one level",
+            );
+        for (i, l) in self.levels.iter().enumerate() {
+            v.check(
+                l.cooldown > 0.0 && l.range > 0.0,
+                &format!("levels[{i}]"),
+                "cooldown and range must be positive",
+            )
+            .check(
+                l.count > 0,
+                &format!("levels[{i}].count"),
+                "must be at least 1",
+            );
+        }
+    }
+}
+
+impl ContentRecord for EnemyDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .non_empty("model", &self.model)
+            .check(self.health > 0.0, "health", "must be positive")
+            .check(self.radius > 0.0, "radius", "must be positive")
+            .check(
+                self.behavior != EnemyBehavior::Exploder || self.explosion.is_some(),
+                "explosion",
+                "exploders need an `explosion`",
+            )
+            .check(
+                self.behavior != EnemyBehavior::Lunger || self.lunge.is_some(),
+                "lunge",
+                "lungers need a `lunge`",
+            )
+            .check(
+                self.spawn.count[0] > 0 && self.spawn.count[0] <= self.spawn.count[1],
+                "spawn.count",
+                "must be 1..=max",
+            );
+        for (i, d) in self.drops.iter().enumerate() {
+            v.range(&format!("drops[{i}].chance"), d.chance, 0.0, 1.0);
+        }
+    }
+}
+
+impl ContentRecord for PerkDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("title", &self.title)
+            .finite("amount", f64::from(self.amount));
+    }
+}
+
+impl ContentRecord for UpgradeDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        let [x0, y0, x1, y1] = self.room;
+        v.non_empty("name", &self.name)
+            .non_empty("station", &self.station)
+            .check(!self.costs.is_empty(), "costs", "needs at least one cost")
+            .check(x0 <= x1 && y0 <= y1, "room", "rect is inverted");
     }
 }
 
@@ -551,6 +622,21 @@ mod tests {
         files.weapons = &broken;
         let error = Content::from_toml(files).unwrap_err();
         assert!(error.contains("starter"), "{error}");
+        // Problems name the record and field; every record is checked.
+        let broken = ContentFiles::BUILTIN
+            .planets
+            .replace("hazard = 1.45", "hazard = -1.0")
+            .replace("hazard = 2.0", "hazard = -1.0");
+        files = ContentFiles::BUILTIN;
+        files.planets = &broken;
+        let error = Content::from_toml(files).unwrap_err();
+        assert!(error.contains("planet[cinder].hazard"), "{error}");
+        assert!(error.contains("planet[hollow].hazard"), "{error}");
+        // References between tables are checked once the records parse.
+        let dangling = ContentFiles::BUILTIN.planets.replace("husk = ", "hsk = ");
+        files.planets = &dangling;
+        let error = Content::from_toml(files).unwrap_err();
+        assert!(error.contains("unknown enemy id `hsk`"), "{error}");
         let typo = ContentFiles::BUILTIN
             .enemies
             .replace("health = 26.0", "helth = 26.0");
