@@ -14,12 +14,14 @@
 pub mod defs;
 
 pub use defs::{
-    AbilityDef, AbilityKind, AbilityTier, AffixDef, Axis, BlockCosts, ClassDef, ClassUnlock,
-    DecorKind, Drop, Element, ElementDef, EnemyBehavior, EnemyDef, EquipmentTuning, Explosion,
-    GearDef, GearSlot, GearStat, Lunge, ModDef, ModStat, ModTarget, MutatorDef, MutatorEffect,
+    AbilityDef, AbilityKind, AbilityTier, AffixDef, ArsenalTuning, Axis, BlockCosts, BossSpecial,
+    Burrow, ClassDef, ClassUnlock, ComboTuning, DecorKind, Drop, Element, ElementDef,
+    EnemyBehavior, EnemyDef, EquipmentTuning, Explosion, GearDef, GearSlot, GearStat,
+    HazardEffects, HazardStyle, Lunge, ModDef, ModStat, ModTarget, MutatorDef, MutatorEffect,
     ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette, PassiveDef, PassiveEffect,
-    PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special, Spin, TerrainStyle,
-    TradeTuning, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
+    PerkDef, PerkEffect, PlanetDef, Pulse, Ranged, Rarity, SiteDef, Spawn, Special, Spin,
+    TerrainStyle, TradeTuning, Tuning, UpgradeDef, UpgradeEffect, VentKind, WeaponBehavior,
+    WeaponDef, WeaponStats,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
@@ -428,6 +430,17 @@ impl ContentRecord for PlanetDef {
                     "weights cannot be negative",
                 );
         }
+        for boss in &self.bosses {
+            v.reference("bosses", "enemy", boss);
+        }
+        let h = &self.hazards;
+        v.range("hazards.lava", h.lava, 0.0, 0.3)
+            .range("hazards.water", h.water, 0.0, 0.5)
+            .check(
+                h.vents.is_some() || h.vent_count == 0,
+                "hazards.vent_count",
+                "vents need a `vents` kind",
+            );
     }
 }
 
@@ -472,12 +485,30 @@ impl ContentRecord for EnemyDef {
                 "lungers need a `lunge`",
             )
             .check(
+                self.behavior != EnemyBehavior::Spitter || self.ranged.is_some(),
+                "ranged",
+                "spitters need `ranged`",
+            )
+            .check(
+                self.behavior != EnemyBehavior::Disruptor || self.pulse.is_some(),
+                "pulse",
+                "disruptors need a `pulse`",
+            )
+            .check(
+                self.behavior != EnemyBehavior::Burrower || self.burrow.is_some(),
+                "burrow",
+                "burrowers need a `burrow`",
+            )
+            .check(
                 self.spawn.count[0] > 0 && self.spawn.count[0] <= self.spawn.count[1],
                 "spawn.count",
                 "must be 1..=max",
             );
         for (i, d) in self.drops.iter().enumerate() {
             v.range(&format!("drops[{i}].chance"), d.chance, 0.0, 1.0);
+        }
+        if let Some(BossSpecial::Brood { enemy, .. }) = &self.special {
+            v.reference("special.enemy", "enemy", enemy);
         }
     }
 }
@@ -1060,9 +1091,16 @@ mod tests {
     #[test]
     fn builtin_content_is_valid_and_complete() {
         let c = Content::builtin();
-        assert_eq!(c.planets.len(), 3);
-        assert_eq!(c.weapons.len(), 6);
-        assert_eq!(c.enemies.iter().filter(|e| !e.boss).count(), 4);
+        assert_eq!(c.planets.len(), 5);
+        assert_eq!(c.weapons.len(), 12);
+        assert_eq!(c.enemies.iter().filter(|e| !e.boss).count(), 8);
+        // Every planet has a boss pool of real bosses.
+        for p in &c.planets {
+            assert!(!p.bosses.is_empty(), "{} has no bosses", p.id);
+            for b in &p.bosses {
+                assert!(c.enemies.iter().any(|e| &e.id == b && e.boss), "{b}");
+            }
+        }
         assert!(!c.perks.is_empty());
         assert_eq!(c.upgrades.len(), 5);
         assert_eq!(c.classes.len(), 4);

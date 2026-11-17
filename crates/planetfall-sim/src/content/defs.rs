@@ -60,6 +60,11 @@ pub struct PlanetDef {
     pub palette: Palette,
     #[serde(default)]
     pub terrain: TerrainStyle,
+    #[serde(default)]
+    pub hazards: HazardStyle,
+    /// Bosses a boss contract here can name (enemy ids).
+    #[serde(default)]
+    pub bosses: Vec<String>,
 }
 
 /// Cave generation knobs per planet (see `cavegen`).
@@ -129,6 +134,22 @@ pub enum WeaponBehavior {
     Mortar,
     /// `count` blades circling at `range`, `speed` radians per second.
     Orbit,
+    /// A short cone of fire every `cooldown`, building heat; overheating
+    /// locks it until it cools (`[arsenal]`).
+    Flamer,
+    /// A disc that bounces between enemies and off walls `count` times.
+    Ricochet,
+    /// Proximity mines dropped at your feet (`count` at most), bursting
+    /// in `radius`.
+    Mines,
+    /// A heavy sweep in front of you within `range`, knocking enemies back.
+    Melee,
+    /// `count` missiles that steer toward their targets, bursting in
+    /// `radius`.
+    Homing,
+    /// A slow orb that becomes a vortex at the target, pulling enemies in
+    /// and grinding them within `radius`.
+    Gravity,
 }
 
 /// Upgrade rarity. Higher rarities scale amounts and unlock elements
@@ -312,6 +333,14 @@ pub struct ModDef {
 pub enum EnemyBehavior {
     /// Walks the flow field and strikes in melee.
     Walker,
+    /// Keeps its distance and spits (`ranged`).
+    Spitter,
+    /// Walks in and emits jamming pulses (`pulse`).
+    Disruptor,
+    /// Moves through rock unseen and surfaces near players (`burrow`).
+    Burrower,
+    /// Flies straight over rock; fragile.
+    Flyer,
     /// Like a walker, but speeds up inside `lunge.range`.
     Lunger,
     /// Detonates on contact and on death (`explosion`).
@@ -385,6 +414,106 @@ pub struct EnemyDef {
     /// Model size.
     #[serde(default = "one")]
     pub scale: f32,
+    /// Spitters: ranged attack.
+    #[serde(default)]
+    pub ranged: Option<Ranged>,
+    /// Disruptors: jamming pulse.
+    #[serde(default)]
+    pub pulse: Option<Pulse>,
+    /// Burrowers: when to surface.
+    #[serde(default)]
+    pub burrow: Option<Burrow>,
+    /// Boss ability.
+    #[serde(default)]
+    pub special: Option<BossSpecial>,
+    /// Linear colour multiplied into the model (variants share rigs).
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
+}
+
+/// A ranged attacker's spit.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ranged {
+    /// Fires within this distance (with line of sight).
+    pub range: f32,
+    /// Stops closing in at this distance.
+    pub keep: f32,
+    pub cooldown: f32,
+    /// Projectile speed, m/s.
+    pub speed: f32,
+    pub damage: f32,
+    /// Shots per volley (fanned).
+    #[serde(default = "one_u32")]
+    pub count: u32,
+}
+
+fn one_u32() -> u32 {
+    1
+}
+
+/// A disruptor's jamming pulse: slows weapons and blocks abilities.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Pulse {
+    pub radius: f32,
+    pub cooldown: f32,
+    /// Seconds a player stays jammed.
+    pub jam: f32,
+}
+
+/// A burrower travels through rock unseen and surfaces near its prey.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Burrow {
+    /// Surfaces within this distance of a player.
+    pub surface_range: f32,
+    /// Seconds above ground before it can dive again.
+    pub surfaced: f32,
+}
+
+/// What a boss does besides hitting hard.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BossSpecial {
+    /// Calls `count` of `enemy` every `every` seconds.
+    Brood {
+        enemy: String,
+        count: u32,
+        every: f32,
+    },
+    /// Leaves burning lava where it walks, every `every` seconds.
+    LavaTrail { every: f32 },
+    /// A freezing nova within `radius` every `every` seconds.
+    FrostNova { every: f32, radius: f32 },
+    /// A fan of `count` spit shots every `every` seconds.
+    Volley { every: f32, count: u32 },
+}
+
+/// Planet hazards (`[planet.hazards]`; sites can add oxygen and quakes).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HazardStyle {
+    /// Share of the floor covered by lava channels.
+    pub lava: f32,
+    /// Share of the floor covered by shallow water.
+    pub water: f32,
+    /// Spore clouds placed on the floor.
+    pub spores: u32,
+    /// Vents that pulse heat or cold.
+    pub vents: Option<VentKind>,
+    pub vent_count: u32,
+    /// Thin air: an oxygen meter refilled at vents and the pod.
+    pub oxygen: bool,
+    /// Periodic quakes that bring rubble down.
+    pub quakes: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VentKind {
+    Heat,
+    Cold,
 }
 
 /// Whether an objective is the contract's main goal or an optional extra.
@@ -456,6 +585,12 @@ pub struct SiteDef {
     pub spawn_weights: BTreeMap<String, f32>,
     #[serde(default)]
     pub tint: Option<[f32; 3]>,
+    /// Thin air: the oxygen meter runs on any planet.
+    #[serde(default)]
+    pub oxygen: bool,
+    /// Unstable rock: quakes bring rubble down.
+    #[serde(default)]
+    pub quakes: bool,
 }
 
 /// Mutator archetypes (see `mutators.toml`).
@@ -850,6 +985,9 @@ pub struct Tuning {
     pub elites: EliteTuning,
     pub class: ClassTuning,
     pub equipment: EquipmentTuning,
+    pub arsenal: ArsenalTuning,
+    pub combos: ComboTuning,
+    pub hazards: HazardEffects,
     pub trade: TradeTuning,
     pub extraction: ExtractionTuning,
     pub tutorial: TutorialTuning,
@@ -973,6 +1111,91 @@ pub struct EliteTuning {
     pub swift_health: f32,
     pub frenzied_damage: f32,
     pub frenzied_health: f32,
+    /// Splitting elites break into this many smaller copies.
+    pub split_count: u32,
+    /// Health share of each split copy.
+    pub split_health: f32,
+    /// Regenerating elites heal this share of their health per second.
+    pub regen: f32,
+}
+
+/// New weapon archetypes' numbers (`[arsenal]`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArsenalTuning {
+    /// Flamer: heat per burst, cooling per second, half-angle of the cone.
+    pub flamer_heat: f32,
+    pub flamer_cooling: f32,
+    pub flamer_cone: f32,
+    /// Melee: half-angle of the sweep and knockback distance.
+    pub melee_arc: f32,
+    pub melee_knockback: f32,
+    /// Homing: turn rate in radians per second.
+    pub homing_turn: f32,
+    /// Gravity: seconds the vortex lasts and its pull in m/s.
+    pub gravity_seconds: f32,
+    pub gravity_pull: f32,
+    /// Mines: seconds to arm and seconds they last.
+    pub mine_arm: f32,
+    pub mine_life: f32,
+    /// Ricochet: reach of each bounce.
+    pub ricochet_reach: f32,
+}
+
+/// Element interactions (`[combos]`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComboTuning {
+    /// Shatter: a frozen enemy hit this hard takes extra damage.
+    pub shatter_min: f32,
+    pub shatter_bonus: f32,
+    /// Thermal shock: fire on a frozen or chilled enemy.
+    pub thermal_bonus: f32,
+    /// Conductive: shock arcs through wet enemies this far.
+    pub conductive_reach: f32,
+    pub conductive_damage: f32,
+    /// Acid fuels burning: burn damage multiplier while corroded.
+    pub acid_fuel: f32,
+}
+
+/// Hazard numbers (`[hazards]`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HazardEffects {
+    /// Lava: damage per second standing in it.
+    pub lava_damage: f32,
+    /// Water: movement multiplier wading, seconds wet after leaving.
+    pub water_slow: f32,
+    pub wet_seconds: f32,
+    /// Spore clouds: radius, damage per second inside, regrowth seconds,
+    /// and the blast when fire ignites them.
+    pub spore_radius: f32,
+    pub spore_damage: f32,
+    pub spore_regrow: f32,
+    pub spore_blast_radius: f32,
+    pub spore_blast_damage: f32,
+    /// Vents: radius and seconds between pulses; heat damage and chill.
+    pub vent_radius: f32,
+    pub vent_every: f32,
+    pub heat_damage: f32,
+    pub cold_chill: f32,
+    /// Chilled players move slower for this many seconds.
+    pub chill_seconds: f32,
+    pub chill_slow: f32,
+    /// Oxygen: meter, drain and refill per second, damage when empty,
+    /// refill vents placed, and a cache's top-up.
+    pub oxygen_max: f32,
+    pub oxygen_drain: f32,
+    pub oxygen_refill: f32,
+    pub oxygen_damage: f32,
+    pub oxygen_vents: u32,
+    pub oxygen_cache: f32,
+    /// Quakes: seconds between (range), warning, rubble blocks per quake,
+    /// and damage to anything caught.
+    pub quake_every: [f32; 2],
+    pub quake_warning: f32,
+    pub quake_tiles: u32,
+    pub quake_damage: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

@@ -822,6 +822,97 @@ def plasma_mortar() -> list[Part]:
     return [gun]
 
 
+def torch() -> list[Part]:
+    """Flamethrower: fuel tank under a flared nozzle, pilot light."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, 0, -0.05), (0.15, 0.16, 0.42))
+    gun.prism("accent", (0, -0.13, -0.08), 0.08, 0.3, sides=8, rot=(math.pi / 2, 0, 0))
+    gun.prism("hull", (0, 0.02, 0.28), 0.05, 0.22, sides=8, rot=(math.pi / 2, 0, 0), top_radius=0.08)
+    gun.prism("glow_orange", (0, 0.02, 0.41), 0.06, 0.03, sides=8, rot=(math.pi / 2, 0, 0))
+    gun.box("hull_dark", (0, -0.15, -0.16), (0.08, 0.2, 0.1), rot=(0.25, 0, 0))
+    return [gun]
+
+
+def ripper() -> list[Part]:
+    """Disc launcher: a slotted housing with a disc loaded on top."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, 0, 0), (0.18, 0.14, 0.46))
+    gun.box("hull_dark", (0, -0.15, -0.1), (0.09, 0.2, 0.12), rot=(0.25, 0, 0))
+    gun.prism("hull", (0, 0.1, 0.08), 0.17, 0.035, sides=12)
+    gun.prism("glow_cyan", (0, 0.12, 0.08), 0.06, 0.02, sides=8)
+    gun.box("accent", (0, 0.0, 0.25), (0.2, 0.05, 0.04))
+    return [gun]
+
+
+def mine_layer() -> list[Part]:
+    """A backpack-style dispenser with a stack of mines."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, 0, 0), (0.24, 0.24, 0.32))
+    for i in range(3):
+        gun.prism("accent", (0, 0.15 + i * 0.07, 0), 0.1, 0.05, sides=8)
+    gun.prism("glow_red", (0, 0.36, 0), 0.03, 0.03, sides=6)
+    return [gun]
+
+
+def breaker() -> list[Part]:
+    """Breaker maul: a long haft and a heavy powered head."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, 0, 0.1), (0.06, 0.06, 0.8))
+    gun.box("armor", (0, 0, 0.5), (0.3, 0.18, 0.18))
+    gun.box("glow_yellow", (0, 0, 0.5), (0.32, 0.04, 0.2))
+    gun.box("accent", (0, 0, -0.25), (0.08, 0.08, 0.12))
+    return [gun]
+
+
+def seeker() -> list[Part]:
+    """Seeker pod: twin missile tubes with lit tips."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, -0.02, -0.05), (0.26, 0.14, 0.32))
+    for x in (-0.07, 0.07):
+        gun.prism("hull", (x, 0.08, 0.1), 0.055, 0.42, sides=8, rot=(math.pi / 2, 0, 0))
+        gun.prism("glow_yellow", (x, 0.08, 0.32), 0.04, 0.03, sides=8, rot=(math.pi / 2, 0, 0))
+    return [gun]
+
+
+def singularity() -> list[Part]:
+    """Singularity projector: rings around a violet core."""
+    gun = Part("gun")
+    gun.box("hull_dark", (0, 0, -0.08), (0.16, 0.16, 0.34))
+    gun.box("hull_dark", (0, -0.15, -0.16), (0.09, 0.2, 0.12), rot=(0.25, 0, 0))
+    for z in (0.12, 0.26):
+        gun.prism("hull", (0, 0.02, z), 0.12, 0.03, sides=10, rot=(math.pi / 2, 0, 0), top_radius=0.12)
+    gun.sphere("glow_purple", (0, 0.02, 0.38), 0.07, subdivisions=1)
+    return [gun]
+
+
+def mine() -> list[Part]:
+    """A proximity mine on the floor (light node blinks)."""
+    body = Part("body")
+    body.prism("hull_dark", (0, 0.06, 0), 0.22, 0.12, sides=8, top_radius=0.16)
+    body.box("accent", (0, 0.06, 0), (0.46, 0.03, 0.06))
+    light = Part("light", (0, 0.14, 0))
+    light.prism("glow_red", (0, 0.14, 0), 0.05, 0.04, sides=6)
+    return [body, light]
+
+
+def vent() -> list[Part]:
+    """A hazard vent: a cracked rock cone with a glowing throat (tinted)."""
+    part = Part("vent")
+    part.prism("obsidian", (0, 0.25, 0), 0.7, 0.5, sides=7, top_radius=0.35)
+    part.prism("white", (0, 0.5, 0), 0.26, 0.04, sides=7)
+    return [part]
+
+
+def oxygen_vent() -> list[Part]:
+    """An oxygen refill vent: a capped pipe with a blue ring."""
+    part = Part("pipe")
+    part.prism("hull_dark", (0, 0.5, 0), 0.18, 1.0, sides=8)
+    part.prism("hull", (0, 1.05, 0), 0.3, 0.1, sides=8)
+    part.prism("glow_blue", (0, 0.7, 0), 0.22, 0.08, sides=8)
+    part.box("accent", (0, 0.2, 0), (0.6, 0.12, 0.14))
+    return [part]
+
+
 def drone() -> list[Part]:
     core = Part("core")
     core.sphere("hull", (0, 0, 0), 0.18, subdivisions=1)
@@ -1081,6 +1172,15 @@ MODELS = {
     "crystal-growth": crystal_growth,
     "ice-spire": ice_spire,
     "trade-station": trade_station,
+    "torch": torch,
+    "ripper": ripper,
+    "mine-layer": mine_layer,
+    "breaker": breaker,
+    "seeker": seeker,
+    "singularity": singularity,
+    "mine": mine,
+    "vent": vent,
+    "oxygen-vent": oxygen_vent,
     "reactor-core": reactor_core,
     "med-bay": med_bay,
     "weapon-rack": weapon_rack,

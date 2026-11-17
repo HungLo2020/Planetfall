@@ -11,8 +11,10 @@
 //! - **Outlines** (`OutlineRenderer`): rings and a fill over the parts of the
 //!   player and the horde hidden behind rock, so nothing fights unseen.
 
-use planetfall_sim::content::{AbilityKind, Element, EnemyBehavior, Material, PlanetId};
-use planetfall_sim::events::GameEvent;
+use planetfall_sim::content::{
+    AbilityKind, Element, EnemyBehavior, Material, PlanetId, VentKind, WeaponBehavior,
+};
+use planetfall_sim::events::{ComboKind, GameEvent};
 use planetfall_sim::math::V2;
 use planetfall_sim::{Game, Phase};
 use quasar_frame::{Gpu, GraphicsResult, RenderTarget, texture_2d};
@@ -377,6 +379,157 @@ impl Effects {
                         size: [0.12, 0.02],
                         color_start: [c[0], c[1], c[2], 1.0],
                         color_end: [c[0] * 0.4, c[1] * 0.4, c[2] * 0.4, 0.0],
+                    })?;
+                }
+                GameEvent::Fired { weapon, at }
+                    if weapon.info().behavior == WeaponBehavior::Flamer =>
+                {
+                    // A cone of flame along the shooter's aim.
+                    let aim = run
+                        .players
+                        .iter()
+                        .flat_map(|p| p.weapons.iter())
+                        .find(|w| w.kind == weapon && w.since_fired == 0)
+                        .map_or(0.0, |w| w.aim);
+                    let d = planetfall_sim::math::from_yaw(aim);
+                    let range = weapon.info().stats.range;
+                    glow.emit(&ParticleBurst {
+                        position: [at[0] + d[0] * 0.7, 1.0, at[1] + d[1] * 0.7],
+                        position_jitter: 0.1,
+                        count: 14,
+                        direction: [d[0], 0.05, d[1]],
+                        spread: 0.38,
+                        speed: [range * 1.6, range * 2.6],
+                        life: [0.2, 0.38],
+                        size: [0.18, 0.5],
+                        color_start: [3.0, 1.4, 0.35, 1.0],
+                        color_end: [0.9, 0.12, 0.02, 0.0],
+                    })?;
+                }
+                GameEvent::Combo { kind, at } => {
+                    let (c, count) = match kind {
+                        ComboKind::Shatter => ([1.2, 1.8, 2.4], 34),
+                        ComboKind::Thermal => ([2.4, 1.6, 1.2], 24),
+                        ComboKind::Conductive => ([1.6, 2.0, 3.0], 28),
+                    };
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.3,
+                        count,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.5,
+                        speed: [2.0, 6.0],
+                        life: [0.25, 0.6],
+                        size: [0.14, 0.02],
+                        color_start: [c[0], c[1], c[2], 1.0],
+                        color_end: [c[0] * 0.3, c[1] * 0.3, c[2] * 0.3, 0.0],
+                    })?;
+                    if kind == ComboKind::Thermal {
+                        dust.emit(&ParticleBurst {
+                            position: [at[0], 1.0, at[1]],
+                            position_jitter: 0.4,
+                            count: 12,
+                            direction: [0.0, 1.0, 0.0],
+                            spread: 0.7,
+                            speed: [0.6, 1.6],
+                            life: [0.8, 1.4],
+                            size: [0.4, 1.2],
+                            color_start: [0.8, 0.8, 0.85, 0.45],
+                            color_end: [0.9, 0.9, 0.95, 0.0],
+                        })?;
+                    }
+                }
+                GameEvent::SporeBlast { at } => {
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 0.8, at[1]],
+                        position_jitter: 1.2,
+                        count: 80,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.6,
+                        speed: [3.0, 8.0],
+                        life: [0.3, 0.8],
+                        size: [0.3, 0.05],
+                        color_start: [2.6, 2.0, 0.4, 1.0],
+                        color_end: [0.8, 0.3, 0.05, 0.0],
+                    })?;
+                    self.mark(MarkKind::Scorch, at, 7.0, [1.0, 1.0, 1.0, 0.9]);
+                }
+                GameEvent::VentPulse { at, kind } => {
+                    let (start, end) = match kind {
+                        VentKind::Heat => ([2.6, 1.0, 0.25, 1.0], [0.8, 0.1, 0.02, 0.0]),
+                        VentKind::Cold => ([1.2, 1.7, 2.4, 0.9], [0.6, 0.8, 1.0, 0.0]),
+                    };
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 0.6, at[1]],
+                        position_jitter: 0.4,
+                        count: 40,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 0.5,
+                        speed: [2.0, 6.0],
+                        life: [0.4, 1.0],
+                        size: [0.25, 0.08],
+                        color_start: start,
+                        color_end: end,
+                    })?;
+                }
+                GameEvent::Rubble { at } => {
+                    dust.emit(&chips(at, 1.6, rock, 14, 0.5))?;
+                    dust.emit(&ParticleBurst {
+                        position: [at[0], 2.0, at[1]],
+                        position_jitter: 0.8,
+                        count: 10,
+                        direction: [0.0, -1.0, 0.0],
+                        spread: 0.6,
+                        speed: [0.5, 2.0],
+                        life: [0.8, 1.6],
+                        size: [0.6, 1.5],
+                        color_start: [rock[0], rock[1], rock[2], 0.5],
+                        color_end: [rock[0], rock[1], rock[2], 0.0],
+                    })?;
+                }
+                GameEvent::Burrow { at, .. } => {
+                    dust.emit(&chips(at, 0.4, rock, 16, 0.4))?;
+                }
+                GameEvent::Jammed { at } => {
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.2,
+                        count: 50,
+                        direction: [0.0, 0.15, 0.0],
+                        spread: std::f32::consts::PI,
+                        speed: [5.0, 7.0],
+                        life: [0.4, 0.7],
+                        size: [0.12, 0.04],
+                        color_start: [1.6, 0.8, 2.6, 1.0],
+                        color_end: [0.4, 0.2, 0.8, 0.0],
+                    })?;
+                }
+                GameEvent::Spat { at } => {
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.1,
+                        count: 6,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.0,
+                        speed: [1.0, 2.5],
+                        life: [0.2, 0.4],
+                        size: [0.1, 0.02],
+                        color_start: [1.0, 1.6, 0.3, 1.0],
+                        color_end: [0.3, 0.6, 0.1, 0.0],
+                    })?;
+                }
+                GameEvent::Split { at } => {
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.5,
+                        count: 30,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.5,
+                        speed: [2.0, 5.0],
+                        life: [0.3, 0.6],
+                        size: [0.15, 0.03],
+                        color_start: [2.0, 1.0, 2.6, 1.0],
+                        color_end: [0.6, 0.2, 0.8, 0.0],
                     })?;
                 }
                 GameEvent::Dashed => {

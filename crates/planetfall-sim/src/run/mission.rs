@@ -291,8 +291,7 @@ impl Run {
         if let Some(arena) = self.mission.arena
             && self.mission.target.is_none()
             && near(arena, WAKE)
-            && let Some(kind) = self.mission.contract.primary.info().enemy.as_deref()
-            && let Some(kind) = EnemyId::from_key(kind)
+            && let Some(kind) = self.mission.contract.target_enemy()
         {
             let id = self.spawn_special(kind, arena, None, 1.0);
             self.mission.target = Some(id);
@@ -302,8 +301,7 @@ impl Run {
         if kind == ObjectiveKind::Hunt
             && self.mission.target.is_none()
             && !self.mission.primary.done
-            && let Some(kind) = self.mission.contract.primary.info().enemy.as_deref()
-            && let Some(kind) = EnemyId::from_key(kind)
+            && let Some(kind) = self.mission.contract.target_enemy()
         {
             let site = self.landing_site_far();
             let id = self.spawn_special(kind, site, Some(Affix::Armored), 2.5);
@@ -396,27 +394,9 @@ impl Run {
         let id = self.next_id;
         self.next_id += 1;
         self.enemies.push(Enemy {
-            id,
-            kind,
-            pos: at,
-            yaw: 0.0,
-            health: hp,
-            max_health: hp,
-            hit_ticks: 0,
-            attack_ticks: 0,
-            walk: 0.0,
             spawn_ticks: 30,
-            attack_cooldown: 30,
-            drone_cooldown: 0,
-            speed_scale: 1.0,
-            alerted: false,
-            burning: 0,
-            burn_dps: 0.0,
-            corroded: 0,
-            acid_dps: 0.0,
-            chill: 0.0,
-            frozen: 0,
             elite,
+            ..Enemy::fresh(id, kind, at, hp)
         });
         id
     }

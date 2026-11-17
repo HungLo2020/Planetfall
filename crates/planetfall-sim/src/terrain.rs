@@ -97,6 +97,16 @@ impl Tile {
     }
 }
 
+/// What covers an open floor tile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ground {
+    Plain,
+    /// Burns whoever stands in it.
+    Lava,
+    /// Shallow water: slows and soaks.
+    Water,
+}
+
 /// What breaking a block produced.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Broken {
@@ -125,6 +135,9 @@ pub struct Terrain {
     tutorial: bool,
     /// Blocks broken, in order.
     broken: Vec<(i32, i32)>,
+    /// Rubble brought down by quakes, with how many blocks had been broken
+    /// before (so a reload replays edits in order).
+    collapsed: Vec<(usize, (i32, i32))>,
     blocks: Blocks,
     /// Damage dealt to partially mined blocks.
     damage: BTreeMap<(i32, i32), f32>,
@@ -228,10 +241,39 @@ impl Terrain {
         })
     }
 
+    /// What covers the floor at a tile.
+    pub fn ground(&self, x: i32, y: i32) -> Ground {
+        match self.blocks.get(voxel::voxel(x, y, -1)) {
+            voxel::LAVA => Ground::Lava,
+            voxel::WATER => Ground::Water,
+            _ => Ground::Plain,
+        }
+    }
+
+    pub fn ground_at(&self, p: V2) -> Ground {
+        let (x, y) = Self::tile_of(p);
+        self.ground(x, y)
+    }
+
+    /// Bring rubble down on an open floor tile (quakes). Returns whether it
+    /// fell.
+    pub fn collapse(&mut self, x: i32, y: i32) -> bool {
+        if self.tile(x, y) != Tile::Floor || x < 1 || y < 1 {
+            return false;
+        }
+        self.collapsed.push((self.broken.len(), (x, y)));
+        self.set_wall(x, y, voxel::ROCK);
+        true
+    }
+
     /// Clear a wall block and propagate the edit to nav and re-meshing.
     fn break_block(&mut self, x: i32, y: i32) {
+        self.set_wall(x, y, AIR);
+    }
+
+    fn set_wall(&mut self, x: i32, y: i32, block: u16) {
         let mut batch = EditBatch::new();
-        batch.set(self.blocks.block, voxel::voxel(x, y, 0), AIR);
+        batch.set(self.blocks.block, voxel::voxel(x, y, 0), block);
         let result = self.blocks.volume.apply(&batch, EditOptions::default());
         self.revision += 1;
         for chunk in &result.dirty {
@@ -403,7 +445,11 @@ impl Terrain {
         for y in 0..h {
             for x in 0..w {
                 let tile = tiles[idx(x, y)];
-                let ground = if cave.patches[idx(x, y)] {
+                let ground = if cave.lava[idx(x, y)] {
+                    voxel::LAVA
+                } else if cave.water[idx(x, y)] {
+                    voxel::WATER
+                } else if cave.patches[idx(x, y)] {
                     voxel::GROUND_PATCH
                 } else if (x + y) % 2 == 0 {
                     voxel::GROUND
@@ -468,6 +514,7 @@ impl Terrain {
                 seed,
                 tutorial,
                 broken: Vec::new(),
+                collapsed: Vec::new(),
                 blocks,
                 damage: BTreeMap::new(),
                 nav,
@@ -495,6 +542,8 @@ struct TerrainSave {
     tutorial: bool,
     broken: Vec<(i32, i32)>,
     damage: Vec<((i32, i32), f32)>,
+    #[serde(default)]
+    collapsed: Vec<(usize, (i32, i32))>,
 }
 
 impl From<Terrain> for TerrainSave {
@@ -505,6 +554,7 @@ impl From<Terrain> for TerrainSave {
             tutorial: t.tutorial,
             broken: t.broken,
             damage: t.damage.into_iter().collect(),
+            collapsed: t.collapsed,
         }
     }
 }
@@ -514,12 +564,19 @@ impl TryFrom<TerrainSave> for Terrain {
 
     fn try_from(save: TerrainSave) -> Result<Self, String> {
         let (mut terrain, _) = Terrain::generate(save.planet, save.seed, save.tutorial);
-        for (x, y) in save.broken {
+        let mut rubble = save.collapsed.into_iter().peekable();
+        for (n, (x, y)) in save.broken.into_iter().enumerate() {
+            while let Some((_, (rx, ry))) = rubble.next_if(|(at, _)| *at <= n) {
+                terrain.collapse(rx, ry);
+            }
             if !terrain.tile(x, y).minable() {
                 return Err(format!("saved terrain breaks unminable block ({x}, {y})"));
             }
             terrain.broken.push((x, y));
             terrain.break_block(x, y);
+        }
+        for (_, (rx, ry)) in rubble {
+            terrain.collapse(rx, ry);
         }
         terrain.damage = save.damage.into_iter().collect();
         // The flow field is rebuilt from scratch after loading.

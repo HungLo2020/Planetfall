@@ -5,8 +5,10 @@
 //! upgrades from `mods.toml`.
 
 use super::{Beam, Blast, BlastKind, Elements, Hit, Projectile, ProjectileKind, Run};
-use crate::content::{DT, Element, Special, WeaponBehavior, WeaponId, WeaponStats, seconds};
-use crate::events::GameEvent;
+use crate::content::{
+    DT, Element, Special, WeaponBehavior, WeaponId, WeaponStats, content, seconds,
+};
+use crate::events::{ComboKind, GameEvent};
 use crate::math::{self, FloatExt, V2};
 use quasar_spatial::Aabb;
 
@@ -42,7 +44,8 @@ impl Run {
     pub(super) fn rebuild_index(&mut self) {
         self.index.clear();
         for (i, e) in self.enemies.iter().enumerate() {
-            if e.health <= 0.0 {
+            // Burrowers underground cannot be targeted or hit.
+            if e.health <= 0.0 || e.burrowed {
                 continue;
             }
             let r = f64::from(e.kind.info().radius);
@@ -110,12 +113,19 @@ impl Run {
                 cluster: w.has(Special::Cluster),
             };
             let since = w.since_fired;
-            let cooldown = (w.cooldown - DT).max(0.0);
+            // Jammed by a disruptor: weapons recharge at half speed.
+            let rate = if p.jammed > 0 { 0.5 } else { 1.0 };
+            let cooldown = (w.cooldown - DT * rate).max(0.0);
             let w = &mut self.players[player].weapons[slot];
             w.since_fired = since.saturating_add(1);
             if info.behavior == WeaponBehavior::Orbit {
                 continue;
             }
+            let flamer = info.behavior == WeaponBehavior::Flamer;
+            if flamer && !self.flamer_ready(player, slot) {
+                continue;
+            }
+            let w = &mut self.players[player].weapons[slot];
             w.cooldown = cooldown;
             if cooldown > 0.0 {
                 continue;
@@ -135,6 +145,9 @@ impl Run {
             {
                 let to = (self.enemies[second].pos - origin).normalize_or_zero();
                 self.fire(&shot, origin, to, second, events);
+            }
+            if flamer {
+                self.flamer_heat(player, slot);
             }
             let w = &mut self.players[player].weapons[slot];
             w.cooldown = stats.cooldown * cooldown_multiplier;
@@ -193,6 +206,7 @@ impl Run {
             WeaponBehavior::Arc => self.fire_arc(shot, origin, target, events),
             WeaponBehavior::Mortar => self.fire_mortar(shot, origin, target),
             WeaponBehavior::Orbit => {}
+            _ => self.fire_arsenal(shot, origin, dir, target, events),
         }
     }
 
@@ -286,28 +300,19 @@ impl Run {
         }
     }
 
-    fn spawn_projectile(&mut self, kind: ProjectileKind, shot: &Shot, origin: V2, dir: V2) {
-        let stats = &shot.stats;
-        self.projectiles.push(Projectile {
-            kind,
-            weapon: shot.weapon,
-            pos: origin + dir * 0.6,
-            height: 1.1,
-            vel: dir * stats.speed,
-            damage: shot.hit.damage,
-            heavy: shot.hit.heavy,
-            elements: shot.hit.elements,
-            cluster: false,
-            radius: stats.radius,
-            age: 0,
-            ttl: (stats.range / stats.speed * 60.0) as u32 + 2,
-            pierce: stats.pierce,
-            hit: Vec::new(),
-        });
+    pub(super) fn spawn_projectile(
+        &mut self,
+        kind: ProjectileKind,
+        shot: &Shot,
+        origin: V2,
+        dir: V2,
+    ) {
+        let p = self.make_projectile(kind, shot, origin, dir);
+        self.projectiles.push(p);
     }
 
     /// A blast at `at`: damage everything in `radius`.
-    fn burst(
+    pub(super) fn burst(
         &mut self,
         weapon: WeaponId,
         at: V2,
@@ -326,6 +331,9 @@ impl Run {
             self.damage_enemy(i, hit, events);
         }
         events.push(GameEvent::Explosion { at, radius });
+        if hit.elements.get(Element::Fire) > 0.0 {
+            self.ignite_spores(at, radius, events);
+        }
     }
 
     pub(super) fn update_projectiles(&mut self, events: &mut Vec<GameEvent>) {
@@ -390,6 +398,7 @@ impl Run {
                     }
                     true
                 }
+                _ => self.update_arsenal_projectile(p, hit, events),
             }
         });
         projectiles.append(&mut self.projectiles);
@@ -478,8 +487,9 @@ impl Run {
 
     /// Land a hit on enemy `i`: heavy and corrosion bonuses, then statuses.
     pub(super) fn damage_enemy(&mut self, i: usize, hit: Hit, events: &mut Vec<GameEvent>) {
+        let combos = &content().tuning.combos;
         let e = &mut self.enemies[i];
-        if e.health <= 0.0 {
+        if e.health <= 0.0 || e.burrowed {
             return;
         }
         let mut amount = hit.damage;
@@ -488,6 +498,25 @@ impl Run {
         }
         if e.corroded > 0 {
             amount *= 1.0 + CORRODE_BONUS;
+        }
+        // Element combos: shatter a frozen enemy with a heavy hit; fire on a
+        // frozen or chilled one is a thermal shock.
+        let fire_hit = hit.elements.get(Element::Fire) > 0.0;
+        if e.frozen > 0 && hit.damage >= combos.shatter_min {
+            amount *= 1.0 + combos.shatter_bonus;
+            e.frozen = 0;
+            events.push(GameEvent::Combo {
+                kind: ComboKind::Shatter,
+                at: e.pos,
+            });
+        } else if fire_hit && (e.frozen > 0 || e.chill > 0.3) {
+            amount *= 1.0 + combos.thermal_bonus;
+            e.frozen = 0;
+            e.chill = 0.0;
+            events.push(GameEvent::Combo {
+                kind: ComboKind::Thermal,
+                at: e.pos,
+            });
         }
         e.health -= amount;
         e.hit_ticks = 6;
@@ -499,7 +528,8 @@ impl Run {
             return;
         }
         let fire = hit.elements.get(Element::Fire);
-        if fire > 0.0 {
+        // Wet enemies do not catch fire.
+        if fire > 0.0 && e.wet == 0 {
             if e.burning == 0 {
                 events.push(GameEvent::Status {
                     element: Element::Fire,
@@ -536,6 +566,39 @@ impl Run {
             events.push(GameEvent::EnemyHit { at });
         }
         let shock = hit.elements.get(Element::Shock);
+        // Conductive: shock runs through every wet enemy nearby.
+        if shock > 0.0 && !hit.secondary && self.enemies[i].wet > 0 {
+            let wet: Vec<usize> = self
+                .enemies_near(at, combos.conductive_reach)
+                .into_iter()
+                .filter(|&j| j != i && self.enemies[j].wet > 0)
+                .collect();
+            if !wet.is_empty() {
+                events.push(GameEvent::Combo {
+                    kind: ComboKind::Conductive,
+                    at,
+                });
+            }
+            for j in wet {
+                let to = self.enemies[j].pos;
+                self.damage_enemy(
+                    j,
+                    Hit {
+                        damage: shock * combos.conductive_damage,
+                        heavy: hit.heavy,
+                        elements: Elements::default(),
+                        secondary: true,
+                    },
+                    events,
+                );
+                self.beams.push(Beam {
+                    color: SHOCK_COLOR,
+                    points: vec![at, to],
+                    ttl: 6,
+                });
+            }
+            return;
+        }
         if shock > 0.0 && !hit.secondary && self.rng.chance(SHOCK_CHANCE) {
             let jump = self
                 .enemies_near(at, SHOCK_REACH)
@@ -591,7 +654,13 @@ impl Run {
             if e.corroded == 0 {
                 e.acid_dps = 0.0;
             }
-            let dot = (e.burn_dps + e.acid_dps) * 0.5;
+            // Acid fuels the fire.
+            let fuel = if e.corroded > 0 {
+                content().tuning.combos.acid_fuel
+            } else {
+                1.0
+            };
+            let dot = (e.burn_dps * fuel + e.acid_dps) * 0.5;
             if pulse && dot > 0.0 {
                 self.damage_enemy(
                     i,

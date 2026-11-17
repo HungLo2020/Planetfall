@@ -35,6 +35,9 @@ pub mod names {
     pub const CRYSTAL_GROWTH: &str = "crystal-growth";
     pub const ICE_SPIRE: &str = "ice-spire";
     pub const TRADE_STATION: &str = "trade-station";
+    pub const MINE: &str = "mine";
+    pub const VENT: &str = "vent";
+    pub const OXYGEN_VENT: &str = "oxygen-vent";
     pub const BEACON: &str = "beacon";
     pub const DRILL_RIG: &str = "drill-rig";
     pub const WORKBENCH: &str = "workbench";
@@ -50,7 +53,7 @@ pub mod names {
     pub const LUMITE_CHUNK: &str = "lumite-chunk";
     pub const VOIDSTONE_CHUNK: &str = "voidstone-chunk";
 
-    pub const ALL: [&str; 27] = [
+    pub const ALL: [&str; 30] = [
         ASTRONAUT,
         DROP_POD,
         DRONE,
@@ -64,6 +67,9 @@ pub mod names {
         CRYSTAL_GROWTH,
         ICE_SPIRE,
         TRADE_STATION,
+        MINE,
+        VENT,
+        OXYGEN_VENT,
         BEACON,
         DRILL_RIG,
         WORKBENCH,

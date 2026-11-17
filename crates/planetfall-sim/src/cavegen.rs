@@ -41,6 +41,9 @@ pub struct Cave {
     pub cells: Vec<Cell>,
     /// Floor cells covered by a planet patch (moss, ash, frost).
     pub patches: Vec<bool>,
+    /// Floor cells of lava channels and shallow water (planet hazards).
+    pub lava: Vec<bool>,
+    pub water: Vec<bool>,
     pub landing: (i32, i32),
     /// Mission sites, the set-piece arena first.
     pub sites: Vec<(i32, i32)>,
@@ -594,11 +597,51 @@ pub fn generate(
         })
         .collect();
 
+    // Hazard ground: lava runs in thin channels along noise ridges, water
+    // pools in blobs; both stay clear of the landing and the mission sites.
+    let hazards = &info.hazards;
+    let clear_of = |x: i32, y: i32| {
+        let p = V2::new(x as f32, y as f32);
+        p.distance(center) > LANDING_RADIUS + 2.5
+            && site_cells
+                .iter()
+                .all(|&(sx, sy)| p.distance(V2::new(sx as f32, sy as f32)) > 3.5)
+    };
+    let lava_noise = Noise::new(seed, 0x1a7a);
+    let water_noise = Noise::new(seed, 0x3a7e);
+    let mut lava = vec![false; (w * h) as usize];
+    let mut water = vec![false; (w * h) as usize];
+    if !tutorial {
+        for y in 0..h {
+            for x in 0..w {
+                let i = (y * w + x) as usize;
+                if cells[i] != Cell::Floor || !clear_of(x, y) {
+                    continue;
+                }
+                if hazards.lava > 0.0 {
+                    let v = lava_noise.fbm(x as f32, y as f32, 0.07, 2);
+                    let ridge = 1.0 - (2.0 * v - 1.0).abs();
+                    if ridge > 1.0 - hazards.lava * 0.45 {
+                        lava[i] = true;
+                        continue;
+                    }
+                }
+                if hazards.water > 0.0
+                    && water_noise.fbm(x as f32, y as f32, 0.09, 3) > 1.0 - hazards.water * 1.8
+                {
+                    water[i] = true;
+                }
+            }
+        }
+    }
+
     Cave {
         width: w,
         height: h,
         cells,
         patches,
+        lava,
+        water,
         landing,
         sites: site_cells,
     }

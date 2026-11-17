@@ -112,6 +112,12 @@ swift_speed = 1.5
 swift_health = 1.6
 frenzied_damage = 1.7
 frenzied_health = 1.8
+# Splitting elites break into `split_count` copies with `split_health` of
+# the parent's health each; regenerating elites heal `regen` of their health
+# per second.
+split_count = 3
+split_health = 0.3
+regen = 0.04
 
 [class]
 # Class XP is earned from the XP collected on a dive plus
@@ -177,4 +183,73 @@ fuse_cost = [10, 30, 80, 0]
 lot = 10
 material_sell = [4, 10, 30]
 material_buy = [10, 25, 75]
+
+[arsenal]
+# Flamer: heat per burst, cooling per second (it locks at full heat until
+# cool), and the cone's half-angle in radians.
+flamer_heat = 0.07
+flamer_cooling = 0.45
+flamer_cone = 0.42
+# Melee sweep half-angle (radians) and knockback (metres).
+melee_arc = 1.1
+melee_knockback = 1.6
+# Homing missiles turn this fast (radians per second).
+homing_turn = 4.5
+# Gravity vortex: seconds it lasts and pull speed (m/s).
+gravity_seconds = 3.0
+gravity_pull = 3.5
+# Mines arm after this many seconds and expire after `mine_life`.
+mine_arm = 0.5
+mine_life = 25.0
+# Ricochet discs look this far for the next enemy to bounce to.
+ricochet_reach = 9.0
+
+[combos]
+# Shatter: a frozen enemy hit for at least `shatter_min` takes
+# `shatter_bonus` extra (and thaws).
+shatter_min = 12.0
+shatter_bonus = 1.0
+# Thermal shock: fire on a frozen or chilled enemy deals extra.
+thermal_bonus = 0.5
+# Conductive: shock always arcs through wet enemies within reach.
+conductive_reach = 7.0
+conductive_damage = 1.0
+# Acid fuels fire: burn damage multiplier on corroded enemies.
+acid_fuel = 1.6
+
+[hazards]
+# Lava burns anyone standing in it (damage per second).
+lava_damage = 14.0
+# Water slows wading players and soaks everything (seconds wet after).
+water_slow = 0.8
+wet_seconds = 4.0
+# Spore clouds hurt inside; fire ignites them into a blast that hurts the
+# horde (and you, at a third), then they regrow.
+spore_radius = 2.6
+spore_damage = 5.0
+spore_regrow = 25.0
+spore_blast_radius = 4.0
+spore_blast_damage = 60.0
+# Vents pulse every `vent_every` seconds within `vent_radius`: heat burns,
+# cold chills (enemies) or slows (players).
+vent_radius = 3.2
+vent_every = 3.5
+heat_damage = 12.0
+cold_chill = 0.6
+chill_seconds = 2.5
+chill_slow = 0.65
+# Thin air: the meter drains per second, refills at oxygen vents and the
+# drop site, and an empty meter costs health per second. Caches top it up.
+oxygen_max = 100.0
+oxygen_drain = 1.1
+oxygen_refill = 30.0
+oxygen_damage = 6.0
+oxygen_vents = 6
+oxygen_cache = 40.0
+# Quakes: seconds between them, warning seconds, rubble blocks brought
+# down near players, damage to anything under them.
+quake_every = [55.0, 85.0]
+quake_warning = 3.0
+quake_tiles = 10
+quake_damage = 25.0
 

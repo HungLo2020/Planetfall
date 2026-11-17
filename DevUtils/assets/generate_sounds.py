@@ -207,6 +207,24 @@ def build(rng: random.Random) -> dict[str, tuple[list[float], float, bool]]:
     add("level_up", lowpass(mix(*lvl), 5000), 0.55)
     chord = mix(*[gain(sweep(1.0, note(m) * 0.5, note(m), "saw", 0.3), 0.3) for m in (60, 67, 72)])
     add("weapon_found", lowpass(shaped(chord, env(int(1.0 * RATE), 0.01, 0.35)), 3500), 0.6)
+    # Newer weapons.
+    roar = lowpass(noise(0.18, rng), 1800)
+    add("flamer", shaped(mix(roar, gain(sweep(0.18, 90, 70, "saw"), 0.3)), env(int(0.18 * RATE), 0.01, 0.08)), 0.35)
+    add("ricochet", mix(shaped(sweep(0.16, 2400, 900), env(int(0.16 * RATE), 0.001, 0.06)), gain(tone(3100, 0.08, 0.001, 0.02), 0.3)), 0.35)
+    add("mine", mix(tone(1500, 0.06, 0.001, 0.02, "square"), offset(tone(1500, 0.06, 0.001, 0.02, "square"), 0.1)), 0.3)
+    swoosh = lowpass(noise(0.3, rng), sweep(0.3, 600, 3000, "sine"))
+    add("swing", shaped(swoosh, env(int(0.3 * RATE), 0.04, 0.1)), 0.5)
+    add("seeker", mix(shaped(lowpass(noise(0.4, rng), 2500), env(int(0.4 * RATE), 0.005, 0.18)), gain(sweep(0.4, 300, 900, "saw"), 0.2)), 0.45)
+    add("gravity", shaped(mix(sweep(0.9, 60, 30, "sine"), gain(sweep(0.9, 400, 120, "saw"), 0.25)), env(int(0.9 * RATE), 0.05, 0.4)), 0.6)
+    # Enemies and hazards.
+    add("spit", shaped(mix(lowpass(noise(0.2, rng), 1200), gain(sweep(0.2, 500, 150), 0.6)), env(int(0.2 * RATE), 0.005, 0.07)), 0.4)
+    add("jam", shaped(mix(sweep(0.5, 800, 120, "square"), gain(noise(0.5, rng), 0.3)), env(int(0.5 * RATE), 0.005, 0.2)), 0.45)
+    add("burrow", lowpass(shaped(noise(0.6, rng), env(int(0.6 * RATE), 0.05, 0.25)), 300), 0.6)
+    add("quake", lowpass(shaped(mix(noise(1.6, rng), gain(sweep(1.6, 45, 30, "sine"), 1.5)), env(int(1.6 * RATE), 0.08, 0.7)), 220), 0.9)
+    shatter = [offset(tone(f, 0.25, 0.001, 0.08, "triangle"), i * 0.012) for i, f in enumerate((2600, 3300, 4100, 2900, 3700))]
+    add("shatter", mix(*shatter, gain(highpass(shaped(noise(0.25, rng), env(int(0.25 * RATE), 0.001, 0.06)), 3000), 0.6)), 0.45)
+    add("vent", shaped(highpass(noise(0.7, rng), 1500), env(int(0.7 * RATE), 0.05, 0.3)), 0.35)
+    add("oxygen_low", mix(*[offset(tone(880, 0.12, 0.002, 0.05, "square"), i * 0.22) for i in range(3)]), 0.4)
     # Gear find: a rising shimmer of bell partials.
     shimmer = mix(*[offset(gain(tone(note(m), 0.6, 0.002, 0.25), 0.5), i * 0.05) for i, m in enumerate((79, 84, 88, 91, 96))])
     add("gear_found", lowpass(shimmer, 6000), 0.5)

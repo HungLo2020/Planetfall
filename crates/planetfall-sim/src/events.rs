@@ -3,9 +3,20 @@
 
 use crate::content::{
     AbilityKind, ClassId, Element, EnemyId, GearSlot, Material, PlanetId, Rarity, ShipBlock,
-    UpgradeId, WeaponId,
+    UpgradeId, VentKind, WeaponId,
 };
 use crate::math::V2;
+
+/// Element interactions (see `[combos]`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComboKind {
+    /// A heavy hit on a frozen enemy.
+    Shatter,
+    /// Fire on a frozen or chilled enemy.
+    Thermal,
+    /// Shock arcing through wet enemies.
+    Conductive,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GameEvent {
@@ -146,6 +157,53 @@ pub enum GameEvent {
     },
     /// Gear put on or taken off in the locker room.
     Equipped,
+    /// Fire set off a spore cloud.
+    SporeBlast {
+        at: V2,
+    },
+    /// A heat or cold vent pulsed.
+    VentPulse {
+        at: V2,
+        kind: VentKind,
+    },
+    /// Oxygen fell below a quarter.
+    OxygenLow,
+    /// A quake is coming (seconds of warning).
+    QuakeWarning,
+    /// A quake hit near a player.
+    Quake {
+        at: V2,
+    },
+    /// A block of rubble came down.
+    Rubble {
+        at: V2,
+    },
+    /// Two elements combined on an enemy.
+    Combo {
+        kind: ComboKind,
+        at: V2,
+    },
+    /// A ranged enemy spat.
+    Spat {
+        at: V2,
+    },
+    /// A disruptor's pulse went off.
+    Jammed {
+        at: V2,
+    },
+    /// A burrower dug in or came up.
+    Burrow {
+        at: V2,
+        surfaced: bool,
+    },
+    /// A boss used its ability.
+    BossAbility {
+        at: V2,
+    },
+    /// A splitting elite broke apart.
+    Split {
+        at: V2,
+    },
     /// A trade went through at the station.
     Traded,
     DescentStarted,

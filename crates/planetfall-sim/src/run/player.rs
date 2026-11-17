@@ -58,7 +58,16 @@ impl Run {
             p.dash_ticks -= 1;
             p.dash_dir * dash_speed
         } else {
-            movement * p.move_speed
+            // Wading and cold slow you down.
+            let h = &content().tuning.hazards;
+            let mut k = 1.0;
+            if self.terrain.ground_at(p.pos) == crate::terrain::Ground::Water {
+                k *= h.water_slow;
+            }
+            if p.chilled > 0 {
+                k *= h.chill_slow;
+            }
+            movement * p.move_speed * k
         };
         let target = p.pos + velocity * DT;
         let (resolved, hit) = self.terrain.resolve_circle(target, tuning.radius);

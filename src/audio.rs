@@ -201,6 +201,28 @@ impl Audio {
                 GameEvent::LevelUp { .. } => self.play("level_up", 0.7, None, 0),
                 GameEvent::WeaponFound { .. } => self.play("weapon_found", 0.8, None, 0),
                 GameEvent::GearFound { .. } => self.play("gear_found", 0.8, None, 0),
+                GameEvent::SporeBlast { at } => self.play("explosion", 0.8, Some(at), 0),
+                GameEvent::VentPulse { at, .. } => self.play("vent", 0.5, Some(at), 6),
+                GameEvent::OxygenLow => self.play("oxygen_low", 0.7, None, 0),
+                GameEvent::QuakeWarning => self.play("alarm", 0.5, None, 0),
+                GameEvent::Quake { .. } => self.play("quake", 1.0, None, 0),
+                GameEvent::Rubble { at } => self.play("block_break", 0.5, Some(at), 4),
+                GameEvent::Combo { kind, at } => match kind {
+                    planetfall_sim::events::ComboKind::Shatter => {
+                        self.play("shatter", 0.6, Some(at), 4)
+                    }
+                    planetfall_sim::events::ComboKind::Thermal => {
+                        self.play("vent", 0.5, Some(at), 4)
+                    }
+                    planetfall_sim::events::ComboKind::Conductive => {
+                        self.play("arc", 0.6, Some(at), 4)
+                    }
+                },
+                GameEvent::Spat { at } => self.play("spit", 0.45, Some(at), 4),
+                GameEvent::Jammed { at } => self.play("jam", 0.6, Some(at), 2),
+                GameEvent::Burrow { at, .. } => self.play("burrow", 0.6, Some(at), 3),
+                GameEvent::BossAbility { at } => self.play("brute_roar", 0.6, Some(at), 0),
+                GameEvent::Split { at } => self.play("skitter_die", 0.6, Some(at), 2),
                 GameEvent::BlueprintFound { .. } => self.play("weapon_found", 0.9, None, 0),
                 GameEvent::Equipped => self.play("ui_confirm", 0.5, None, 2),
                 GameEvent::Traded => self.play("trade", 0.6, None, 2),

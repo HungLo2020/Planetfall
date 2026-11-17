@@ -49,7 +49,9 @@ mod tex {
     pub const LAMP: u32 = 12;
     pub const KEEL: u32 = 13;
     pub const PATCH: u32 = 14;
-    pub const COUNT: u32 = 15;
+    pub const LAVA: u32 = 15;
+    pub const WATER: u32 = 16;
+    pub const COUNT: u32 = 17;
 }
 
 /// Which world the grid currently holds.
@@ -127,6 +129,14 @@ impl Content {
             (
                 voxel::GROUND_PATCH,
                 BlockDef::cube("ground-patch", tex::PATCH),
+            ),
+            (
+                voxel::LAVA,
+                BlockDef::cube("lava", tex::LAVA).with_emission(13),
+            ),
+            (
+                voxel::WATER,
+                BlockDef::cube("water", tex::WATER).with_emission(4),
             ),
         ];
         for (id, def) in defs {
@@ -223,6 +233,24 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
                         tex::LUMITE => (ore([0.35, 0.95, 1.0]), 1.0),
                         tex::VOIDSTONE => (ore([0.55, 0.25, 0.85]), 1.0),
                         tex::BEDROCK => (shade(palette.bedrock, 0.25), 1.0),
+                        tex::LAVA => {
+                            // Glowing cracks between dark crusted plates.
+                            let crack = hash(x / 2, y / 2, layer + 3) > 0.55 || n > 0.8;
+                            if crack {
+                                (mix([1.0, 0.35, 0.05], [1.0, 0.75, 0.2], n), 1.0)
+                            } else {
+                                (shade([0.25, 0.06, 0.02], 0.3), 1.0)
+                            }
+                        }
+                        tex::WATER => {
+                            // Deep blue with bright ripple lines.
+                            let ripple = (x + y * 3) % 8 < 1 && grain > 0.5;
+                            if ripple {
+                                ([0.14, 0.3, 0.5], 1.0)
+                            } else {
+                                (mix([0.03, 0.08, 0.22], [0.06, 0.16, 0.36], n), 1.0)
+                            }
+                        }
                         tex::PATCH => {
                             // Clumped growth over the floor colour.
                             let clump = hash(x / 2, y / 2, layer + 11);

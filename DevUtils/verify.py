@@ -28,12 +28,14 @@ SHOTS = {
     "surface": 1800,
     "construct": 2600,
     "board": 2664,
-    "levelup": 3372,
-    "surge": 20700,
-    "debrief": 21699,
-    "build": 21800,
-    "locker": 22038,
-    "trade": 59612,
+    "levelup": 3487,
+    "surge": 25200,
+    "debrief": 26271,
+    "build": 26400,
+    "locker": 26610,
+    # Later worlds on seeds whose autopilot reaches them: (seed, ticks).
+    "tidewell": (5, 109500),
+    "kharon": (9, 147000),
 }
 
 
@@ -70,11 +72,12 @@ def main() -> None:
     if args.gpu:
         shots = REPO / "dist" / "screenshots"
         shots.mkdir(parents=True, exist_ok=True)
-        for name, ticks in SHOTS.items():
+        for name, at in SHOTS.items():
+            seed, ticks = at if isinstance(at, tuple) else (1, at)
             step(
                 f"screenshot {name}",
-                ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks", str(ticks),
-                 "--screenshot", str(shots / f"{name}.png")],
+                ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--seed", str(seed),
+                 "--ticks", str(ticks), "--screenshot", str(shots / f"{name}.png")],
             )
         for menu in ["main", "saves", "settings", "controls"]:
             step(
@@ -82,9 +85,9 @@ def main() -> None:
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--ticks", "10", "--menu", menu,
                  "--screenshot", str(shots / f"menu-{menu}.png")],
             )
-        # The locker's gear tab, opened on the ship once the autopilot has
-        # found some gear.
-        for menu in ["gear"]:
+        # The locker's gear tab and the station market, opened on the ship
+        # once the autopilot has found some gear.
+        for menu in ["gear", "trade"]:
             step(
                 f"screenshot {menu}",
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks",

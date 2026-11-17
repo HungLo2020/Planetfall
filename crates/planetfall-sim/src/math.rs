@@ -31,6 +31,11 @@ pub fn turn_toward(current: f32, target: f32, max_step: f32) -> f32 {
     quasar_math::turn_towards(current, target, max_step)
 }
 
+/// Unsigned angle between two unit vectors, in radians.
+pub fn angle_between(a: V2, b: V2) -> f32 {
+    a.dot(b).clamp(-1.0, 1.0).acos()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

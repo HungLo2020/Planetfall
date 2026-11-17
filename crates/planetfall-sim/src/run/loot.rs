@@ -212,6 +212,12 @@ impl Run {
             self.drop_pickup(PickupKind::Xp(tuning.xp.cache_xp), c.pos);
             events.push(GameEvent::CacheOpened { at: c.pos });
             self.cache_find(player, events);
+            // Caches carry spare air on thin-air drops.
+            if self.thin_air() {
+                let h = &content().tuning.hazards;
+                let p = &mut self.players[player];
+                p.oxygen = (p.oxygen + h.oxygen_cache).min(h.oxygen_max);
+            }
         }
     }
 

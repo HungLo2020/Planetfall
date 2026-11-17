@@ -232,8 +232,20 @@ impl Autopilot {
             points.min_by(|a, b| a.distance(player).total_cmp(&b.distance(player)))
         };
         let mut keep_away = false;
+        let o2 = &crate::content::content().tuning.hazards;
+        let breathless = run.thin_air() && p.oxygen < o2.oxygen_max * 0.35;
         let goal: Option<V2> = if ready {
             Some(run.landing)
+        } else if breathless {
+            // Refill at the nearest oxygen vent (or the pod).
+            nearest(
+                &mut run
+                    .hazards
+                    .iter()
+                    .filter(|h| h.kind == crate::run::HazardKind::Oxygen)
+                    .map(|h| h.pos)
+                    .chain(std::iter::once(run.landing)),
+            )
         } else if let Some(cache) = run
             .caches
             .iter()
@@ -306,7 +318,34 @@ impl Autopilot {
                 .or_else(|| nearest_ore(run, Material::Ferrite))
         };
         let _ = keep_away;
-        let mut movement = goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero());
+        // Wait at a vent until the tank is nearly full.
+        let refilling = run.thin_air()
+            && p.oxygen < o2.oxygen_max * 0.9
+            && run.hazards.iter().any(|h| {
+                h.kind == crate::run::HazardKind::Oxygen
+                    && h.pos.distance(player) < o2.vent_radius * 0.8
+            });
+        let mut movement = if refilling {
+            V2::new(0.0, 0.0)
+        } else {
+            goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero())
+        };
+        // Crossing lava is fine; standing in it (waiting, drilling) is not.
+        let standing = movement.length() < 0.1 || p.mining.is_some();
+        if standing && run.terrain.ground_at(player) == crate::terrain::Ground::Lava {
+            let (tx, ty) = crate::terrain::Terrain::tile_of(player);
+            let out = (-2..=2)
+                .flat_map(|dy| (-2..=2).map(move |dx| (tx + dx, ty + dy)))
+                .filter(|&(x, y)| {
+                    run.terrain.tile(x, y) == crate::terrain::Tile::Floor
+                        && run.terrain.ground(x, y) != crate::terrain::Ground::Lava
+                })
+                .map(|(x, y)| crate::terrain::Terrain::center_of(x, y))
+                .min_by(|a, b| a.distance(player).total_cmp(&b.distance(player)));
+            if let Some(out) = out {
+                movement = (out - player).normalize_or_zero();
+            }
+        }
         if ready && run.landing.distance(player) < 1.5 {
             movement = V2::new(0.0, 0.0);
         }

@@ -73,8 +73,26 @@ impl Painter<'_, '_> {
 pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
     for e in &run.enemies {
         let info = e.kind.info();
+        // Burrowers underground: a churning mound of rubble.
+        if e.burrowed {
+            let k = info.radius * 1.6;
+            let wobble = (p.time * 12.0 + e.id as f32).sin() * 0.08;
+            p.cube(
+                at(e.pos, 0.1 + wobble) * Mat4::rotation_y(p.time * 3.0) * s(k, 0.3, k),
+                [0.32, 0.26, 0.2],
+            );
+            for i in 0..3 {
+                let a = p.time * 4.0 + i as f32 * 2.1;
+                let q = e.pos + V2::new(a.cos(), a.sin()) * k * 0.6;
+                p.cube(at(q, 0.25) * s(0.18, 0.18, 0.18), [0.4, 0.33, 0.25]);
+            }
+            continue;
+        }
         let rise = if e.spawn_ticks > 0 {
             -(e.spawn_ticks as f32 / 24.0) * 2.2
+        } else if e.flying() {
+            // Flyers hover above the floor (and over rock).
+            1.4 + (p.time * 5.0 + e.id as f32).sin() * 0.2
         } else {
             0.0
         };
@@ -113,7 +131,10 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             outline::ENEMY
         };
         // Element statuses: frost, flame flicker, acid sheen.
-        let mut tint = [1.0f32; 3];
+        let mut tint = info.tint.unwrap_or([1.0; 3]);
+        if e.wet > 0 {
+            tint = [tint[0] * 0.8, tint[1] * 0.9, tint[2] * 1.15];
+        }
         if e.frozen > 0 {
             tint = [0.65, 0.9, 1.35];
         } else if e.chill > 0.05 {
@@ -136,6 +157,14 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             Some(Affix::Frenzied) => {
                 tint = [tint[0] * 1.2, tint[1] * 0.8, tint[2] * 0.75];
                 eyes = [2.0, 0.3, 0.2];
+            }
+            Some(Affix::Splitting) => {
+                tint = [tint[0] * 1.1, tint[1] * 1.0, tint[2] * 1.3];
+                eyes = [1.4, 0.5, 1.8];
+            }
+            Some(Affix::Regenerating) => {
+                tint = [tint[0] * 0.8, tint[1] * 1.25, tint[2] * 0.8];
+                eyes = [0.4, 1.8, 0.5];
             }
             None => {}
         }

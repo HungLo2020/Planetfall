@@ -28,8 +28,12 @@ pub const LAMP: u16 = 11;
 pub const KEEL: u16 = 12;
 /// Planet ground under a patch of moss, ash or frost.
 pub const GROUND_PATCH: u16 = 13;
+/// Molten floor (burns).
+pub const LAVA: u16 = 14;
+/// Shallow water floor (slows, soaks).
+pub const WATER: u16 = 15;
 /// Number of block IDs (for catalog tables).
-pub const BLOCK_COUNT: u16 = 14;
+pub const BLOCK_COUNT: u16 = 16;
 
 pub type Layout = Cube16;
 

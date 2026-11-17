@@ -150,7 +150,7 @@ impl Run {
         }
     }
 
-    fn spawn_group(&mut self, kind: EnemyId, center: V2, count: u32) {
+    pub(super) fn spawn_group(&mut self, kind: EnemyId, center: V2, count: u32) {
         let tuning = &content().tuning;
         let health = kind.info().health
             * (1.0 + self.threat_curve() * tuning.threat.health_per_level)
@@ -178,6 +178,7 @@ impl Run {
                     Some(Affix::Armored) => e.armored_health,
                     Some(Affix::Swift) => e.swift_health,
                     Some(Affix::Frenzied) => e.frenzied_health,
+                    Some(Affix::Splitting | Affix::Regenerating) => e.armored_health * 0.6,
                     None => 1.0,
                 };
             let speed = if elite == Some(Affix::Swift) {
@@ -188,27 +189,11 @@ impl Run {
             let id = self.next_id;
             self.next_id += 1;
             self.enemies.push(Enemy {
-                id,
-                kind,
-                pos,
                 yaw: self.rng.range_f32(0.0..std::f32::consts::TAU),
-                health,
-                max_health: health,
-                hit_ticks: 0,
-                attack_ticks: 0,
                 walk: n as f32,
-                spawn_ticks: 24,
-                attack_cooldown: 30,
-                drone_cooldown: 0,
                 speed_scale: self.rng.range_f32(0.85..1.15) * speed,
-                alerted: false,
-                burning: 0,
-                burn_dps: 0.0,
-                corroded: 0,
-                acid_dps: 0.0,
-                chill: 0.0,
-                frozen: 0,
                 elite,
+                ..Enemy::fresh(id, kind, pos, health)
             });
         }
     }

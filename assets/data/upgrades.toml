@@ -61,7 +61,7 @@ name = "Reactor & Nav Core"
 description = "Unlocks a more dangerous planet per level"
 effect = "nav_level"
 per_level = 1.0
-costs = [{ ferrite = 20, lumite = 8, voidstone = 1 }, { ferrite = 40, lumite = 16, voidstone = 6 }]
+costs = [{ ferrite = 20, lumite = 8, voidstone = 1 }, { ferrite = 40, lumite = 16, voidstone = 6 }, { ferrite = 70, lumite = 30, voidstone = 14 }, { ferrite = 110, lumite = 48, voidstone = 26 }]
 room = [11, 11, 13, 15]
 station = "reactor-core"
 light = [0.45, 0.6, 1.0]

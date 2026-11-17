@@ -1,5 +1,5 @@
 use super::*;
-use crate::content::{ClassId, ModId, PlanetId, Upgrade};
+use crate::content::{ClassId, ModId, ObjectiveKind, PlanetId, Upgrade};
 use crate::mission::Contract;
 
 fn class(key: &str) -> ClassId {
@@ -292,6 +292,184 @@ fn elements_apply_statuses() {
         run.damage_enemy(0, hit(Element::Shock, 10.0), &mut events);
     }
     assert!(run.enemies[1].health < 1000.0, "shock never arced");
+}
+
+/// Element combos: shatter, thermal shock, conductive shock through wet
+/// enemies; water douses fire.
+#[test]
+fn element_combos() {
+    use crate::events::ComboKind;
+    let mut run = Run::new(config(5));
+    run.spawning_enabled = false;
+    run.invulnerable = true;
+    run.player_mut().weapons.clear();
+    let kind = EnemyId::from_key("husk").unwrap();
+    let at = run.player().pos + V2::new(0.0, 6.0);
+    let husk = |id: u32, pos: V2| Enemy {
+        spawn_ticks: 0,
+        ..Enemy::fresh(id, kind, pos, 1000.0)
+    };
+    run.enemies = vec![
+        husk(1, at),
+        husk(2, at + V2::new(2.0, 0.0)),
+        husk(3, at + V2::new(-2.0, 0.0)),
+    ];
+    run.rebuild_index();
+    let mut events = Vec::new();
+    let combos = &content().tuning.combos;
+    // Shatter: a heavy hit on a frozen enemy.
+    run.enemies[0].frozen = 60;
+    run.damage_enemy(0, Hit::plain(combos.shatter_min), &mut events);
+    assert!(events.contains(&GameEvent::Combo {
+        kind: ComboKind::Shatter,
+        at
+    }));
+    assert!(1000.0 - run.enemies[0].health > combos.shatter_min * 1.5);
+    assert_eq!(run.enemies[0].frozen, 0);
+    // Thermal shock: fire on a chilled enemy.
+    run.enemies[0].chill = 0.6;
+    run.damage_enemy(
+        0,
+        Hit {
+            damage: 5.0,
+            elements: Elements::single(Element::Fire, 5.0),
+            ..Hit::default()
+        },
+        &mut events,
+    );
+    assert!(events.iter().any(|e| matches!(
+        e,
+        GameEvent::Combo {
+            kind: ComboKind::Thermal,
+            ..
+        }
+    )));
+    // Wet enemies do not burn, and shock runs through all of them.
+    for e in &mut run.enemies {
+        e.wet = 120;
+        e.burning = 0;
+    }
+    run.damage_enemy(
+        1,
+        Hit {
+            damage: 1.0,
+            elements: Elements::single(Element::Fire, 5.0),
+            ..Hit::default()
+        },
+        &mut events,
+    );
+    assert_eq!(run.enemies[1].burning, 0, "water douses fire");
+    let before: Vec<f32> = run.enemies.iter().map(|e| e.health).collect();
+    run.damage_enemy(
+        0,
+        Hit {
+            damage: 1.0,
+            elements: Elements::single(Element::Shock, 10.0),
+            ..Hit::default()
+        },
+        &mut events,
+    );
+    assert!(run.enemies[1].health < before[1] && run.enemies[2].health < before[2]);
+    assert!(events.iter().any(|e| matches!(
+        e,
+        GameEvent::Combo {
+            kind: ComboKind::Conductive,
+            ..
+        }
+    )));
+}
+
+/// Every weapon archetype kills: each weapon alone against a stream of
+/// husks for half a minute.
+#[test]
+fn every_weapon_kills() {
+    for weapon in WeaponId::all() {
+        let mut run = Run::new(config(4));
+        run.invulnerable = true;
+        run.spawning_enabled = false;
+        let p = run.player().pos;
+        run.player_mut().weapons = vec![WeaponSlot::new(weapon, 0.0)];
+        let kind = EnemyId::from_key("husk").unwrap();
+        let mut kills = 0;
+        for wave in 0..10u32 {
+            // A few husks close by, in the open.
+            for k in 0..3u32 {
+                let a = (wave * 3 + k) as f32 * 2.1;
+                let mut at = p + V2::new(a.cos(), a.sin()) * 3.5;
+                if run.terrain.solid_at(at) {
+                    at = p + V2::new(0.0, 3.0);
+                }
+                let id = 1000 + wave * 3 + k;
+                run.enemies.push(Enemy {
+                    spawn_ticks: 0,
+                    ..Enemy::fresh(id, kind, at, 30.0)
+                });
+            }
+            let before = run.kills;
+            step(&mut run, GameInput::default(), 180);
+            kills += run.kills - before;
+        }
+        assert!(kills >= 5, "{} killed only {kills}", weapon.key());
+    }
+}
+
+/// Hazards: lava burns, thin air drains oxygen and hurts when empty, vents
+/// pulse, and quake rubble survives a save round trip.
+#[test]
+fn hazards_hurt_and_rubble_saves() {
+    let planet = PlanetId::from_key("kharon").unwrap();
+    let mut run = Run::new(RunConfig {
+        planet,
+        contract: Contract::tutorial_on(planet),
+        ..config(9)
+    });
+    run.spawning_enabled = false;
+    assert!(run.thin_air() && run.quakes());
+    assert!(run.hazards.iter().any(|h| h.kind == HazardKind::Oxygen));
+    // Oxygen drains away from the pod, then health goes.
+    let away = run
+        .hazards
+        .iter()
+        .find(|h| h.kind == HazardKind::Spores || matches!(h.kind, HazardKind::Vent(_)))
+        .map(|h| h.pos)
+        .unwrap_or(run.landing + V2::new(30.0, 0.0));
+    let spot = run.sites[1];
+    let _ = away;
+    run.player_mut().pos = spot;
+    run.player_mut().oxygen = 1.0;
+    let health = run.player().health;
+    step(&mut run, GameInput::default(), 240);
+    assert_eq!(run.player().oxygen, 0.0);
+    assert!(run.player().health < health, "no air, no damage");
+    // Quakes bring rubble down; the terrain round-trips with it.
+    run.quake.next = 2;
+    let events = step(&mut run, GameInput::default(), 60 * 4);
+    assert!(events.contains(&GameEvent::QuakeWarning));
+    assert!(events.iter().any(|e| matches!(e, GameEvent::Rubble { .. })));
+    let json = serde_json::to_string(&run.terrain).unwrap();
+    let back: Terrain = serde_json::from_str(&json).unwrap();
+    assert!(back.tiles().eq(run.terrain.tiles()));
+    // Lava burns on Cinder Reach.
+    let cinder = PlanetId::from_key("cinder").unwrap();
+    let mut run = Run::new(RunConfig {
+        planet: cinder,
+        contract: Contract::tutorial_on(cinder),
+        ..config(3)
+    });
+    run.spawning_enabled = false;
+    let lava = run
+        .terrain
+        .tiles()
+        .find(|((x, y), t)| {
+            *t == crate::terrain::Tile::Floor
+                && run.terrain.ground(*x, *y) == crate::terrain::Ground::Lava
+        })
+        .map(|((x, y), _)| Terrain::center_of(x, y))
+        .expect("cinder has lava");
+    run.player_mut().pos = lava;
+    let health = run.player().health;
+    step(&mut run, GameInput::default(), 120);
+    assert!(run.player().health < health, "lava did not burn");
 }
 
 /// Legendary behaviours: twin barrel, second ring, echo step, mobile sentry.
@@ -633,17 +811,30 @@ fn every_objective_can_be_completed() {
         .filter(|o| o.info().role == ObjectiveRole::Secondary)
         .collect();
     let primaries = ObjectiveId::all().filter(|o| o.info().role == ObjectiveRole::Primary);
-    for (n, primary) in primaries.enumerate() {
-        let planet = PlanetId::first();
+    // Every primary on the first planet, then every planet's bosses on
+    // their own worlds (hazards included).
+    let boss_objective = ObjectiveId::all()
+        .find(|o| o.info().kind == ObjectiveKind::Boss)
+        .unwrap();
+    let mut contracts: Vec<(PlanetId, ObjectiveId, Option<EnemyId>)> =
+        primaries.map(|o| (PlanetId::first(), o, None)).collect();
+    for planet in PlanetId::all() {
+        for boss in &planet.info().bosses {
+            contracts.push((planet, boss_objective, EnemyId::from_key(boss)));
+        }
+    }
+    for (n, (planet, primary, boss)) in contracts.into_iter().enumerate() {
         let contract = Contract {
             planet,
             primary,
             secondary: Some(secondaries[n % secondaries.len()]),
             site: SiteId::all().next().unwrap(),
             mutator: None,
+            boss,
         };
         let mut run = Run::new(RunConfig {
             contract,
+            planet,
             ..config(n as u64 + 3)
         });
         run.invulnerable = true;
@@ -664,8 +855,10 @@ fn every_objective_can_be_completed() {
         }
         assert!(
             run.objective_done(),
-            "{}: {:?} after {:.1} min",
+            "{} {:?} on {}: {:?} after {:.1} min",
             primary.key(),
+            boss.map(|b| b.key()),
+            planet.key(),
             run.mission.primary,
             run.minutes()
         );

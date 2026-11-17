@@ -7,7 +7,8 @@
 //! `run::mission`.
 
 use crate::content::{
-    MutatorEffect, MutatorId, ObjectiveId, ObjectiveKind, ObjectiveRole, PlanetId, SiteId, content,
+    EnemyId, MutatorEffect, MutatorId, ObjectiveId, ObjectiveKind, ObjectiveRole, PlanetId, SiteId,
+    content,
 };
 use quasar_core::Rng;
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,9 @@ pub struct Contract {
     pub secondary: Option<ObjectiveId>,
     pub site: SiteId,
     pub mutator: Option<MutatorId>,
+    /// The boss a boss contract names (from the planet's pool).
+    #[serde(default)]
+    pub boss: Option<EnemyId>,
 }
 
 impl Contract {
@@ -43,6 +47,7 @@ impl Contract {
                 .find(|s| available(&s.info().planets, planet))
                 .expect("validated: every planet has a site"),
             mutator: None,
+            boss: None,
         }
     }
 
@@ -51,6 +56,18 @@ impl Contract {
             .map(|m| m.info())
             .filter(|m| m.effect == effect)
             .map(|m| m.amount)
+    }
+
+    /// The enemy a boss or hunt contract targets: the named boss, else the
+    /// objective's own enemy.
+    pub fn target_enemy(&self) -> Option<EnemyId> {
+        self.boss.or_else(|| {
+            self.primary
+                .info()
+                .enemy
+                .as_deref()
+                .and_then(EnemyId::from_key)
+        })
     }
 
     /// Extra share of banked materials from the mutator.
@@ -162,12 +179,22 @@ pub fn board(rng: &mut Rng, planet: PlanetId) -> Vec<Contract> {
         let Some(site) = pick(rng, &sites) else {
             break;
         };
+        // Boss contracts name a boss from the planet's pool.
+        let pool: Vec<EnemyId> = planet
+            .info()
+            .bosses
+            .iter()
+            .filter_map(|k| EnemyId::from_key(k))
+            .collect();
+        let boss = (primary.info().kind == ObjectiveKind::Boss && !pool.is_empty())
+            .then(|| pool[rng.range_usize(0..pool.len())]);
         board.push(Contract {
             planet,
             primary,
             secondary,
             site,
             mutator,
+            boss,
         });
     }
     board

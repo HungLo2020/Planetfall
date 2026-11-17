@@ -131,6 +131,45 @@ pub fn build(cx: &HudContext) -> Layer {
                 (total - p.ability.cooldown.min(total)) as f32,
                 total as f32,
             );
+            // Torch heat.
+            if let Some(w) = p
+                .weapons
+                .iter()
+                .find(|w| w.kind.info().behavior == planetfall_sim::content::WeaponBehavior::Flamer)
+            {
+                let label = if w.overheated {
+                    format!("{}  OVERHEATED", w.kind.name().to_uppercase())
+                } else {
+                    format!("{}  HEAT", w.kind.name().to_uppercase())
+                };
+                b.label(status, label, TextStyle::Small);
+                b.progress(status, "", w.heat, 1.0);
+            }
+            // Thin air: the oxygen meter.
+            if run.thin_air() {
+                let max = planetfall_sim::content::content().tuning.hazards.oxygen_max;
+                let line = if p.oxygen <= 0.0 {
+                    "OXYGEN  EMPTY  ·  get to a vent or the pod".to_owned()
+                } else {
+                    format!("OXYGEN  {:.0}%", p.oxygen / max * 100.0)
+                };
+                b.label(status, line, TextStyle::Small);
+                b.progress(status, "", p.oxygen, max);
+            }
+            // Statuses from hazards and disruptors.
+            let mut effects = Vec::new();
+            if p.jammed > 0 {
+                effects.push("JAMMED (no ability, slow weapons)");
+            }
+            if p.chilled > 0 {
+                effects.push("CHILLED");
+            }
+            if p.wet > 0 {
+                effects.push("WET");
+            }
+            if !effects.is_empty() {
+                b.label(status, effects.join("  ·  "), TextStyle::Small);
+            }
 
             let cargo = b.card(root, pinned(Anchor::TopRight, 340.0), 3.0, 10.0);
             b.label(cargo, "CARGO (lost if you fall)", TextStyle::Small);
@@ -239,6 +278,30 @@ pub fn build(cx: &HudContext) -> Layer {
                         8.0,
                     );
                     b.label(warn, "SURGE", TextStyle::Body);
+                }
+                if run.quake.warning > 0 {
+                    let warn = b.card(
+                        root,
+                        LayoutItem::size(Length::fixed(360.0), Length::Auto)
+                            .with_anchor(Anchor::Top)
+                            .with_offset(Vec2::new(0.0, 176.0)),
+                        2.0,
+                        8.0,
+                    );
+                    let _ = b.ui.set_style(
+                        warn,
+                        Some(
+                            NodeStyle::filled(Color::rgba(40, 26, 8, 220))
+                                .with_border(2.0, Color::rgba(255, 170, 40, 255))
+                                .with_radius(3.0),
+                        ),
+                    );
+                    b.label(
+                        warn,
+                        format!("QUAKE  ·  {}s", run.quake.warning.div_ceil(60)),
+                        TextStyle::Body,
+                    );
+                    b.label(warn, "Rubble will fall nearby.", TextStyle::Small);
                 }
                 // The latest find, kept even if the drop goes wrong.
                 if run.find_banner > 0

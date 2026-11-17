@@ -20,7 +20,7 @@ impl Run {
         if p.down {
             return;
         }
-        if p.ability.charges == 0 {
+        if p.ability.charges == 0 || p.jammed > 0 {
             events.push(GameEvent::AbilityNotReady);
             return;
         }

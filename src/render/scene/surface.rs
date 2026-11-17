@@ -4,6 +4,7 @@
 use super::characters::enemies;
 use super::effects::{effects, projectiles};
 use super::*;
+use planetfall_sim::content::content;
 
 // ---------------------------------------------------------------------------
 // Planet surface (also used for descent, ascent and death)
@@ -39,6 +40,7 @@ pub fn surface<'a>(
         }
     }
     deployables(p, run);
+    hazards(p, run);
     mission(p, run);
     projectiles(p, run);
     effects(p, run);
@@ -105,6 +107,33 @@ fn player(p: &mut Painter<'_, '_>, game: &Game, run: &Run, index: usize, pl: &Pl
             .unwrap_or(pl.yaw)
     };
     p.astronaut(pl.class, pl.pos, 0.0, yaw, pl.walk, pl.moving, flash, held);
+    // A melee sweep leaves a bright arc for a moment.
+    for w in &pl.weapons {
+        let info = w.kind.info();
+        if info.behavior == WeaponBehavior::Melee && w.since_fired < 10 {
+            let fade = 1.0 - w.since_fired as f32 / 10.0;
+            let arc = content().tuning.arsenal.melee_arc;
+            for k in 0..9 {
+                let a = w.aim - arc + 2.0 * arc * k as f32 / 8.0;
+                let q = pl.pos + math::from_yaw(a) * info.stats.range * 0.85;
+                p.glow(
+                    at(q, 1.0) * s(0.12, 0.05, 0.12),
+                    math_scale3(info.color, 1.6 * fade),
+                );
+            }
+        }
+    }
+    // Jammed by a disruptor: crackling purple sparks.
+    if pl.jammed > 0 {
+        for k in 0..4 {
+            let a = p.time * 9.0 + k as f32 * 1.57;
+            let q = pl.pos + V2::new(a.cos(), a.sin()) * 0.6;
+            p.glow(
+                at(q, 1.2 + (p.time * 13.0 + k as f32).sin() * 0.3) * s(0.06, 0.06, 0.06),
+                [1.4, 0.6, 2.2],
+            );
+        }
+    }
     if pl.dash_ticks > 0 {
         let back = math::from_yaw(pl.yaw);
         for i in 1..4 {
@@ -122,6 +151,89 @@ fn player(p: &mut Painter<'_, '_>, game: &Game, run: &Run, index: usize, pl: &Pl
                 Mat4::IDENTITY
             }
         });
+    }
+}
+
+/// Spore clouds, vents, oxygen vents and boss embers.
+fn hazards(p: &mut Painter<'_, '_>, run: &Run) {
+    let t = &content().tuning.hazards;
+    let time = p.time;
+    for (i, h) in run.hazards.iter().enumerate() {
+        let phase = i as f32 * 1.7;
+        match h.kind {
+            HazardKind::Spores => {
+                if !h.active() {
+                    continue;
+                }
+                // Drifting puffs inside the cloud, lit sickly green.
+                for k in 0..9 {
+                    let a = time * 0.4 + k as f32 * 0.7 + phase;
+                    let r = t.spore_radius
+                        * (0.25 + 0.6 * ((k as f32 * 0.37 + time * 0.2).sin() * 0.5 + 0.5));
+                    let q = h.pos + V2::new(a.cos(), a.sin()) * r;
+                    let size = 0.5 + 0.25 * (time * 1.3 + k as f32).sin();
+                    p.ghost(
+                        at(q, 0.8 + 0.3 * (time + k as f32).sin())
+                            * s(size * 1.6, size * 1.1, size * 1.6),
+                        [0.6, 0.95, 0.2],
+                        0.38,
+                    );
+                }
+                for k in 0..6 {
+                    let a = time * 1.1 + k as f32 * 1.05 + phase;
+                    let q = h.pos + V2::new(a.cos(), a.sin()) * t.spore_radius * 0.7;
+                    p.glow(
+                        at(q, 1.0 + (time * 2.0 + k as f32).sin() * 0.4) * s(0.05, 0.05, 0.05),
+                        [0.8, 1.2, 0.3],
+                    );
+                }
+                p.point([h.pos[0], 1.2, h.pos[1]], [0.5, 0.9, 0.25], 1.2, 5.0);
+            }
+            HazardKind::Vent(kind) => {
+                let color = match kind {
+                    VentKind::Heat => [1.0, 0.4, 0.1],
+                    VentKind::Cold => [0.5, 0.8, 1.0],
+                };
+                p.model_tinted(names::VENT, at(h.pos, 0.0), color, math_scale3(color, 0.9));
+                // Building up to the next pulse.
+                let charge = 1.0 - h.timer as f32 / (t.vent_every * 60.0);
+                p.point([h.pos[0], 1.0, h.pos[1]], color, 0.6 + 2.0 * charge, 5.0);
+                if charge > 0.7 {
+                    let segments = 18;
+                    for k in 0..segments {
+                        let a = k as f32 / segments as f32 * std::f32::consts::TAU;
+                        let q = h.pos + V2::new(a.cos(), a.sin()) * t.vent_radius;
+                        p.glow(at(q, 0.08) * s(0.07, 0.03, 0.07), color);
+                    }
+                }
+            }
+            HazardKind::Oxygen => {
+                p.model(names::OXYGEN_VENT, at(h.pos, 0.0));
+                let pulse = 0.8 + 0.2 * (time * 2.0 + phase).sin();
+                p.point([h.pos[0], 1.4, h.pos[1]], [0.4, 0.7, 1.0], 1.6 * pulse, 6.0);
+                if run.thin_air() {
+                    let segments = 16;
+                    for k in 0..segments {
+                        let a = k as f32 / segments as f32 * std::f32::consts::TAU + time * 0.3;
+                        let q = h.pos + V2::new(a.cos(), a.sin()) * t.vent_radius;
+                        p.glow(at(q, 0.06) * s(0.06, 0.02, 0.06), [0.4, 0.7, 1.0]);
+                    }
+                }
+            }
+            HazardKind::Embers => {
+                let fade = (h.timer as f32 / 120.0).min(1.0);
+                for k in 0..5 {
+                    let a = k as f32 * 1.26 + phase;
+                    let q = h.pos + V2::new(a.cos(), a.sin()) * 0.7;
+                    let flick = 0.12 + 0.05 * (time * 12.0 + k as f32).sin();
+                    p.glow(
+                        at(q, 0.05) * s(flick * 2.0, 0.03, flick * 2.0),
+                        math_scale3([1.0, 0.4, 0.08], 1.5 * fade),
+                    );
+                }
+                p.point([h.pos[0], 0.5, h.pos[1]], [1.0, 0.45, 0.1], 1.5 * fade, 3.5);
+            }
+        }
     }
 }
 

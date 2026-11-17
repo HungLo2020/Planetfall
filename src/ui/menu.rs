@@ -793,6 +793,9 @@ impl Menu {
                 true,
             );
             b.paragraph(slot, &contract.primary.describe(hazard), TextStyle::Small);
+            if let Some(boss) = contract.boss {
+                b.label(slot, format!("Target: {}", boss.name()), TextStyle::Small);
+            }
             if let Some(secondary) = contract.secondary {
                 b.paragraph(
                     slot,

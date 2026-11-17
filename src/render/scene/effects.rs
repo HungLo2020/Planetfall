@@ -31,7 +31,75 @@ pub(super) fn projectiles(p: &mut Painter<'_, '_>, run: &Run) {
                 p.glow(at(pr.pos, pr.height) * s(k, k, k), color);
                 p.point([pr.pos[0], pr.height, pr.pos[1]], color, 1.5, 6.0);
             }
+            ProjectileKind::Ricochet { .. } => {
+                // A spinning disc with a bright rim.
+                let spin = Mat4::rotation_y(p.time * 30.0);
+                p.cube(
+                    at(pr.pos, pr.height) * spin * s(0.5, 0.06, 0.5),
+                    [0.75, 0.78, 0.82],
+                );
+                p.glow(at(pr.pos, pr.height) * spin * s(0.2, 0.08, 0.2), color);
+                if lights < 16 {
+                    p.point([pr.pos[0], pr.height, pr.pos[1]], color, 0.8, 3.5);
+                    lights += 1;
+                }
+            }
+            ProjectileKind::Mine => {
+                p.rig(names::MINE, at(pr.pos, 0.0), 0.0, |_| Mat4::IDENTITY);
+                let blink = (p.time * 3.0 + pr.pos[0]).sin() > 0.6;
+                if blink && lights < 16 {
+                    p.point([pr.pos[0], 0.4, pr.pos[1]], [1.0, 0.2, 0.15], 1.2, 2.5);
+                    lights += 1;
+                }
+            }
+            ProjectileKind::Homing { .. } => {
+                let d = pr.direction();
+                let yaw = math::yaw_of(d);
+                p.cube(
+                    at(pr.pos, pr.height) * Mat4::rotation_y(yaw) * s(0.12, 0.12, 0.45),
+                    [0.7, 0.72, 0.75],
+                );
+                for k in 1..4 {
+                    let q = pr.pos - d * k as f32 * 0.3;
+                    let f = 0.12 - k as f32 * 0.025;
+                    p.glow(at(q, pr.height) * s(f, f, f), [1.0, 0.6, 0.2]);
+                }
+                if lights < 16 {
+                    p.point([pr.pos[0], pr.height, pr.pos[1]], [1.0, 0.6, 0.2], 1.0, 4.0);
+                    lights += 1;
+                }
+            }
+            ProjectileKind::Well { active, .. } => {
+                if active == 0 {
+                    let k = 0.3 + (p.time * 14.0).sin() * 0.05;
+                    p.glow(at(pr.pos, pr.height) * s(k, k, k), color);
+                } else {
+                    // A swirling vortex: rings of motes falling inward.
+                    let r = pr.radius_world();
+                    for ring in 0..3 {
+                        for i in 0..10 {
+                            let f = (p.time * 0.8 + ring as f32 * 0.33) % 1.0;
+                            let rad = r * (1.0 - f);
+                            let a = i as f32 * 0.628 + p.time * (3.0 + ring as f32) + f * 4.0;
+                            let q = pr.pos + V2::new(a.cos(), a.sin()) * rad;
+                            p.glow(at(q, 0.3 + f * 0.6) * s(0.07, 0.07, 0.07), color);
+                        }
+                    }
+                    let k = 0.45 + (p.time * 9.0).sin() * 0.05;
+                    p.glow(at(pr.pos, 0.8) * s(k, k, k), [0.15, 0.05, 0.3]);
+                }
+                if lights < 16 {
+                    p.point([pr.pos[0], 1.0, pr.pos[1]], color, 2.0, 6.0);
+                    lights += 1;
+                }
+            }
         }
+    }
+    // Ranged enemies' spit.
+    for shot in &run.enemy_shots {
+        let color = shot.kind.info().blood;
+        let k = 0.16 + (p.time * 18.0).sin() * 0.03;
+        p.glow(at(shot.pos, 1.0) * s(k, k, k), math_scale3(color, 1.6));
     }
     for b in &run.beams {
         let color = b.color;

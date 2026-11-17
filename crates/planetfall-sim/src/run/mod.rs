@@ -19,8 +19,10 @@
 //! (spatial index, flow field) is rebuilt on load.
 
 mod abilities;
+mod arsenal;
 mod enemies;
 mod extraction;
+mod hazards;
 mod loot;
 pub mod mission;
 mod player;
@@ -42,6 +44,7 @@ use quasar_spatial::{GridConfig, SpatialGrid};
 use serde::{Deserialize, Serialize};
 
 pub use extraction::{extraction_hold, extraction_inbound, extraction_radius};
+pub use hazards::{Hazard, HazardKind, Quake};
 pub use loot::Find;
 pub use mission::{MissionState, Progress, Relay, Rig, Survivor};
 
@@ -157,6 +160,12 @@ impl Elements {
     pub fn any(&self) -> bool {
         self.0.iter().any(|p| *p > 0.0)
     }
+
+    pub fn single(e: Element, potency: f32) -> Self {
+        let mut out = Self::default();
+        out.add(e, potency);
+        out
+    }
 }
 
 /// One instance of damage to an enemy.
@@ -225,6 +234,21 @@ pub struct Player {
     /// Familiar weapon blueprints this player can still find.
     #[serde(default)]
     pub blueprints: Vec<WeaponId>,
+    /// Ticks jammed by a disruptor (slower weapons, no ability).
+    #[serde(default)]
+    pub jammed: u32,
+    /// Ticks chilled by cold (slower).
+    #[serde(default)]
+    pub chilled: u32,
+    /// Ticks soaked by water.
+    #[serde(default)]
+    pub wet: u32,
+    /// Oxygen left on thin-air drops.
+    #[serde(default)]
+    pub oxygen: f32,
+    /// Ticks until standing hazards (lava, spores, thin air) hurt again.
+    #[serde(default)]
+    pub hazard_ticks: u32,
     pub mining: Option<Mining>,
     mine_sound: u32,
     pub weapons: Vec<WeaponSlot>,
@@ -273,6 +297,11 @@ impl Player {
             xp_gain: 0.0,
             xp_fraction: 0.0,
             blueprints: loadout.blueprints.clone(),
+            jammed: 0,
+            chilled: 0,
+            wet: 0,
+            oxygen: content().tuning.hazards.oxygen_max,
+            hazard_ticks: 0,
             mining: None,
             mine_sound: 0,
             weapons: vec![WeaponSlot::new(loadout.start_weapon, 0.5)],
@@ -401,6 +430,11 @@ pub struct WeaponSlot {
     pub since_fired: u32,
     /// Direction of the last shot.
     pub aim: f32,
+    /// Flamer heat (0..1) and whether it is locked cooling down.
+    #[serde(default)]
+    pub heat: f32,
+    #[serde(default)]
+    pub overheated: bool,
 }
 
 impl WeaponSlot {
@@ -411,6 +445,8 @@ impl WeaponSlot {
             cooldown,
             since_fired: 999,
             aim: 0.0,
+            heat: 0.0,
+            overheated: false,
         }
     }
 
@@ -506,16 +542,28 @@ pub enum Affix {
     Swift,
     /// Hits much harder.
     Frenzied,
+    /// Breaks into smaller copies when killed.
+    Splitting,
+    /// Heals over time.
+    Regenerating,
 }
 
 impl Affix {
-    pub const ALL: [Self; 3] = [Self::Armored, Self::Swift, Self::Frenzied];
+    pub const ALL: [Self; 5] = [
+        Self::Armored,
+        Self::Swift,
+        Self::Frenzied,
+        Self::Splitting,
+        Self::Regenerating,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Armored => "Armored",
             Self::Swift => "Swift",
             Self::Frenzied => "Frenzied",
+            Self::Splitting => "Splitting",
+            Self::Regenerating => "Regenerating",
         }
     }
 }
@@ -557,9 +605,61 @@ pub struct Enemy {
     pub frozen: u32,
     /// Elites carry an affix, glow and are worth more.
     pub elite: Option<Affix>,
+    /// Burrowers travelling underground (untargetable).
+    #[serde(default)]
+    pub burrowed: bool,
+    /// Behaviour timer (surfaced time, ranged and pulse cooldowns).
+    #[serde(default)]
+    pub state_ticks: u32,
+    /// Boss ability timer.
+    #[serde(default)]
+    pub special_ticks: u32,
+    /// Soaked by water (shock arcs through them).
+    #[serde(default)]
+    pub wet: u32,
+    /// Split copies do not split again.
+    #[serde(default)]
+    pub split: bool,
 }
 
 impl Enemy {
+    /// A new enemy at full health with no statuses.
+    pub fn fresh(id: u32, kind: EnemyId, pos: V2, health: f32) -> Self {
+        Self {
+            id,
+            kind,
+            pos,
+            yaw: 0.0,
+            health,
+            max_health: health,
+            hit_ticks: 0,
+            attack_ticks: 0,
+            walk: 0.0,
+            spawn_ticks: 24,
+            attack_cooldown: 30,
+            drone_cooldown: 0,
+            speed_scale: 1.0,
+            alerted: false,
+            burning: 0,
+            burn_dps: 0.0,
+            corroded: 0,
+            acid_dps: 0.0,
+            chill: 0.0,
+            frozen: 0,
+            elite: None,
+            burrowed: kind.info().behavior == crate::content::EnemyBehavior::Burrower,
+            state_ticks: 0,
+            special_ticks: 0,
+            wet: 0,
+            split: false,
+        }
+    }
+
+    /// Flyers ride over rock; burrowers underground cannot be hit.
+    pub fn flying(&self) -> bool {
+        self.kind.info().behavior == crate::content::EnemyBehavior::Flyer
+    }
+
     /// Heavy enemies take the Striker's bonus: brutes and every elite.
     pub fn heavy(&self) -> bool {
         self.elite.is_some() || self.kind.info().health >= weapons::HEAVY_HEALTH
@@ -578,7 +678,26 @@ pub struct Corpse {
 pub enum ProjectileKind {
     Bolt,
     Pellet,
-    Mortar { from: V2, to: V2, total: u32 },
+    /// Bounces between enemies and off walls.
+    Ricochet {
+        bounces: u32,
+    },
+    /// A proximity mine (still).
+    Mine,
+    /// Steers toward an enemy id.
+    Homing {
+        target: u32,
+    },
+    /// Flies to `to`, then pulls and grinds for `active` ticks.
+    Well {
+        to: V2,
+        active: u32,
+    },
+    Mortar {
+        from: V2,
+        to: V2,
+        total: u32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -605,6 +724,11 @@ pub struct Projectile {
 impl Projectile {
     pub fn direction(&self) -> V2 {
         self.vel.normalize_or_zero()
+    }
+
+    /// Blast or vortex radius.
+    pub fn radius_world(&self) -> f32 {
+        self.radius
     }
 }
 
@@ -761,6 +885,25 @@ pub struct Run {
     index: SpatialGrid<2, u32>,
     #[serde(skip)]
     scratch: Vec<u32>,
+    /// Spore clouds, vents and oxygen vents.
+    #[serde(default)]
+    pub hazards: Vec<Hazard>,
+    #[serde(default)]
+    pub quake: hazards::Quake,
+    /// Spit in flight from ranged enemies.
+    #[serde(default)]
+    pub enemy_shots: Vec<EnemyShot>,
+}
+
+/// A ranged enemy's spit.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EnemyShot {
+    pub pos: V2,
+    pub vel: V2,
+    pub damage: f32,
+    pub ttl: u32,
+    /// The spitter's kind (for its colour).
+    pub kind: EnemyId,
 }
 
 impl Run {
@@ -775,7 +918,10 @@ impl Run {
         if config.tutorial {
             mission.primary.need = content().tuning.tutorial.objective;
         }
-        Self {
+        let mut run = Self {
+            hazards: Vec::new(),
+            quake: hazards::Quake::default(),
+            enemy_shots: Vec::new(),
             planet: config.planet,
             tutorial: config.tutorial,
             flow: Some(flow),
@@ -834,7 +980,11 @@ impl Run {
             index: spatial_index(),
             scratch: Vec::new(),
             terrain,
-        }
+        };
+        let (placed, quake) = hazards::place(&run, &layout.spots);
+        run.hazards = placed;
+        run.quake = quake;
+        run
     }
 
     pub fn minutes(&self) -> f32 {
@@ -953,7 +1103,9 @@ impl Run {
         self.update_projectiles(events);
         self.update_drones(events);
         self.update_statuses(events);
+        self.update_hazards(events);
         self.update_enemies(events);
+        self.update_enemy_shots(events);
         self.update_blasts();
         self.remove_dead(events);
         self.update_pickups(events);

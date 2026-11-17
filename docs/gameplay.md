@@ -115,12 +115,38 @@ show keyboard or controller labels depending on the last device used.
 
 | Planet | Unlock | Hazard | Character |
 |---|---|---|---|
-| Verdant-7 | start | x1.0 | Mossy caves, ferrite-rich |
-| Cinder Reach | Reactor 1 | x1.45 | Volcanic, dense lumite, skitter swarms |
-| Hollow Frost | Reactor 2 | x2.0 | Icy, voidstone seams, brutes |
+| Planet | Unlock | Hazard | Character | Hazards | Bosses |
+|---|---|---|---|---|---|
+| Verdant-7 | start | x1.0 | Mossy caves, ferrite-rich | spore clouds | Hive Matriarch |
+| Cinder Reach | Reactor 1 | x1.45 | Volcanic, dense lumite, skitters and gnats | lava channels, heat vents | Magma Tyrant, Hive Matriarch |
+| Hollow Frost | Reactor 2 | x2.0 | Icy, voidstone seams, brutes, burrowers | cold vents | Glacier Colossus |
+| Tidewell Marsh | Reactor 3 | x2.5 | Flooded, lumite-rich, spitters | shallow water, spore clouds | Bog Leviathan |
+| Kharon's Rest | Reactor 4 | x3.0 | Airless, voidstone-rich, burrowers and disruptors | thin air (oxygen), quakes, heat vents | Deep Wyrm |
 
 Planet hazard scales enemy health, damage and spawn pressure; the hazard
 level and threat level (below) do the rest.
+
+## Hazards
+
+Hazards come from the planet (`[planet.hazards]`) and the site (Thin Air
+adds oxygen, Restless adds quakes); numbers are in `tuning.toml`
+`[hazards]`. There are no pits: every hazard is on the one flat floor.
+
+- **Lava** channels burn whoever stands in them and set enemies alight.
+  Crossing is fine; standing in lava is not.
+- **Shallow water** slows wading players and soaks everything in it: wet
+  enemies cannot burn and conduct shock (see combos).
+- **Spore clouds** hurt anyone inside. Fire (flamer, fiery blasts, heat
+  vents) sets a cloud off: a blast that hurts the horde (and you, a little),
+  then it regrows.
+- **Heat and cold vents** pulse every few seconds: heat burns, cold chills
+  enemies toward freezing and slows players.
+- **Thin air** (only on oxygen-poor planets and sites): an oxygen meter
+  drains; refill at oxygen vents and the pod, top up from caches. An empty
+  meter costs health.
+- **Quakes** are warned a few seconds ahead, then rubble falls on open floor
+  near you (never on the pod, the mission sites, caches or anyone standing
+  there). Rubble is ordinary rock: dig through it or go round.
 
 ## Caves
 
@@ -216,6 +242,18 @@ drop is tuned around. The debrief shows the threat reached.
 | Arc Caster | Chain lightning jumping between nearby enemies | Shock |
 | Plasma Mortar | Lobbed shells that burst in an area (arcs over walls) | Fire |
 | Orbit Drones | Engineer signature. Blades circling the player | — |
+| Torch | Flamethrower cone; builds heat and locks when it overheats. Ignites spores | Fire |
+| Ripper Disc | A disc that bounces between enemies and off walls | — |
+| Mine Layer | Drops proximity mines at your feet | — |
+| Breaker Maul | Melee sweep in front of you with knockback | — |
+| Seeker Pod | Homing missiles that burst on impact | — |
+| Singularity Projector | An orb that becomes a vortex, pulling the horde in | Cold |
+
+Familiar weapons per class: Striker (Scattergun, Arc Caster, Ripper Disc),
+Prospector (Scattergun, Plasma Mortar, Torch), Warden (Arc Caster, Orbit
+Drones, Breaker Maul), Engineer (Plasma Mortar, Pulse Blaster, Mine Layer,
+Seeker Pod). The third and fourth familiar weapons are unlocked as starting
+weapons only by finding their blueprints.
 
 A dive starts with the class's starting weapon. Dive levels **5, 10 and 15**
 offer a choice of three new weapons (familiar ones three times as likely)
@@ -235,7 +273,13 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
 - **Elements** (rare and up): Incendiary (burn damage over time), Corrosive
   (damage over time and +25% damage taken), Cryo (chill slows, then
   freezes), Capacitor (hits may arc to a neighbour). The Arc Caster and
-  Plasma Mortar have shock and fire built in. Elements do not interact yet.
+  Plasma Mortar have shock and fire built in (the Torch fire, the
+  Singularity cold).
+- **Combos** (`[combos]`): **Shatter** (a heavy hit on a frozen enemy deals
+  double and thaws it), **Thermal shock** (fire on a frozen or chilled enemy
+  deals extra), **Conductive** (shock always arcs through every wet enemy
+  nearby), **Acid fuel** (burns hurt more on corroded enemies), and fire sets
+  off spore clouds. Water douses burning enemies.
 - **Legendary behaviour changes**: Twin Barrel (bolts also fire at a second
   target), Double Blast (a second fan behind you), Overload (lightning
   forks), Cluster Shells (shells split into bomblets), Second Ring (a second
@@ -255,6 +299,18 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
 | Skitter | Fast, fragile, comes in packs and lunges |
 | Bloater | Slow; detonates on contact or death, also hurting other enemies |
 | Brute | Late-game tank; drops voidstone and ferrite |
+| Spitter | Ranged: keeps its distance and spits |
+| Disruptor | Its pulse jams you: weapons recharge at half speed, no ability |
+| Burrower | Tunnels through rock unseen (a moving mound) and surfaces next to you |
+| Gnat Swarm | Flyers: fast, fragile, cross rock |
+
+**Elites** carry an affix: Armored, Swift, Frenzied, **Splitting** (breaks
+into three smaller copies) or **Regenerating** (heals unless burning).
+**Bosses** come from the planet's pool (named on the contract): the Hive
+Matriarch calls skitters, the Magma Tyrant leaves burning ground, the
+Glacier Colossus slows everything near it with frost novas, the Bog
+Leviathan spits fans of acid, and the Deep Wyrm burrows and calls burrowers.
+New role enemies share the existing rigs (tinted) until the art pass.
 
 Enemies follow a flow field toward the player, separate from each other and
 climb out of the ground when they spawn. Weapons and enemies check line of

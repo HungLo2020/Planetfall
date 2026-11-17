@@ -57,9 +57,12 @@ Rebind keys and buttons under Settings → Controls.
 - **Free-form building**: in build mode, place and remove deck plating, hull
   walls, windows and lamps around the ship, paid from the hold and refunded
   on removal; the hull can never be split or a station walled off.
-- **Three planets**: Verdant-7, Cinder Reach and Hollow Frost, each with its own
-  palette, ore mix, hazard level and objective; later worlds unlock with the
-  Reactor.
+- **Five planets**: Verdant-7, Cinder Reach, Hollow Frost, Tidewell Marsh and
+  Kharon's Rest, each with its own palette, ore mix, hazards and boss pool;
+  later worlds unlock with the Reactor.
+- **Hazards**: lava channels, shallow water, spore clouds that fire
+  ignites, heat and cold vents, thin air with an oxygen meter (only on
+  oxygen-poor worlds and sites) and quakes that bring rubble down.
 - **Contracts**: a mission board of random contracts per planet: lumite
   quotas, boss kills, rescues, drill defence, salvage and elite hunts, with
   optional secondary objectives, site conditions, mutators and hazard levels
@@ -67,10 +70,15 @@ Rebind keys and buttons under Settings → Controls.
 - **Surface runs**: organic voxel caves of minable blocks (winding tunnels,
   looping chambers, a pillared set-piece arena, ore seams, per-planet floor
   patches and props); ferrite,
-  lumite and voidstone ore; four enemy types (husks, skitters, bloaters, brutes)
-  driven by a flow field; six auto-firing weapons in four slots (new picks at
-  levels 5, 10 and 15); rarity-rolled upgrades with elements (fire, acid,
-  cold, shock) and legendary behaviour changes; supply caches; a threat
+  lumite and voidstone ore; eight enemy types by role (husks, skitters,
+  bloaters, brutes, ranged spitters, jamming disruptors, burrowers and
+  flyers) driven by a flow field, elites with five affixes and five bosses;
+  twelve auto-firing weapons across eleven archetypes (bolts, scatter, arcs,
+  mortars, drones, flamer with heat, ricochet, mines, melee, homing and
+  gravity) in four slots (new picks at levels 5, 10 and 15); rarity-rolled
+  upgrades with elements (fire, acid, cold, shock) that combine (shatter,
+  thermal shock, conductive water, acid fuel, spore ignition) and legendary
+  behaviour changes; supply caches; a threat
   level that climbs all drop long, with elites and warned surge waves, so
   greed decides when to leave; a timed extraction where
   the pod lands at your drop site and you must hold the zone.
@@ -113,7 +121,7 @@ cargo run --no-default-features -- --headless --autoplay
 
 Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
 `--slot N` (load slot N, skipping the menu), `--no-save`,
-`--menu main|saves|settings|controls|pause|gear|trade` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
+`--trace` (print the tick of every phase and menu change), `--menu main|saves|settings|controls|pause|gear|trade` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
 ## Build, verify and package

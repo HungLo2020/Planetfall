@@ -25,13 +25,14 @@ use crate::render::camera::{ascent_height, descent_height};
 use crate::render::effects::outline;
 use planetfall_sim::content::ShipBlock;
 use planetfall_sim::content::{
-    Axis, ClassId, DecorKind, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,
+    Axis, ClassId, DecorKind, EnemyBehavior, Material, Palette, PlanetId, VentKind, WeaponBehavior,
+    WeaponId,
 };
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};
 use planetfall_sim::run::{
-    Affix, BlastKind, DeployableKind, Extraction, Player, ProjectileKind, Run, extraction_hold,
-    extraction_inbound, extraction_radius,
+    Affix, BlastKind, DeployableKind, Extraction, HazardKind, Player, ProjectileKind, Run,
+    extraction_hold, extraction_inbound, extraction_radius,
 };
 use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};
 use planetfall_sim::terrain::{TILE, Terrain, Tile};
