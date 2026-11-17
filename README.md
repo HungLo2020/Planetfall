@@ -113,6 +113,8 @@ single rolling `Latest` GitHub Release that Basalt installs from (see
 
 ## Documentation
 
+- [Design](docs/design.md): the vision, the three loops, classes, missions,
+  equipment and the roadmap for the next stages.
 - [Architecture](docs/architecture.md): crates, the simulation/presentation split
   and how Quasar is used.
 - [Gameplay](docs/gameplay.md): the loop, tutorial, planets, weapons, enemies,
