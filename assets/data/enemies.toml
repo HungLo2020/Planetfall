@@ -7,6 +7,7 @@
 #        level a drop must reach first (see tuning.toml [threat]), and
 #        whether it appears in the tutorial. Planets scale weights.
 # drops: rolled on death; amount of a material with a chance (1 = always).
+# boss: placed by objectives only (spawn weight 0); scale: model size.
 
 [[enemy]]
 id = "husk"
@@ -75,3 +76,24 @@ drops = [
   { material = "voidstone", amount = 1, chance = 1.0 },
   { material = "ferrite", amount = 3, chance = 1.0 },
 ]
+
+# -- Bosses (never in the spawn tables; objectives place them) ---------------
+
+[[enemy]]
+id = "matriarch"
+name = "Hive Matriarch"
+behavior = "walker"
+boss = true
+scale = 1.9
+health = 1800.0
+speed = 2.0
+damage = 26.0
+radius = 1.0
+xp = 60
+model = "brute"
+blood = [0.5, 0.3, 0.65]
+death_sound = "enemy_die"
+alert_sound = "brute_roar"
+alert_chance = 1.0
+spawn = { weight = 0.0, count = [1, 1], tutorial = false }
+drops = [{ material = "voidstone", amount = 3, chance = 1.0 }, { material = "lumite", amount = 4, chance = 1.0 }]

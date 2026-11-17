@@ -1,0 +1,124 @@
+# Mission objectives. Every contract has one primary objective (extraction
+# unlocks when it is done) and may have one optional secondary objective for
+# bonus rewards. `kind` is a code archetype:
+#
+# Primary:
+#   ore_quota  mine `count` lumite
+#   boss       a boss (`enemy`) waits at a far site; kill it
+#   rescue     find the survivor and walk them back to the pod
+#   defend     start the drill rig and keep it alive until it finishes
+#              (`count` seconds)
+#   salvage    collect `count` parts around a crashed wreck
+#   hunt       a marked elite (`enemy`) roams the caves; kill it
+# Secondary:
+#   glowcaps   collect `count` glowcaps scattered on cave floors
+#   cull       kill `count` of `enemy`
+#   scan       stand at `count` relays until each is scanned
+#
+# count: base amount; `per_hazard` is added per hazard level above 1.
+# planets: where it appears (empty: everywhere). weight: how often it rolls.
+# reward: bonus materials on a successful extraction (secondaries only).
+
+[[objective]]
+id = "ore-quota"
+role = "primary"
+kind = "ore_quota"
+name = "Lumite Quota"
+description = "Mine {count} lumite and bring it home."
+count = 6
+per_hazard = 2
+weight = 3
+
+[[objective]]
+id = "matriarch"
+role = "primary"
+kind = "boss"
+name = "Kill the Matriarch"
+description = "A hive matriarch nests at the far end of the caves. Kill it."
+enemy = "matriarch"
+count = 1
+weight = 2
+
+[[objective]]
+id = "rescue"
+role = "primary"
+kind = "rescue"
+name = "Search and Rescue"
+description = "A stranded prospector is holding out down there. Find them and walk them back to the pod."
+count = 1
+weight = 2
+
+[[objective]]
+id = "defend-rig"
+role = "primary"
+kind = "defend"
+name = "Deep Drill"
+description = "Start the drill rig and keep it running for {count} seconds."
+count = 75
+per_hazard = 10
+weight = 2
+
+[[objective]]
+id = "salvage"
+role = "primary"
+kind = "salvage"
+name = "Salvage Run"
+description = "Recover {count} parts from a crashed dropship."
+count = 5
+per_hazard = 1
+weight = 2
+
+[[objective]]
+id = "hunt"
+role = "primary"
+kind = "hunt"
+name = "Elite Hunt"
+description = "A marked brute leads the horde here. Hunt it down."
+enemy = "brute"
+count = 1
+weight = 2
+
+[[objective]]
+id = "glowcaps"
+role = "secondary"
+kind = "glowcaps"
+name = "Glowcaps"
+description = "Collect {count} glowcaps."
+count = 12
+per_hazard = 2
+weight = 3
+reward = { ferrite = 6, lumite = 4, voidstone = 0 }
+
+[[objective]]
+id = "cull-skitters"
+role = "secondary"
+kind = "cull"
+name = "Pest Control"
+description = "Kill {count} skitters."
+enemy = "skitter"
+count = 40
+per_hazard = 10
+weight = 2
+reward = { ferrite = 8, lumite = 2, voidstone = 0 }
+
+[[objective]]
+id = "cull-bloaters"
+role = "secondary"
+kind = "cull"
+name = "Pop the Bloaters"
+description = "Kill {count} bloaters."
+enemy = "bloater"
+count = 10
+per_hazard = 3
+weight = 1
+reward = { ferrite = 6, lumite = 4, voidstone = 0 }
+
+[[objective]]
+id = "scan"
+role = "secondary"
+kind = "scan"
+name = "Relay Survey"
+description = "Scan {count} old relays."
+count = 3
+weight = 2
+reward = { ferrite = 4, lumite = 3, voidstone = 1 }

@@ -13,6 +13,7 @@ pub mod events;
 pub mod game;
 pub mod input;
 pub mod math;
+pub mod mission;
 pub mod profile;
 pub mod run;
 pub mod save;
@@ -186,6 +187,14 @@ mod tests {
         game.ship.player.pos = V2::new(pod[0], pod[1] - 2.6);
         game.update(&GameInput {
             interact: true,
+            ..GameInput::default()
+        });
+        assert_eq!(game.terminal, Some(Terminal::MissionBoard));
+        game.update(&GameInput {
+            command: Some(Command::Deploy {
+                contract: 0,
+                hazard: 1,
+            }),
             ..GameInput::default()
         });
         while game.phase != Phase::Surface {

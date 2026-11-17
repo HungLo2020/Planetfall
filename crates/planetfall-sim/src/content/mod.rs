@@ -15,9 +15,10 @@ pub mod defs;
 
 pub use defs::{
     AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, Drop, Element,
-    ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget, OreChances,
-    Palette, PassiveDef, PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, Spawn, Special,
-    Spin, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
+    ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget, MutatorDef,
+    MutatorEffect, ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette, PassiveDef,
+    PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special, Spin, Tuning,
+    UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
@@ -182,6 +183,9 @@ pub struct Content {
     pub upgrades: Vec<UpgradeDef>,
     pub classes: Vec<ClassDef>,
     pub mods: Vec<ModDef>,
+    pub objectives: Vec<ObjectiveDef>,
+    pub sites: Vec<SiteDef>,
+    pub mutators: Vec<MutatorDef>,
     pub tuning: Tuning,
 }
 
@@ -196,6 +200,9 @@ pub struct ContentFiles<'a> {
     pub tuning: &'a str,
     pub classes: &'a str,
     pub mods: &'a str,
+    pub objectives: &'a str,
+    pub sites: &'a str,
+    pub mutators: &'a str,
 }
 
 impl ContentFiles<'static> {
@@ -209,11 +216,14 @@ impl ContentFiles<'static> {
         tuning: include_str!("../../../../assets/data/tuning.toml"),
         classes: include_str!("../../../../assets/data/classes.toml"),
         mods: include_str!("../../../../assets/data/mods.toml"),
+        objectives: include_str!("../../../../assets/data/objectives.toml"),
+        sites: include_str!("../../../../assets/data/sites.toml"),
+        mutators: include_str!("../../../../assets/data/mutators.toml"),
     };
 }
 
 /// File names in the data directory, in [`ContentFiles`] order.
-pub const FILE_NAMES: [&str; 8] = [
+pub const FILE_NAMES: [&str; 11] = [
     "planets.toml",
     "weapons.toml",
     "enemies.toml",
@@ -222,11 +232,23 @@ pub const FILE_NAMES: [&str; 8] = [
     "tuning.toml",
     "classes.toml",
     "mods.toml",
+    "objectives.toml",
+    "sites.toml",
+    "mutators.toml",
 ];
 
 /// Table names: the top-level key of each record file (`[[weapon]]`).
-const TABLES: [&str; 7] = [
-    "planet", "weapon", "enemy", "perk", "upgrade", "class", "mod",
+const TABLES: [&str; 10] = [
+    "planet",
+    "weapon",
+    "enemy",
+    "perk",
+    "upgrade",
+    "class",
+    "mod",
+    "objective",
+    "site",
+    "mutator",
 ];
 
 impl Content {
@@ -244,7 +266,10 @@ impl Content {
             .register::<PerkDef>("perk")
             .register::<UpgradeDef>("upgrade")
             .register::<ClassDef>("class")
-            .register::<ModDef>("mod");
+            .register::<ModDef>("mod")
+            .register::<ObjectiveDef>("objective")
+            .register::<SiteDef>("site")
+            .register::<MutatorDef>("mutator");
         let sources = [
             files.planets,
             files.weapons,
@@ -253,6 +278,9 @@ impl Content {
             files.upgrades,
             files.classes,
             files.mods,
+            files.objectives,
+            files.sites,
+            files.mutators,
         ];
         let tables: Vec<(&str, &str, ContentFormat)> = TABLES
             .iter()
@@ -277,6 +305,9 @@ impl Content {
             upgrades: records(&snapshot, "upgrade"),
             classes: records(&snapshot, "class"),
             mods: records(&snapshot, "mod"),
+            objectives: records(&snapshot, "objective"),
+            sites: records(&snapshot, "site"),
+            mutators: records(&snapshot, "mutator"),
             tuning,
         };
         content.validate()?;
@@ -300,6 +331,9 @@ impl Content {
             self.upgrades.is_empty(),
             self.classes.is_empty(),
             self.mods.is_empty(),
+            self.objectives.is_empty(),
+            self.sites.is_empty(),
+            self.mutators.is_empty(),
         ]) {
             if empty {
                 errors.push(format!("{table}: no records"));
@@ -307,6 +341,26 @@ impl Content {
         }
         if self.classes.iter().filter(|c| c.starter).count() != 1 {
             errors.push("class: exactly one class must be marked starter".into());
+        }
+        for planet in &self.planets {
+            let here = |planets: &Vec<String>| planets.is_empty() || planets.contains(&planet.id);
+            let primary = self
+                .objectives
+                .iter()
+                .any(|o| o.role == ObjectiveRole::Primary && here(&o.planets));
+            if !primary {
+                errors.push(format!("objective: no primary objective for {}", planet.id));
+            }
+            if !self.sites.iter().any(|s| here(&s.planets)) {
+                errors.push(format!("site: no site condition for {}", planet.id));
+            }
+        }
+        if !self
+            .objectives
+            .iter()
+            .any(|o| o.kind == ObjectiveKind::OreQuota)
+        {
+            errors.push("objective: an ore_quota objective is needed for the tutorial".into());
         }
         if !self.planets.iter().any(|p| p.nav_level == 0) {
             errors.push("planet: none is reachable at nav level 0".into());
@@ -325,8 +379,7 @@ impl ContentRecord for PlanetDef {
     }
     fn validate(&self, v: &mut Validator) {
         v.non_empty("name", &self.name)
-            .range("hazard", self.hazard, 0.1, 10.0)
-            .check(self.objective > 0, "objective", "must be at least 1");
+            .range("hazard", self.hazard, 0.1, 10.0);
         for (enemy, weight) in &self.spawn_weights {
             v.reference("spawn_weights", "enemy", enemy)
                 .finite("spawn_weights", f64::from(*weight))
@@ -449,6 +502,71 @@ impl ContentRecord for ModDef {
                 "ability mods change ability stats",
             ),
         };
+    }
+}
+
+impl ContentRecord for ObjectiveDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        use ObjectiveKind as K;
+        let primary = matches!(
+            self.kind,
+            K::OreQuota | K::Boss | K::Rescue | K::Defend | K::Salvage | K::Hunt
+        );
+        let needs_enemy = matches!(self.kind, K::Boss | K::Hunt | K::Cull);
+        v.non_empty("name", &self.name)
+            .check(self.count > 0, "count", "must be at least 1")
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .check(
+                primary == (self.role == ObjectiveRole::Primary),
+                "role",
+                "the kind decides whether it is primary or secondary",
+            )
+            .check(
+                needs_enemy == self.enemy.is_some(),
+                "enemy",
+                "boss, hunt and cull objectives (only) name an enemy",
+            )
+            .optional_reference("enemy", "enemy", self.enemy.as_deref());
+        for planet in &self.planets {
+            v.reference("planets", "planet", planet);
+        }
+    }
+}
+
+impl ContentRecord for SiteDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .check(
+                [self.ore, self.enemy_health, self.spawn, self.threat]
+                    .iter()
+                    .all(|k| *k > 0.0),
+                "multipliers",
+                "must be positive",
+            );
+        for planet in &self.planets {
+            v.reference("planets", "planet", planet);
+        }
+        for enemy in self.spawn_weights.keys() {
+            v.reference("spawn_weights", "enemy", enemy);
+        }
+    }
+}
+
+impl ContentRecord for MutatorDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .check(self.reward >= 0.0, "reward", "cannot be negative");
     }
 }
 
@@ -626,6 +744,24 @@ content_id!(
     ModId,
     mods,
     ModDef
+);
+content_id!(
+    /// A mission objective in `objectives.toml`.
+    ObjectiveId,
+    objectives,
+    ObjectiveDef
+);
+content_id!(
+    /// A site condition in `sites.toml`.
+    SiteId,
+    sites,
+    SiteDef
+);
+content_id!(
+    /// A mutator in `mutators.toml`.
+    MutatorId,
+    mutators,
+    MutatorDef
 );
 
 impl PlanetId {
@@ -848,10 +984,13 @@ mod tests {
         let c = Content::builtin();
         assert_eq!(c.planets.len(), 3);
         assert_eq!(c.weapons.len(), 6);
-        assert_eq!(c.enemies.len(), 4);
+        assert_eq!(c.enemies.iter().filter(|e| !e.boss).count(), 4);
         assert!(!c.perks.is_empty());
         assert_eq!(c.upgrades.len(), 5);
         assert_eq!(c.classes.len(), 4);
+        assert!(c.objectives.len() >= 9);
+        assert!(!c.sites.is_empty());
+        assert!(!c.mutators.is_empty());
     }
 
     #[test]

@@ -79,7 +79,7 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             0.0
         };
         // Elites stand a quarter taller.
-        let k = if e.elite.is_some() { 1.25 } else { 1.0 };
+        let k = info.scale * if e.elite.is_some() { 1.25 } else { 1.0 };
         let root = at(e.pos, rise) * Mat4::rotation_y(e.yaw) * s(k, k, k);
         let mut glow = if e.hit_ticks > 0 {
             e.hit_ticks as f32 / 6.0 * 0.9

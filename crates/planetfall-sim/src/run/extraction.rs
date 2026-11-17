@@ -23,7 +23,7 @@ pub fn extraction_radius() -> f32 {
 impl Run {
     pub(super) fn update_extraction(&mut self, call: bool, events: &mut Vec<GameEvent>) {
         if call && matches!(self.extraction, Extraction::Idle) {
-            if self.objective_done {
+            if self.objective_done() {
                 self.extraction = Extraction::Inbound {
                     ticks: extraction_inbound(),
                     pos: self.landing,

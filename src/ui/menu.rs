@@ -8,6 +8,7 @@ use super::{Builder, Layer, format_cost, format_materials, hud::roman};
 use crate::bindings::{self, Prompts};
 use crate::storage::{SlotState, SlotSummary};
 use planetfall_sim::content::{ClassId, PlanetId, Rarity, UpgradeId, class_xp_to_next, content};
+use planetfall_sim::mission::{MAX_HAZARD, hazard_name};
 use planetfall_sim::run::OfferSource;
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
@@ -70,6 +71,8 @@ pub enum MenuAction {
     OpenControls {
         gamepad: bool,
     },
+    /// Mission board: choose the hazard level (handled by the menu).
+    SetHazard(u8),
     /// The controls screen changed the bindings: install and save them.
     ApplyBindings(Bindings),
     Back,
@@ -116,6 +119,8 @@ pub struct Menu {
     controls: Option<ControlsScreen>,
     /// Action id of the controls screen's reset button.
     controls_reset: u64,
+    /// Hazard level picked on the mission board (0: not opened yet).
+    hazard: u8,
 }
 
 /// A settings control.
@@ -143,6 +148,7 @@ impl Menu {
             bindings: bindings::defaults(),
             controls: None,
             controls_reset: u64::MAX,
+            hazard: 0,
         }
     }
 
@@ -286,6 +292,11 @@ impl Menu {
                 UiEvent::Pressed(action) if action.0 == self.controls_reset => {}
                 UiEvent::Pressed(action) => {
                     if let Some(a) = self.actions.get(action.0 as usize) {
+                        if let MenuAction::SetHazard(h) = a {
+                            self.hazard = *h;
+                            self.signature.clear();
+                            return MenuAction::None;
+                        }
                         return a.clone();
                     }
                 }
@@ -395,6 +406,7 @@ impl Menu {
                 Some(Terminal::Navigation) => self.navigation(b, game),
                 Some(Terminal::Fabricator) => self.fabricator(b, game),
                 Some(Terminal::Locker) => self.locker(b, game),
+                Some(Terminal::MissionBoard) => self.mission_board(b, game),
                 Some(Terminal::Debrief(summary)) => {
                     let card = Self::card(b, 560.0);
                     let (title, tone) = match summary.outcome {
@@ -437,6 +449,42 @@ impl Menu {
                         format!("Loadout: {}", weapons.join(", ")),
                         TextStyle::Small,
                     );
+                    // Contract results.
+                    let tick = |done: bool| if done { "✓" } else { "✗" };
+                    b.label(
+                        card,
+                        format!(
+                            "{} {}  ·  hazard {} {}",
+                            tick(summary.primary_done),
+                            summary.contract.primary.name(),
+                            summary.hazard,
+                            hazard_name(summary.hazard)
+                        ),
+                        TextStyle::Body,
+                    );
+                    if let (Some(secondary), Some(done)) =
+                        (summary.contract.secondary, summary.secondary_done)
+                    {
+                        b.label(
+                            card,
+                            format!("{} Optional: {}", tick(done), secondary.name()),
+                            TextStyle::Small,
+                        );
+                    }
+                    if summary.bonus.total() > 0 {
+                        b.label(
+                            card,
+                            format!("Contract bonus: {}", format_materials(&summary.bonus)),
+                            TextStyle::Small,
+                        );
+                    }
+                    if let Some(level) = summary.unlocked {
+                        b.label(
+                            card,
+                            format!("HAZARD {level} UNLOCKED ({})", hazard_name(level)),
+                            TextStyle::Body,
+                        );
+                    }
                     let (before, after) = summary.class_levels;
                     let class_line = if after > before {
                         format!(
@@ -544,9 +592,133 @@ impl Menu {
                 unlocked && !here,
             );
             if unlocked {
-                b.label(
-                    card,
-                    format!("{} Objective: {} lumite.", info.description, info.objective),
+                b.label(card, info.description.clone(), TextStyle::Small);
+            }
+        }
+        self.cancel = MenuAction::Game(Command::Close);
+        self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
+    }
+
+    /// Mission board: contracts for the planet in orbit and the hazard
+    /// level to take them at.
+    fn mission_board(&mut self, b: &mut Builder, game: &Game) {
+        let profile = &game.profile;
+        let unlocked = profile.hazard_unlocked;
+        if self.hazard == 0 || self.hazard > unlocked {
+            self.hazard = profile.hazard_choice.clamp(1, unlocked);
+        }
+        let hazard = self.hazard;
+        let card = Self::card(b, 760.0);
+        let planet = profile.orbiting.map_or("—", |p| p.name());
+        b.label(
+            card,
+            format!("MISSION BOARD  ·  {}", planet.to_uppercase()),
+            TextStyle::Heading,
+        );
+        let h = &content().tuning.hazard;
+        let i = usize::from(hazard - 1);
+        b.label(
+            card,
+            format!(
+                "Hazard {hazard} {}: enemies ×{:.2} health, ×{:.2} damage  ·  haul ×{:.2}, class XP ×{:.2}",
+                hazard_name(hazard),
+                h.enemy_health[i],
+                h.enemy_damage[i],
+                h.reward[i],
+                h.class_xp[i]
+            ),
+            TextStyle::Small,
+        );
+        let row =
+            b.ui.add_child(
+                card,
+                Widget::Panel {
+                    layout: quasar_ui::PanelLayout::Stack {
+                        direction: quasar_ui::StackDirection::Horizontal,
+                        gap: 4.0,
+                    },
+                    padding: quasar_ui::Edges::ZERO,
+                    clip: false,
+                    scrollable: false,
+                },
+                LayoutItem::size(Length::Fill, Length::Auto),
+            )
+            .expect("valid parent");
+        for level in 1..=MAX_HAZARD {
+            let label = if level == hazard {
+                format!("▶ {level}")
+            } else if level > unlocked {
+                format!("{level} (locked)")
+            } else {
+                format!("{level}")
+            };
+            let id = self.action(MenuAction::SetHazard(level));
+            b.ui.add_child(
+                row,
+                Widget::Button {
+                    text: UiText::literal(label),
+                    action: Some(ActionId::new(id)),
+                },
+                LayoutItem::size(Length::Fill, Length::fixed(34.0)),
+            )
+            .expect("valid parent");
+            if level > unlocked {
+                // Locked levels are shown but cannot be picked.
+                self.actions[id as usize] = MenuAction::None;
+            }
+        }
+        if unlocked < MAX_HAZARD {
+            b.label(
+                card,
+                format!(
+                    "Complete a contract at hazard {unlocked} to unlock hazard {}.",
+                    unlocked + 1
+                ),
+                TextStyle::Small,
+            );
+        }
+        for (n, contract) in profile.board.iter().enumerate() {
+            let slot = b.panel(card, LayoutItem::size(Length::Fill, Length::Auto), 2.0, 6.0);
+            let _ = b.ui.set_style(
+                slot,
+                Some(NodeStyle {
+                    background: None,
+                    border: Some(Border {
+                        width: 1.5,
+                        color: Color::rgba(255, 142, 48, 140),
+                    }),
+                    radius: 3.0,
+                }),
+            );
+            self.button(
+                b,
+                slot,
+                format!("TAKE: {}", contract.primary.name().to_uppercase()),
+                MenuAction::Game(Command::Deploy {
+                    contract: n,
+                    hazard,
+                }),
+                true,
+            );
+            b.paragraph(slot, &contract.primary.describe(hazard), TextStyle::Small);
+            if let Some(secondary) = contract.secondary {
+                b.paragraph(
+                    slot,
+                    &format!("Optional: {}", secondary.describe(hazard)),
+                    TextStyle::Small,
+                );
+            }
+            let site = contract.site.info();
+            b.paragraph(
+                slot,
+                &format!("Site: {} — {}", site.name, site.description),
+                TextStyle::Small,
+            );
+            if let Some(mutator) = contract.mutator {
+                let m = mutator.info();
+                b.paragraph(
+                    slot,
+                    &format!("Mutator: {} — {}", m.name, m.description),
                     TextStyle::Small,
                 );
             }

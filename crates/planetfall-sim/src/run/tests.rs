@@ -1,5 +1,6 @@
 use super::*;
 use crate::content::{ClassId, ModId, PlanetId, Upgrade};
+use crate::mission::Contract;
 
 fn class(key: &str) -> ClassId {
     ClassId::from_key(key).unwrap()
@@ -11,6 +12,8 @@ fn config(seed: u64) -> RunConfig {
         seed,
         tutorial: false,
         players: vec![Loadout::basic(ClassId::starter())],
+        contract: Contract::tutorial(),
+        hazard: 1,
         max_health: 100.0,
         damage_multiplier: 1.0,
         mining_multiplier: 1.0,
@@ -117,9 +120,9 @@ fn extraction_requires_objective_then_ends_run() {
     };
     let events = step(&mut run, call, 1);
     assert!(events.contains(&GameEvent::ExtractionDenied));
-    run.carried.lumite = run.objective;
+    run.carried.lumite = run.mission.primary.need;
     step(&mut run, GameInput::default(), 1);
-    assert!(run.objective_done);
+    assert!(run.objective_done());
     step(&mut run, call, 1);
     assert!(matches!(run.extraction, Extraction::Inbound { .. }));
     run.spawning_enabled = false;
@@ -371,7 +374,8 @@ fn spawn_tables_cover_the_content() {
         // A high threat unlocks every spawn rule.
         run.threat = 10.0;
         let table = run.spawn_table();
-        for enemy in EnemyId::all() {
+        // Bosses are placed by objectives, never spawned.
+        for enemy in EnemyId::all().filter(|e| !e.info().boss) {
             assert!(
                 table.iter().any(|(id, _)| *id == enemy),
                 "{} never spawns on {}",
@@ -618,6 +622,56 @@ fn elites_and_xp_curve() {
     assert!(late > early * 2, "the XP curve steepens");
 }
 
+/// Every primary objective (and secondary) can be completed: the
+/// autopilot finishes each kind on an invulnerable run.
+#[test]
+fn every_objective_can_be_completed() {
+    use crate::autoplay::Autopilot;
+    use crate::content::{ObjectiveId, ObjectiveRole, SiteId};
+    use crate::game::Game;
+    let secondaries: Vec<ObjectiveId> = ObjectiveId::all()
+        .filter(|o| o.info().role == ObjectiveRole::Secondary)
+        .collect();
+    let primaries = ObjectiveId::all().filter(|o| o.info().role == ObjectiveRole::Primary);
+    for (n, primary) in primaries.enumerate() {
+        let planet = PlanetId::first();
+        let contract = Contract {
+            planet,
+            primary,
+            secondary: Some(secondaries[n % secondaries.len()]),
+            site: SiteId::all().next().unwrap(),
+            mutator: None,
+        };
+        let mut run = Run::new(RunConfig {
+            contract,
+            ..config(n as u64 + 3)
+        });
+        run.invulnerable = true;
+        let mut game = Game::new(crate::Profile::default(), 1);
+        game.phase = crate::Phase::Surface;
+        let mut pilot = Autopilot::new();
+        let mut events = Vec::new();
+        for _ in 0..60 * 60 * 12 {
+            game.run = Some(run);
+            let mut input = pilot.input(&game);
+            run = game.run.take().unwrap();
+            input.call_extraction = false;
+            run.update(&input, &mut events);
+            events.clear();
+            if run.objective_done() {
+                break;
+            }
+        }
+        assert!(
+            run.objective_done(),
+            "{}: {:?} after {:.1} min",
+            primary.key(),
+            run.mission.primary,
+            run.minutes()
+        );
+    }
+}
+
 /// Tuning probe (run with `--ignored --nocapture`): how long each class
 /// survives on each planet when it never extracts, with the autopilot's
 /// upgrade picks and movement. This is the soft cap the threat sets.
@@ -648,7 +702,6 @@ fn survival_time_probe() {
                 let mut pilot = Autopilot::new();
                 let mut events = Vec::new();
                 for _ in 0..60 * 60 * 30 {
-                    run.objective_done = false;
                     game.run = Some(run);
                     let mut input = pilot.input(&game);
                     run = game.run.take().unwrap();

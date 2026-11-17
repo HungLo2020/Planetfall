@@ -22,6 +22,7 @@ use super::models::{Models, names};
 use super::skins::{Layer, Posed, SkinRequest, Skins};
 use super::voxels::{self, VoxelScene, WorldKey};
 use crate::render::camera::{ascent_height, descent_height};
+use crate::render::effects::outline;
 use planetfall_sim::content::ShipBlock;
 use planetfall_sim::content::{
     Axis, ClassId, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,

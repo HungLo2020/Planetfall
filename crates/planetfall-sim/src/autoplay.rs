@@ -2,8 +2,8 @@
 //! soak tests and CI, so every feature is drivable without a window.
 
 use crate::content::{
-    AbilityKind, ClassId, Material, ModStat, Offer, PerkEffect, PlanetId, ShipBlock, Upgrade,
-    UpgradeId,
+    AbilityKind, ClassId, Material, ModStat, ObjectiveKind, Offer, PerkEffect, PlanetId, ShipBlock,
+    Upgrade, UpgradeId,
 };
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
@@ -67,6 +67,11 @@ impl Autopilot {
                         Command::Close
                     }
                 }
+                // Rotate through the board; push the hazard up as it unlocks.
+                Terminal::MissionBoard => Command::Deploy {
+                    contract: game.profile.stats.drops as usize % game.profile.board.len().max(1),
+                    hazard: game.profile.hazard_unlocked.min(2),
+                },
                 Terminal::Debrief(_) | Terminal::Module(_) => Command::Close,
             };
             return GameInput {
@@ -177,11 +182,16 @@ impl Autopilot {
         // Greed, as a player would: keep fighting and mining after the
         // objective until hurt, the threat is high or time is long.
         let p = run.player();
-        let ready = run.objective_done
+        let ready = run.objective_done()
             && (run.tutorial
-                || p.health < p.max_health * 0.45
+                || p.health < p.max_health * 0.6
                 || run.threat_level() >= 8
                 || run.minutes() >= 14.0);
+        let mission = &run.mission;
+        let nearest = |points: &mut dyn Iterator<Item = V2>| {
+            points.min_by(|a, b| a.distance(player).total_cmp(&b.distance(player)))
+        };
+        let mut keep_away = false;
         let goal: Option<V2> = if ready {
             Some(run.landing)
         } else if let Some(cache) = run
@@ -190,9 +200,56 @@ impl Autopilot {
             .find(|c| !c.opened && c.pos.distance(player) < 14.0)
         {
             Some(cache.pos)
+        } else if !mission.primary.done {
+            match mission.primary_kind() {
+                ObjectiveKind::OreQuota => nearest_ore(run, Material::Lumite),
+                // Build up before waking a boss: levels or a few minutes.
+                ObjectiveKind::Boss
+                    if mission.target.is_none()
+                        && run.player().level < 8
+                        && run.minutes() < 4.0 =>
+                {
+                    nearest_ore(run, Material::Lumite)
+                }
+                ObjectiveKind::Boss | ObjectiveKind::Hunt => {
+                    match mission
+                        .target
+                        .and_then(|id| run.enemies.iter().find(|e| e.id == id))
+                    {
+                        // Keep the guns on it from a few metres away.
+                        Some(e) if e.pos.distance(player) < 5.0 => {
+                            keep_away = true;
+                            Some(player * 2.0 - e.pos)
+                        }
+                        Some(e) => Some(e.pos),
+                        None => mission.arena.or_else(|| run.sites.first().copied()),
+                    }
+                }
+                ObjectiveKind::Rescue => mission.survivor.map(|s| {
+                    if s.following && !s.down {
+                        run.landing
+                    } else {
+                        s.pos
+                    }
+                }),
+                ObjectiveKind::Defend => mission
+                    .rig
+                    .map(|r| r.pos)
+                    .filter(|p| p.distance(player) > 1.2),
+                ObjectiveKind::Salvage => nearest(&mut mission.parts.iter().copied()),
+                _ => nearest_ore(run, Material::Lumite),
+            }
         } else {
-            nearest_ore(run, Material::Lumite)
+            // Secondary objectives nearby, else more ore for the haul.
+            nearest(&mut mission.glowcaps.iter().copied())
+                .filter(|p| p.distance(player) < 25.0)
+                .or_else(|| {
+                    nearest(&mut mission.relays.iter().filter(|r| !r.done).map(|r| r.pos))
+                        .filter(|p| p.distance(player) < 30.0)
+                })
+                .or_else(|| nearest_ore(run, Material::Lumite))
         };
+        let _ = keep_away;
         let mut movement = goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero());
         if ready && run.landing.distance(player) < 1.5 {
             movement = V2::new(0.0, 0.0);

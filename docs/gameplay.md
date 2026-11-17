@@ -17,26 +17,30 @@ the main menu. A drop in progress is saved too and resumes where you left it.
 
 1. **Ship.** Walk the ship. The **Navigation Console** plots FTL jumps, the
    **Fabricator** builds and upgrades modules, the **Locker Room** switches
-   class and starting weapon, the **Drop Pod** deploys to the planet you are
-   orbiting.
+   class and starting weapon, the **Drop Pod** opens the mission board for
+   the planet you are orbiting.
 2. **FTL.** A short warp cinematic; the ship arrives in orbit.
-3. **Drop.** The pod falls to a landing site in a generated cave.
+3. **Drop.** Pick a contract and a hazard level on the mission board; the
+   pod falls to a landing site in a generated cave.
 4. **Surface.** Weapons fire automatically at the nearest hostile. Walk into
    rock to drill through it. Press Q / (LB) for the class ability. Collect XP shards to level up (pick 1 of 3 field
    upgrades; the run pauses while you choose). Walk over **supply caches** for
-   a rare-or-better upgrade. Mine **lumite** to complete the objective.
+   a rare-or-better upgrade. Complete the contract's primary objective (and
+   the optional secondary, for a bonus).
 5. **Extract.** Press F / (Y) any time after the objective is done. The pod
    lands at the drop site after 12 s; the horde intensifies and the threat
    climbs twice as fast. Stand inside the ring for 6 s
    (leaving drains progress) to lift off.
-6. **Debrief.** Carried materials are banked in the hold and the class earns
+6. **Debrief.** Carried materials are banked in the hold (multiplied by the
+   hazard level and mutator, plus the secondary's bonus) and the class earns
    class XP. Death or abandoning loses all cargo.
 7. **Upgrade.** Spend ferrite, lumite and voidstone at the Fabricator, or
    build onto the hull yourself in build mode.
 
 Persistent: materials, ship modules and levels, player-built ship blocks,
 stats, tutorial completion, current orbit, the active class and every
-class's level, unlocks and starting weapon. Per-run only: weapons, weapon
+class's level, unlocks and starting weapon, the unlocked hazard level and
+the mission board on offer. Per-run only: weapons, weapon
 levels, perks, XP level.
 
 ## Classes and the locker room
@@ -79,14 +83,46 @@ show keyboard or controller labels depending on the last device used.
 
 ## Planets
 
-| Planet | Unlock | Hazard | Objective | Character |
-|---|---|---|---|---|
-| Verdant-7 | start | x1.0 | 6 lumite | Mossy caves, ferrite-rich |
-| Cinder Reach | Reactor 1 | x1.45 | 9 lumite | Volcanic, dense lumite, skitter swarms |
-| Hollow Frost | Reactor 2 | x2.0 | 12 lumite | Icy, voidstone seams, brutes |
+| Planet | Unlock | Hazard | Character |
+|---|---|---|---|
+| Verdant-7 | start | x1.0 | Mossy caves, ferrite-rich |
+| Cinder Reach | Reactor 1 | x1.45 | Volcanic, dense lumite, skitter swarms |
+| Hollow Frost | Reactor 2 | x2.0 | Icy, voidstone seams, brutes |
 
-Hazard scales enemy health, damage and spawn pressure; the threat level
-(below) does the rest.
+Planet hazard scales enemy health, damage and spawn pressure; the hazard
+level and threat level (below) do the rest.
+
+## Contracts and the mission board
+
+Interacting with the drop pod opens the **mission board**: three random
+contracts for the planet in orbit, redrawn after every drop and jump. A
+contract is:
+
+- a **primary objective** (extraction unlocks when it is done):
+
+  | Objective | Goal |
+  |---|---|
+  | Lumite Quota | Mine 6 lumite (+2 per hazard level) |
+  | Kill the Matriarch | A hive matriarch boss wakes when you reach its far arena; kill it |
+  | Search and Rescue | Find the stranded prospector and walk them to the pod; revive them if the horde downs them |
+  | Deep Drill | Stand at the drill rig to start it and keep it alive while it drills (repair it if it breaks) |
+  | Salvage Run | Recover the parts scattered around a crashed dropship |
+  | Elite Hunt | A marked, armoured brute leads the horde; hunt it down |
+
+- an optional **secondary objective** for bonus materials and class XP:
+  collect glowcaps, cull skitters or bloaters, or scan old relays.
+- a **site condition** from the planet's pool (Stable Caverns, Rich Seams,
+  Infested, Near the Core, Brute Den, Restless, Frost Pockets): ore,
+  toughness, spawn mix, threat speed and the light all vary.
+- sometimes a **mutator**: Rich Veins, Double Swarm (+50% pay),
+  Haemophilia (no regeneration, +25%), Low Gravity, Glass Cannon (+30%).
+
+Pick a **hazard level** (1 Easy to 5 Lethal) on the board: each level
+raises enemy health, damage, spawn pressure and elite share, shifts upgrade
+rarities upward, and multiplies the banked haul (×1 to ×2.7) and class XP.
+Hazard *n* unlocks after completing a primary objective at hazard *n - 1*.
+The HUD shows the objectives, the hazard, site and mutator, and a health bar
+for the boss or hunted elite; beacons mark what still needs doing.
 
 ## Escalation: why you leave
 
@@ -224,6 +260,9 @@ Content and balance are TOML in `assets/data/` (shipped as
 | `classes.toml` | Classes: signature and familiar weapons, ability archetype and tiers, passive effects, unlock levels, suit colour |
 | `upgrades.toml` | Ship modules: effect, per-level amount, costs, room rectangle, station model and light |
 | `tuning.toml` | Player, weapon slots and pick levels, rarity odds, XP, horde, class XP, extraction, tutorial and build-block numbers |
+| `objectives.toml` | Primary and secondary objectives: archetype, target count (+ per hazard), enemy, planets, weight, bonus reward |
+| `sites.toml` | Site conditions: ore, toughness, spawn and threat multipliers, spawn weights, light tint, planets |
+| `mutators.toml` | Mutators: effect, amount, reward share |
 | `models.toml` | Model names for files outside `assets/models` (Kenney props) |
 
 To add content that fits an existing archetype, add an entry with a new `id`

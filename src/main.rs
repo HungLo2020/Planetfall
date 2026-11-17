@@ -91,6 +91,9 @@ fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
         tuning: &texts[5],
         classes: &texts[6],
         mods: &texts[7],
+        objectives: &texts[8],
+        sites: &texts[9],
+        mutators: &texts[10],
     })
     .map_err(|e| format!("content data in {}: {e}", dir.display()))?;
     content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())
@@ -147,7 +150,7 @@ fn headless(
     let history = history.events();
     let run = game.run.as_ref();
     println!(
-        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} avg_drop={:.1}min best_threat={} threat={} surge={} hash={:016x}",
+        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} avg_drop={:.1}min best_threat={} threat={} surge={} hazard={} hash={:016x}",
         game.tick,
         game.phase,
         match (&game.terminal, run.and_then(|r| r.level_up_choices())) {
@@ -157,6 +160,7 @@ fn headless(
             (Some(planetfall_sim::Terminal::Debrief(_)), _) => "debrief",
             (Some(planetfall_sim::Terminal::Module(_)), _) => "module",
             (Some(planetfall_sim::Terminal::Locker), _) => "locker",
+            (Some(planetfall_sim::Terminal::MissionBoard), _) => "mission-board",
             (None, None) => "none",
         },
         game.tutorial_step(),
@@ -188,6 +192,7 @@ fn headless(
         } else {
             "-"
         }),
+        game.profile.hazard_unlocked,
         game.state_hash().value(),
     );
     if let Some(path) = &settings.screenshot {

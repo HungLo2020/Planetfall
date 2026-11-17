@@ -17,6 +17,8 @@ pub enum Command {
     Close,
     /// Give up on the current drop. Carried materials are lost.
     Abandon,
+    /// Mission board: take contract `contract` at hazard level `hazard`.
+    Deploy { contract: usize, hazard: u8 },
     /// Locker room: switch the active class.
     SelectClass(ClassId),
     /// Locker room: the active class's starting weapon (its signature or an

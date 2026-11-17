@@ -497,6 +497,8 @@ impl App {
                 return Some(Flow::Exit);
             }
             MenuAction::Game(command) => self.controls.command = Some(command),
+            // Handled inside the menu.
+            MenuAction::SetHazard(_) => {}
         }
         None
     }

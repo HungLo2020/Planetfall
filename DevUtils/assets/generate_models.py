@@ -974,6 +974,15 @@ def ship_exterior() -> list[Part]:
     return [hull, engines]
 
 
+def glowcap() -> list[Part]:
+    """A cluster of luminous cave mushrooms (secondary objective pickups)."""
+    part = Part("caps")
+    for x, z, h, r in ((0.0, 0.0, 0.5, 0.28), (0.25, 0.15, 0.32, 0.18), (-0.2, 0.2, 0.26, 0.15)):
+        part.prism("bloat_dark", (x, h * 0.5, z), 0.05, h, sides=6)
+        part.prism("glow_green", (x, h, z), r, 0.1, sides=8, top_radius=r * 0.4)
+    return [part]
+
+
 def locker() -> list[Part]:
     """Four crew lockers in a row, one per class colour, facing +Z."""
     part = Part("lockers")
@@ -1013,6 +1022,7 @@ MODELS = {
     "nav-console": nav_console,
     "pod-cradle": pod_cradle,
     "locker": locker,
+    "glowcap": glowcap,
     "reactor-core": reactor_core,
     "med-bay": med_bay,
     "weapon-rack": weapon_rack,

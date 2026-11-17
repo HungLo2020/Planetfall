@@ -146,7 +146,9 @@ impl Run {
     pub(super) fn rarity_weights(&self, player: usize, min: Rarity) -> [f32; 4] {
         let tuning = &content().tuning.rarity;
         let p = &self.players[player];
-        let shift = (1.0 + p.luck) * (1.0 + tuning.hazard_bonus * (self.hazard - 1.0).max(0.0));
+        let shift = (1.0 + p.luck)
+            * (1.0 + tuning.hazard_bonus * (self.hazard - 1.0).max(0.0))
+            * (1.0 + self.hazard_k(&content().tuning.hazard.rarity));
         let mut weights = tuning.weights;
         for (i, w) in weights.iter_mut().enumerate() {
             *w *= shift.powi(i as i32);

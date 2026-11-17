@@ -7,6 +7,7 @@ use crate::content::{
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
 use crate::math::V2;
+use crate::mission::Contract;
 use crate::profile::{Profile, PurchaseError};
 use crate::run::{Extraction, Run, RunConfig, RunOutcome, RunState};
 use crate::ship::{Ship, StationKind};
@@ -56,6 +57,14 @@ pub struct RunSummary {
     pub class_levels: (u32, u32),
     /// Threat level reached.
     pub threat: u32,
+    pub contract: Contract,
+    pub hazard: u8,
+    pub primary_done: bool,
+    pub secondary_done: Option<bool>,
+    /// Extra materials from the hazard level, mutator and secondary.
+    pub bonus: Materials,
+    /// A new hazard level unlocked by this drop.
+    pub unlocked: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,6 +74,8 @@ pub enum Terminal {
     Debrief(RunSummary),
     Module(UpgradeId),
     Locker,
+    /// Contracts for the planet in orbit, taken at the drop pod.
+    MissionBoard,
 }
 
 /// A short status message, e.g. why an action was refused.
@@ -120,6 +131,14 @@ impl Game {
         self.rng = rng;
     }
 
+    /// Still being taught (the closing "you're on your own" step is free
+    /// play).
+    fn in_tutorial(&self) -> bool {
+        self.tutorial
+            .as_ref()
+            .is_some_and(|t| t.step < TutorialStep::Done)
+    }
+
     pub fn tutorial_step(&self) -> Option<TutorialStep> {
         self.tutorial.as_ref().map(|t| t.step)
     }
@@ -145,6 +164,7 @@ impl Game {
             Phase::Ftl { ticks, to } => {
                 if ticks <= 1 {
                     self.profile.orbiting = Some(to);
+                    self.profile.board = crate::mission::board(&mut self.rng, to);
                     self.phase = Phase::Ship;
                     self.events.push(GameEvent::FtlArrived { at: to });
                     self.events.push(GameEvent::ProfileChanged);
@@ -202,6 +222,14 @@ impl Game {
                 }
                 (Terminal::Navigation, Command::TravelTo(planet)) => self.travel(planet),
                 (Terminal::Fabricator, Command::Purchase(upgrade)) => self.purchase(upgrade),
+                (Terminal::MissionBoard, Command::Deploy { contract, hazard }) => {
+                    let hazard = hazard.clamp(1, self.profile.hazard_unlocked);
+                    if let Some(&c) = self.profile.board.get(contract) {
+                        self.terminal = None;
+                        self.profile.hazard_choice = hazard;
+                        self.deploy(c, hazard);
+                    }
+                }
                 (Terminal::Locker, Command::SelectClass(class)) => {
                     if self.profile.class != class {
                         self.profile.class = class;
@@ -250,7 +278,12 @@ impl Game {
             StationKind::Locker => self.open(Terminal::Locker),
             StationKind::Module(u) => self.open(Terminal::Module(u)),
             StationKind::DropPod => match self.profile.orbiting {
-                Some(planet) => self.deploy(planet),
+                // The tutorial drop skips the board.
+                Some(planet) if self.in_tutorial() => self.deploy(Contract::tutorial_on(planet), 1),
+                Some(planet) => {
+                    self.ensure_board(planet);
+                    self.open(Terminal::MissionBoard);
+                }
                 None => {
                     self.events.push(GameEvent::Denied);
                     self.notify(
@@ -338,12 +371,22 @@ impl Game {
         }
     }
 
-    fn deploy(&mut self, planet: PlanetId) {
-        let tutorial = self.tutorial.is_some() && planet == PlanetId::first();
+    /// A fresh mission board when the one on offer is not for `planet`.
+    fn ensure_board(&mut self, planet: PlanetId) {
+        if self.profile.board.is_empty() || self.profile.board.iter().any(|c| c.planet != planet) {
+            self.profile.board = crate::mission::board(&mut self.rng, planet);
+        }
+    }
+
+    fn deploy(&mut self, contract: Contract, hazard: u8) {
+        let planet = contract.planet;
+        let tutorial = self.in_tutorial() && planet == PlanetId::first();
         let mut run = Run::new(RunConfig {
             planet,
             seed: self.rng.next_u64(),
             tutorial,
+            contract,
+            hazard,
             players: vec![self.profile.loadout()],
             max_health: self.profile.max_health(),
             damage_multiplier: self.profile.damage_multiplier(),
@@ -411,12 +454,24 @@ impl Game {
             content().tuning.class.failed_share
         };
         let class = player.class;
-        let bonus = if extracted {
+        let extract_xp = if extracted {
             content().tuning.class.extraction_bonus
         } else {
             0
         };
-        let class_xp = (player.xp_total as f32 * share).round() as u32 + bonus;
+        let missions = &content().tuning.missions;
+        let mut objectives = 0;
+        if extracted && run.mission.primary.done {
+            objectives += missions.primary_class_xp;
+        }
+        if extracted && run.mission.secondary.is_some_and(|p| p.done) {
+            objectives += missions.secondary_class_xp;
+        }
+        let hazard_xp =
+            content().tuning.hazard.class_xp[usize::from(run.mission.hazard.clamp(1, 5) - 1)];
+        let class_xp = ((player.xp_total as f32 * share + (extract_xp + objectives) as f32)
+            * hazard_xp)
+            .round() as u32;
         let class_levels = self.profile.award_class_xp(class, class_xp);
         if class_levels.1 > class_levels.0 {
             self.events.push(GameEvent::ClassLevelUp {
@@ -429,11 +484,40 @@ impl Game {
         stats.best_level = stats.best_level.max(player.level);
         stats.surface_seconds += run.ticks / 60;
         stats.best_threat = stats.best_threat.max(run.threat_level());
+        // Contract rewards: hazard and mutator multiply the haul; the
+        // secondary pays its bonus; success unlocks the next hazard level.
+        let mission = &run.mission;
+        let mut bonus = Materials::default();
+        let mut unlocked = None;
+        if extracted {
+            let k = content().tuning.hazard.reward[usize::from(mission.hazard.clamp(1, 5) - 1)]
+                + mission.contract.mutator_reward()
+                - 1.0;
+            for m in Material::ALL {
+                bonus.add(m, (run.carried.get(m) as f32 * k).round() as u32);
+            }
+            if let Some(s) = mission.contract.secondary
+                && mission.secondary.is_some_and(|p| p.done)
+            {
+                bonus.add_all(s.info().reward);
+            }
+            if mission.primary.done
+                && mission.hazard >= self.profile.hazard_unlocked
+                && self.profile.hazard_unlocked < crate::mission::MAX_HAZARD
+                && !run.tutorial
+            {
+                self.profile.hazard_unlocked += 1;
+                unlocked = Some(self.profile.hazard_unlocked);
+            }
+        }
+        let stats = &mut self.profile.stats;
         let (banked, lost) = if extracted {
             stats.extractions += 1;
-            stats.materials_banked += run.carried.total();
-            self.profile.materials.add_all(run.carried);
-            (run.carried, Materials::default())
+            let mut haul = run.carried;
+            haul.add_all(bonus);
+            stats.materials_banked += haul.total();
+            self.profile.materials.add_all(haul);
+            (haul, Materials::default())
         } else {
             if outcome == RunOutcome::Died {
                 stats.deaths += 1;
@@ -464,7 +548,16 @@ impl Game {
             class_xp,
             class_levels,
             threat: run.threat_level(),
+            contract: run.mission.contract,
+            hazard: run.mission.hazard,
+            primary_done: run.mission.primary.done,
+            secondary_done: run.mission.secondary.map(|p| p.done),
+            bonus,
+            unlocked,
         };
+        if let Some(planet) = self.profile.orbiting {
+            self.profile.board = crate::mission::board(&mut self.rng, planet);
+        }
         self.phase = Phase::Ship;
         self.ship.place_at_drop_bay();
         self.terminal = Some(Terminal::Debrief(summary));
@@ -520,7 +613,7 @@ impl Game {
                 Some(TutorialStep::HoldZone)
             }
             step if (TutorialStep::Mine..TutorialStep::CallPod).contains(&step)
-                && self.run.as_ref().is_some_and(|r| r.objective_done) =>
+                && self.run.as_ref().is_some_and(|r| r.objective_done()) =>
             {
                 Some(TutorialStep::CallPod)
             }
@@ -544,7 +637,7 @@ impl Game {
             TutorialStep::Cache if self.run.as_ref().is_some_and(|r| r.caches_opened > 0) => {
                 Some(TutorialStep::Objective)
             }
-            TutorialStep::Objective if self.run.as_ref().is_some_and(|r| r.objective_done) => {
+            TutorialStep::Objective if self.run.as_ref().is_some_and(|r| r.objective_done()) => {
                 Some(TutorialStep::CallPod)
             }
             TutorialStep::CallPod
@@ -597,7 +690,7 @@ impl Game {
         let (have, need) = self
             .run
             .as_ref()
-            .map_or((0, 0), |r| (r.carried.lumite, r.objective));
+            .map_or((0, 0), |r| (r.carried.lumite, r.mission.primary.need));
         let (title, body) = tutorial.text(have, need)?;
         let station = |kind| self.ship.layout.station(kind).map(|s| s.pos);
         let target = match tutorial.step {
@@ -648,7 +741,10 @@ impl Game {
         };
         Some(match station.kind {
             StationKind::DropPod => match self.profile.orbiting {
-                Some(p) => format!("{{interact}} Deploy to {}", p.info().name),
+                Some(p) if self.in_tutorial() => {
+                    format!("{{interact}} Deploy to {}", p.info().name)
+                }
+                Some(p) => format!("{{interact}} Mission board: {}", p.info().name),
                 None => "Drop Pod (no planet in orbit)".into(),
             },
             kind => format!("{{interact}} {}", kind.label()),

@@ -138,9 +138,21 @@ pub struct Terrain {
 }
 
 /// Layout facts the run needs from generation.
+/// Lumite veins every non-tutorial layout guarantees (ore quotas reach 14
+/// at hazard 5).
+pub const MIN_LUMITE: usize = 16;
+
+/// Mission sites every layout provides.
+pub const SITES: usize = 4;
+
 pub struct Layout {
     pub landing: V2,
     pub caches: Vec<V2>,
+    /// Far, spread-out chambers for mission set pieces (boss arena,
+    /// survivor, drill rig, wreck, relays), farthest first.
+    pub sites: Vec<V2>,
+    /// Open floor spots away from the pod, shuffled (glowcaps, parts).
+    pub spots: Vec<V2>,
 }
 
 impl Terrain {
@@ -387,6 +399,47 @@ impl Terrain {
                 };
             }
         }
+        // Mission sites: far, spread-out floor; where the cave does not reach
+        // far enough, carve a chamber for the player to dig through to.
+        let mut sites: Vec<(i32, i32)> = Vec::new();
+        {
+            let far = |x: i32, y: i32| ((x - lx).pow(2) + (y - ly).pow(2)) as f32;
+            let mut floor: Vec<(i32, i32)> = (2..h - 2)
+                .flat_map(|y| (2..w - 2).map(move |x| (x, y)))
+                .filter(|&(x, y)| tiles[idx(x, y)] == Tile::Floor)
+                .collect();
+            floor.sort_by(|a, b| far(b.0, b.1).total_cmp(&far(a.0, a.1)));
+            for (x, y) in floor {
+                if sites.len() >= SITES {
+                    break;
+                }
+                let spread = sites
+                    .iter()
+                    .all(|&(sx, sy)| (sx - x).pow(2) + (sy - y).pow(2) > 14 * 14);
+                if far(x, y) > 22.0 * 22.0 && spread {
+                    sites.push((x, y));
+                }
+            }
+            let mut guard = 0;
+            while sites.len() < SITES && guard < 2000 {
+                guard += 1;
+                let x = 5 + rng.range_usize(0..(w - 10) as usize) as i32;
+                let y = 5 + rng.range_usize(0..(h - 10) as usize) as i32;
+                let spread = sites
+                    .iter()
+                    .all(|&(sx, sy)| (sx - x).pow(2) + (sy - y).pow(2) > 12 * 12);
+                if far(x, y) > 20.0 * 20.0 && spread {
+                    for cy in y - 2..=y + 2 {
+                        for cx in x - 2..=x + 2 {
+                            if (cx - x).pow(2) + (cy - y).pow(2) <= 5 {
+                                tiles[idx(cx, cy)] = Tile::Floor;
+                            }
+                        }
+                    }
+                    sites.push((x, y));
+                }
+            }
+        }
         // Ore veins on walls that touch open floor, seeded and grown into clusters.
         let exposed = |tiles: &Vec<Tile>, x: i32, y: i32| {
             [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dy)| {
@@ -467,7 +520,8 @@ impl Terrain {
                 }
             }
         };
-        let objective = if tutorial { 4 } else { info.objective as usize };
+        // Enough lumite for the largest ore quota, with room to spare.
+        let objective = if tutorial { 4 } else { MIN_LUMITE };
         ensure(&mut tiles, &mut rng, Material::Lumite, 3, Some((lx, ly, 7)));
         ensure(
             &mut tiles,
@@ -516,6 +570,12 @@ impl Terrain {
             let j = rng.range_usize(0..i + 1);
             candidates.swap(i, j);
         }
+        let spots: Vec<V2> = candidates
+            .iter()
+            .copied()
+            .filter(|c| c.distance(landing) > 8.0)
+            .take(120)
+            .collect();
         if let Some(near) = candidates
             .iter()
             .copied()
@@ -548,7 +608,15 @@ impl Terrain {
                 chunk_revisions,
                 nav_dirty: Vec::new(),
             },
-            Layout { landing, caches },
+            Layout {
+                landing,
+                caches,
+                sites: sites
+                    .into_iter()
+                    .map(|(x, y)| Self::center_of(x, y))
+                    .collect(),
+                spots,
+            },
         )
     }
 }
@@ -653,7 +721,7 @@ mod tests {
             let (b, _) = Terrain::generate(planet, 42, false);
             assert!(a.tiles().eq(b.tiles()));
             assert!(!a.solid_at(layout.landing));
-            assert!(a.count_ore(Material::Lumite) >= planet.info().objective as usize);
+            assert!(a.count_ore(Material::Lumite) >= MIN_LUMITE);
             assert!(!layout.caches.is_empty());
             for cache in &layout.caches {
                 assert!(!a.solid_at(*cache));

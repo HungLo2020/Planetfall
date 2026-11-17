@@ -14,6 +14,8 @@ impl Run {
     pub(super) fn update_enemies(&mut self, events: &mut Vec<GameEvent>) {
         let player_radius = content().tuning.player.radius;
         let mut melee = vec![0.0f32; self.players.len()];
+        let extra = self.mission_targets();
+        let mut aux_hits: Vec<(V2, f32)> = Vec::new();
         let mut detonate = Vec::new();
         let barriers: Vec<V2> = self
             .deployables
@@ -29,7 +31,15 @@ impl Run {
             let Some(target) = self.nearest_player(e.pos) else {
                 continue;
             };
-            let player = self.players[target].pos;
+            // A survivor or a running drill rig draws the horde too.
+            let mut player = self.players[target].pos;
+            let mut aux = None;
+            for (pos, _) in &extra {
+                if pos.distance(e.pos) < player.distance(e.pos) {
+                    player = *pos;
+                    aux = Some(*pos);
+                }
+            }
             let info = e.kind.info();
             let to_player = player - e.pos;
             let dist = to_player.length();
@@ -120,7 +130,11 @@ impl Run {
                     } else {
                         1.0
                     };
-                    melee[target] += info.damage * frenzy * self.damage_scale();
+                    let hit = info.damage * frenzy * self.damage_scale();
+                    match aux {
+                        Some(at) => aux_hits.push((at, hit)),
+                        None => melee[target] += hit,
+                    }
                 }
             }
         }
@@ -128,6 +142,9 @@ impl Run {
             if amount > 0.0 {
                 self.hurt_player(player, amount, events);
             }
+        }
+        for (at, amount) in aux_hits {
+            self.hurt_mission_target(at, amount, events);
         }
         for i in detonate {
             self.enemies[i].health = 0.0;
@@ -137,7 +154,9 @@ impl Run {
     /// Enemy damage grows with planet hazard and the threat level.
     pub(super) fn damage_scale(&self) -> f32 {
         let ramp = content().tuning.threat.damage_per_level;
-        (0.75 + 0.25 * self.hazard) * (1.0 + self.threat_curve() * ramp)
+        (0.75 + 0.25 * self.hazard)
+            * (1.0 + self.threat_curve() * ramp)
+            * self.hazard_k(&content().tuning.hazard.enemy_damage)
     }
 
     pub(super) fn remove_dead(&mut self, events: &mut Vec<GameEvent>) {
@@ -155,6 +174,7 @@ impl Run {
                 let e = self.enemies[i];
                 let info = e.kind.info();
                 self.kills += 1;
+                self.mission_kill(&e, events);
                 events.push(GameEvent::EnemyKilled {
                     kind: e.kind,
                     at: e.pos,

@@ -22,17 +22,19 @@ mod abilities;
 mod enemies;
 mod extraction;
 mod loot;
+pub mod mission;
 mod player;
 mod spawner;
 mod weapons;
 
 use crate::content::{
-    ClassId, Element, EnemyId, Material, Materials, ModId, ModStat, Offer, PerkEffect, PlanetId,
-    Rarity, Special, WeaponId, WeaponStats, content, seconds, xp_to_next,
+    ClassId, Element, EnemyId, Material, Materials, ModId, ModStat, MutatorEffect, Offer,
+    PerkEffect, PlanetId, Rarity, Special, WeaponId, WeaponStats, content, seconds, xp_to_next,
 };
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
 use crate::math::V2;
+use crate::mission::Contract;
 use crate::terrain::{FlowField, Terrain};
 use quasar_core::Rng;
 use quasar_sim::{StateHash, StateHasher};
@@ -40,6 +42,7 @@ use quasar_spatial::{GridConfig, SpatialGrid};
 use serde::{Deserialize, Serialize};
 
 pub use extraction::{extraction_hold, extraction_inbound, extraction_radius};
+pub use mission::{MissionState, Progress, Relay, Rig, Survivor};
 
 /// What one player brings to a drop: their class, its tiers and the weapon
 /// they start with.
@@ -67,6 +70,10 @@ pub struct RunConfig {
     pub planet: PlanetId,
     pub seed: u64,
     pub tutorial: bool,
+    /// The contract taken (its planet should match `planet`).
+    pub contract: Contract,
+    /// Hazard level 1 to 5.
+    pub hazard: u8,
     /// One per player (co-op ready; the game has one today).
     pub players: Vec<Loadout>,
     pub max_health: f32,
@@ -261,6 +268,14 @@ impl Player {
         for effect in &class.info().passive.effects {
             let amount = effect.amount + effect.per_tier * f32::from(tier - 1);
             player.apply(effect.effect, amount);
+        }
+        // Mutators that change the player.
+        let contract = &config.contract;
+        if let Some(k) = contract.has_mutator(MutatorEffect::LowGravity) {
+            player.move_speed *= k;
+        }
+        if let Some(k) = contract.has_mutator(MutatorEffect::GlassCannon) {
+            player.damage_multiplier *= k;
         }
         player.max_health = player.max_health.max(1.0);
         player.health = player.max_health;
@@ -683,8 +698,10 @@ pub struct Run {
     pub pickups: Vec<Pickup>,
     pub caches: Vec<Cache>,
     pub carried: Materials,
-    pub objective: u32,
-    pub objective_done: bool,
+    /// The contract and its objectives.
+    pub mission: MissionState,
+    /// Far chambers from the layout (mission set pieces).
+    pub sites: Vec<V2>,
     pub extraction: Extraction,
     pub ticks: u32,
     pub kills: u32,
@@ -716,12 +733,12 @@ impl Run {
         let (terrain, layout) = Terrain::generate(config.planet, config.seed, config.tutorial);
         let flow = FlowField::new(&terrain, layout.landing);
         let info = config.planet.info();
-        let tuning = &content().tuning;
-        let objective = if config.tutorial {
-            tuning.tutorial.objective
-        } else {
-            info.objective
-        };
+        let mut rng = Rng::seed_from_u64(config.seed ^ 0xA5A5_5A5A);
+        let mut mission =
+            MissionState::new(config.contract, config.hazard, &layout, &terrain, &mut rng);
+        if config.tutorial {
+            mission.primary.need = content().tuning.tutorial.objective;
+        }
         Self {
             planet: config.planet,
             tutorial: config.tutorial,
@@ -756,8 +773,8 @@ impl Run {
                 })
                 .collect(),
             carried: Materials::default(),
-            objective,
-            objective_done: false,
+            mission,
+            sites: layout.sites.clone(),
             extraction: Extraction::Idle,
             ticks: 0,
             kills: 0,
@@ -775,7 +792,7 @@ impl Run {
             spawn_timer: 0.0,
             hold_carry: 0.0,
             next_id: 1,
-            rng: Rng::seed_from_u64(config.seed ^ 0xA5A5_5A5A),
+            rng,
             index: spatial_index(),
             scratch: Vec::new(),
             terrain,
@@ -904,13 +921,10 @@ impl Run {
         self.update_caches(events);
         self.update_threat(events);
         self.update_spawner(events);
+        self.update_mission(events);
         let call = inputs.iter().any(|i| i.call_extraction);
         self.update_extraction(call, events);
         self.update_effects();
-        if !self.objective_done && self.carried.lumite >= self.objective {
-            self.objective_done = true;
-            events.push(GameEvent::ObjectiveComplete);
-        }
         for (i, p) in self.players.iter_mut().enumerate() {
             if !p.down && p.health <= 0.0 {
                 p.health = 0.0;

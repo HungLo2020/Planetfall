@@ -1,0 +1,53 @@
+# Mutators: optional twists on a contract that pay extra. `effect` is a
+# code archetype:
+#   rich_veins    ore drops ×(amount)
+#   double_swarm  spawn pressure ×(amount)
+#   no_regen      no health regeneration of any kind
+#   low_gravity   movement speed ×(amount), dash goes further
+#   glass_cannon  you deal and take ×(amount) damage
+# reward: extra share of banked materials on extraction (0.3 = +30%).
+
+[[mutator]]
+id = "rich-veins"
+name = "Rich Veins"
+description = "Every vein gives half again as much ore."
+effect = "rich_veins"
+amount = 1.5
+reward = 0.0
+weight = 2
+
+[[mutator]]
+id = "double-swarm"
+name = "Double Swarm"
+description = "Twice the horde. Pays 50% more."
+effect = "double_swarm"
+amount = 2.0
+reward = 0.5
+weight = 2
+
+[[mutator]]
+id = "no-regen"
+name = "Haemophilia"
+description = "No health regeneration. Pays 25% more."
+effect = "no_regen"
+amount = 0.0
+reward = 0.25
+weight = 1
+
+[[mutator]]
+id = "low-gravity"
+name = "Low Gravity"
+description = "Move a quarter faster and dash further."
+effect = "low_gravity"
+amount = 1.25
+reward = 0.0
+weight = 1
+
+[[mutator]]
+id = "glass-cannon"
+name = "Glass Cannon"
+description = "Deal and take 50% more damage. Pays 30% more."
+effect = "glass_cannon"
+amount = 1.5
+reward = 0.3
+weight = 1

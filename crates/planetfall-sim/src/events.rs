@@ -83,6 +83,19 @@ pub enum GameEvent {
     RareUpgrade {
         rarity: Rarity,
     },
+    /// A mission objective moved forward (parts found, ...).
+    ObjectiveProgress,
+    /// The optional secondary objective is done.
+    SecondaryComplete,
+    BossAwakened {
+        at: V2,
+    },
+    SurvivorFound,
+    SurvivorDown,
+    RigStarted {
+        at: V2,
+    },
+    RigBroken,
     /// The threat level rose.
     ThreatRose {
         level: u32,

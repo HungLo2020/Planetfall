@@ -231,6 +231,12 @@ impl Audio {
                     self.play(clip, 0.7, None, 0);
                 }
                 GameEvent::SurgeWarning { .. } => self.play("alarm", 0.6, None, 0),
+                GameEvent::ObjectiveProgress => self.play("pickup_material", 0.6, None, 2),
+                GameEvent::SecondaryComplete => self.play("console", 0.8, None, 0),
+                GameEvent::BossAwakened { at } => self.play("brute_roar", 1.0, Some(at), 0),
+                GameEvent::SurvivorFound => self.play("ui_confirm", 0.8, None, 0),
+                GameEvent::SurvivorDown | GameEvent::RigBroken => self.play("alarm", 0.6, None, 0),
+                GameEvent::RigStarted { at } => self.play("construct", 0.8, Some(at), 0),
                 GameEvent::SurgeStarted { .. } => self.play("brute_roar", 0.8, None, 0),
                 GameEvent::ThreatRose { .. } => self.play("ui_deny", 0.4, None, 0),
                 // Statuses are visual (particles and tints).

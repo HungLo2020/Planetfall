@@ -51,8 +51,6 @@ pub struct PlanetDef {
     pub nav_level: u8,
     /// Multiplier on enemy health, damage and spawn pressure.
     pub hazard: f32,
-    /// Lumite needed to complete the drop objective.
-    pub objective: u32,
     pub ore: OreChances,
     /// Enemy spawn weight multipliers by enemy id.
     #[serde(default)]
@@ -323,6 +321,106 @@ pub struct EnemyDef {
     pub spawn: Spawn,
     #[serde(default)]
     pub drops: Vec<Drop>,
+    /// Placed by objectives only, with a big health bar.
+    #[serde(default)]
+    pub boss: bool,
+    /// Model size.
+    #[serde(default = "one")]
+    pub scale: f32,
+}
+
+/// Whether an objective is the contract's main goal or an optional extra.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectiveRole {
+    Primary,
+    Secondary,
+}
+
+/// Objective archetypes (see `objectives.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectiveKind {
+    OreQuota,
+    Boss,
+    Rescue,
+    Defend,
+    Salvage,
+    Hunt,
+    Glowcaps,
+    Cull,
+    Scan,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObjectiveDef {
+    pub id: String,
+    pub role: ObjectiveRole,
+    pub kind: ObjectiveKind,
+    pub name: String,
+    /// `{count}` is replaced with the target at the contract's hazard.
+    pub description: String,
+    pub count: u32,
+    /// Added per hazard level above 1.
+    #[serde(default)]
+    pub per_hazard: u32,
+    /// The boss, hunted elite or culled enemy (id).
+    #[serde(default)]
+    pub enemy: Option<String>,
+    /// Planets it appears on (ids; empty: all).
+    #[serde(default)]
+    pub planets: Vec<String>,
+    pub weight: u32,
+    /// Bonus materials when the drop extracts with it done.
+    #[serde(default)]
+    pub reward: Materials,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiteDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub weight: u32,
+    #[serde(default)]
+    pub planets: Vec<String>,
+    #[serde(default = "one")]
+    pub ore: f32,
+    #[serde(default = "one")]
+    pub enemy_health: f32,
+    #[serde(default = "one")]
+    pub spawn: f32,
+    #[serde(default = "one")]
+    pub threat: f32,
+    #[serde(default)]
+    pub spawn_weights: BTreeMap<String, f32>,
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
+}
+
+/// Mutator archetypes (see `mutators.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MutatorEffect {
+    RichVeins,
+    DoubleSwarm,
+    NoRegen,
+    LowGravity,
+    GlassCannon,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MutatorDef {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub effect: MutatorEffect,
+    pub amount: f32,
+    pub reward: f32,
+    pub weight: u32,
 }
 
 /// A stat a perk or class passive changes. Multiplicative effects
@@ -542,6 +640,8 @@ pub struct Tuning {
     pub xp: XpTuning,
     pub horde: HordeTuning,
     pub threat: ThreatTuning,
+    pub hazard: HazardTuning,
+    pub missions: MissionTuning,
     pub elites: EliteTuning,
     pub class: ClassTuning,
     pub extraction: ExtractionTuning,
@@ -624,6 +724,35 @@ pub struct ThreatTuning {
     pub surge_intensity: f32,
     pub surge_burst: u32,
     pub surge_burst_per_level: u32,
+}
+
+/// Per hazard level 1 to 5.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HazardTuning {
+    pub names: [String; 5],
+    pub enemy_health: [f32; 5],
+    pub enemy_damage: [f32; 5],
+    pub spawn: [f32; 5],
+    pub elites: [f32; 5],
+    pub rarity: [f32; 5],
+    pub reward: [f32; 5],
+    pub class_xp: [f32; 5],
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MissionTuning {
+    pub board: usize,
+    pub secondary_chance: f32,
+    pub mutator_chance: f32,
+    pub scan_seconds: f32,
+    pub revive_seconds: f32,
+    pub rig_start_seconds: f32,
+    pub rig_health: f32,
+    pub survivor_health: f32,
+    pub primary_class_xp: u32,
+    pub secondary_class_xp: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

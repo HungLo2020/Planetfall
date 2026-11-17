@@ -60,6 +60,10 @@ Rebind keys and buttons under Settings → Controls.
 - **Three planets**: Verdant-7, Cinder Reach and Hollow Frost, each with its own
   palette, ore mix, hazard level and objective; later worlds unlock with the
   Reactor.
+- **Contracts**: a mission board of random contracts per planet: lumite
+  quotas, boss kills, rescues, drill defence, salvage and elite hunts, with
+  optional secondary objectives, site conditions, mutators and hazard levels
+  1 to 5 that unlock as you succeed.
 - **Surface runs**: procedurally generated voxel caves of minable blocks; ferrite,
   lumite and voidstone ore; four enemy types (husks, skitters, bloaters, brutes)
   driven by a flow field; six auto-firing weapons in four slots (new picks at

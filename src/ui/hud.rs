@@ -3,7 +3,8 @@
 use super::Layer;
 use super::{Builder, format_materials};
 use crate::bindings::Prompts;
-use planetfall_sim::content::{Material, content};
+use planetfall_sim::content::{Material, ObjectiveKind, content};
+use planetfall_sim::mission::hazard_name;
 use planetfall_sim::run::{Extraction, Run, extraction_hold};
 use planetfall_sim::{Game, Phase};
 use quasar_ui::{
@@ -135,12 +136,8 @@ pub fn build(cx: &HudContext) -> Layer {
                     b.label(cargo, format!("{:<10} {}", m.name(), n), TextStyle::Body);
                 }
             }
-            let objective = if !run.objective_done {
-                format!(
-                    "OBJECTIVE  Mine lumite {} / {}",
-                    run.carried.lumite.min(run.objective),
-                    run.objective
-                )
+            let objective = if !run.objective_done() {
+                format!("OBJECTIVE  {}", primary_status(run))
             } else {
                 match run.extraction {
                     Extraction::Idle => text("OBJECTIVE COMPLETE  ·  {extract} call extraction"),
@@ -154,6 +151,48 @@ pub fn build(cx: &HudContext) -> Layer {
                 }
             };
             b.paragraph(cargo, &objective, TextStyle::Body);
+            let m = &run.mission;
+            if let (Some(secondary), Some(progress)) = (m.contract.secondary, m.secondary) {
+                let line = if progress.done {
+                    format!("OPTIONAL  {} ✓", secondary.name())
+                } else {
+                    format!(
+                        "OPTIONAL  {}  {} / {}",
+                        secondary.name(),
+                        progress.count,
+                        progress.need
+                    )
+                };
+                b.label(cargo, line, TextStyle::Small);
+            }
+            if !run.tutorial {
+                let mut tags = format!(
+                    "Hazard {} {}  ·  {}",
+                    m.hazard,
+                    hazard_name(m.hazard),
+                    m.contract.site.name()
+                );
+                if let Some(mutator) = m.contract.mutator {
+                    tags.push_str(&format!("  ·  {}", mutator.name()));
+                }
+                b.label(cargo, tags, TextStyle::Small);
+            }
+            // A boss or hunted elite gets a health bar of its own.
+            if let Some(e) = m
+                .target
+                .and_then(|id| run.enemies.iter().find(|e| e.id == id))
+            {
+                let bar = b.card(
+                    root,
+                    LayoutItem::size(Length::fixed(460.0), Length::Auto)
+                        .with_anchor(Anchor::Bottom)
+                        .with_offset(Vec2::new(0.0, -120.0)),
+                    3.0,
+                    8.0,
+                );
+                b.label(bar, e.kind.info().name.to_uppercase(), TextStyle::Small);
+                b.progress(bar, "", e.health.max(0.0), e.max_health);
+            }
             // Threat: the level, progress to the next, and surge warnings.
             if !run.tutorial {
                 let level = run.threat_level();
@@ -272,6 +311,44 @@ pub fn build(cx: &HudContext) -> Layer {
         }
     }
     b.finish_laid_out(cx.size, cx.scale, cx.measure)
+}
+
+/// The primary objective's progress in words.
+fn primary_status(run: &Run) -> String {
+    let m = &run.mission;
+    let name = m.contract.primary.name();
+    let p = m.primary;
+    match m.primary_kind() {
+        ObjectiveKind::OreQuota => format!("Mine lumite {} / {}", p.count, p.need),
+        ObjectiveKind::Boss | ObjectiveKind::Hunt => {
+            match m
+                .target
+                .and_then(|id| run.enemies.iter().find(|e| e.id == id))
+            {
+                Some(e) => format!(
+                    "{name}  ·  {:.0}%",
+                    100.0 * e.health.max(0.0) / e.max_health.max(1.0)
+                ),
+                None => format!("{name}  ·  find it"),
+            }
+        }
+        ObjectiveKind::Rescue => match m.survivor {
+            Some(s) if s.down => "Survivor down! Stand close to revive".into(),
+            Some(s) if s.following => "Escort the survivor to the pod".into(),
+            _ => "Find the stranded survivor".into(),
+        },
+        ObjectiveKind::Defend => match m.rig {
+            Some(r) if !r.active => "Stand at the drill rig to start it".into(),
+            Some(r) if r.broken() => "The rig is down! Stand close to repair".into(),
+            Some(r) => format!(
+                "Drilling  {}%  ·  rig {:.0}%",
+                r.drilled * 100 / r.need.max(1),
+                100.0 * r.health / r.max_health.max(1.0)
+            ),
+            None => name.into(),
+        },
+        _ => format!("{name}  {} / {}", p.count, p.need),
+    }
 }
 
 /// Time until the next threat level at the current rate ("38s").

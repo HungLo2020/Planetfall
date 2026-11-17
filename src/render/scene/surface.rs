@@ -15,7 +15,15 @@ pub fn surface<'a>(
     run: &Run,
     view_center: V2,
 ) -> SceneOutput<'a> {
-    let palette: Palette = run.planet.info().palette;
+    let mut palette: Palette = run.planet.info().palette;
+    // The site condition tints the light and fog (a hot core, frost).
+    if let Some(t) = run.mission.contract.site.info().tint {
+        for (c, k) in t.iter().enumerate() {
+            palette.sun[c] *= k;
+            palette.ambient[c] *= k;
+            palette.sky[c] *= k;
+        }
+    }
     let time = p.time;
     p.lights.push(sun(SUN_DIRECTION, palette.sun, 0.85));
     let wide = !matches!(game.phase, Phase::Surface | Phase::Lost { .. });
@@ -31,6 +39,7 @@ pub fn surface<'a>(
         }
     }
     deployables(p, run);
+    mission(p, run);
     projectiles(p, run);
     effects(p, run);
     objective_markers(p, game, run);
@@ -113,6 +122,128 @@ fn player(p: &mut Painter<'_, '_>, game: &Game, run: &Run, index: usize, pl: &Pl
                 Mat4::IDENTITY
             }
         });
+    }
+}
+
+/// Contract set pieces: survivor, drill rig, wreck and parts, glowcaps,
+/// relays and the boss arena, with beacons on what still needs doing.
+fn mission(p: &mut Painter<'_, '_>, run: &Run) {
+    let time = p.time;
+    let m = &run.mission;
+    let beacon = |p: &mut Painter<'_, '_>, at_: V2, color: [f32; 3]| {
+        let pulse = 0.25 + 0.1 * (time * 3.0).sin();
+        p.ghost(at(at_, 3.0) * s(0.06, 3.0, 0.06), color, pulse);
+    };
+    if let Some(sv) = m.survivor
+        && !sv.boarded
+    {
+        let flash = if sv.hurt_ticks > 0 { 0.6 } else { 0.0 };
+        let root = if sv.down {
+            at(sv.pos, 0.0) * Mat4::rotation_y(sv.yaw) * Mat4::rotation_x(1.45)
+        } else {
+            at(sv.pos, 0.0) * Mat4::rotation_y(sv.yaw)
+        };
+        let layers = [if sv.moving {
+            Layer::full("walk", sv.walk)
+        } else {
+            Layer::full("idle", time)
+        }];
+        p.character_tinted(
+            names::ASTRONAUT,
+            root,
+            &layers,
+            flash,
+            Some(outline::PLAYER),
+            [0.55, 0.55, 0.6],
+            [1.0, 0.8, 0.3],
+        );
+        if !sv.following || sv.down {
+            beacon(p, sv.pos, [1.0, 0.85, 0.3]);
+        }
+    }
+    if let Some(rig) = m.rig {
+        let spin = if rig.active && !rig.broken() && !m.primary.done {
+            time * 9.0
+        } else {
+            0.0
+        };
+        p.rig(names::DRILL_RIG, at(rig.pos, 0.0), 0.0, |n| {
+            if n == "bit" {
+                rot_z(spin)
+            } else {
+                Mat4::IDENTITY
+            }
+        });
+        let k = rig.drilled as f32 / rig.need.max(1) as f32;
+        let color = if rig.broken() {
+            [1.0, 0.25, 0.15]
+        } else {
+            [0.4, 1.0, 0.6]
+        };
+        // A ring that fills as it drills.
+        let segments = 24;
+        for i in 0..segments {
+            if i as f32 / segments as f32 > k && rig.active {
+                continue;
+            }
+            let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+            let q = rig.pos + V2::new(a.sin(), a.cos()) * 2.0;
+            p.glow(at(q, 0.08) * s(0.12, 0.04, 0.12), color);
+        }
+        if !m.primary.done {
+            beacon(p, rig.pos, color);
+        }
+        if rig.active && !rig.broken() && !m.primary.done {
+            p.point([rig.pos[0], 1.5, rig.pos[1]], [0.5, 1.0, 0.6], 1.5, 6.0);
+        }
+    }
+    if let Some(wreck) = m.wreck {
+        p.model(
+            names::SHIP_EXTERIOR,
+            at(wreck, 0.3) * Mat4::rotation_y(0.6) * rot_z(0.35) * s(0.9, 0.9, 0.9),
+        );
+        p.point([wreck[0], 1.0, wreck[1]], [1.0, 0.5, 0.2], 1.2, 7.0);
+    }
+    for (i, part) in m.parts.iter().enumerate() {
+        let bob = (time * 2.0 + i as f32).sin() * 0.08;
+        p.model(
+            names::CRATE_MEDIUM,
+            at(*part, 0.1 + bob) * Mat4::rotation_y(time + i as f32) * s(0.6, 0.6, 0.6),
+        );
+        p.glow(at(*part, 0.9 + bob) * s(0.06, 0.06, 0.06), [1.0, 0.6, 0.2]);
+    }
+    for (i, cap) in m.glowcaps.iter().enumerate() {
+        let pulse = 1.0 + 0.1 * (time * 2.5 + i as f32).sin();
+        p.model(
+            names::GLOWCAP,
+            at(*cap, 0.0) * Mat4::rotation_y(i as f32) * s(pulse, pulse, pulse),
+        );
+    }
+    for relay in &m.relays {
+        p.rig(names::BEACON, at(relay.pos, 0.0), 0.0, |_| Mat4::IDENTITY);
+        let color = if relay.done {
+            [0.4, 1.0, 0.5]
+        } else {
+            [0.4, 0.8, 1.0]
+        };
+        if !relay.done {
+            // The scan ring fills while someone stands close.
+            let segments = 16;
+            for i in 0..segments {
+                if i as f32 / segments as f32 > relay.scan {
+                    break;
+                }
+                let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+                let q = relay.pos + V2::new(a.sin(), a.cos()) * 1.6;
+                p.glow(at(q, 0.06) * s(0.08, 0.03, 0.08), color);
+            }
+            beacon(p, relay.pos, color);
+        }
+    }
+    if let Some(arena) = m.arena
+        && m.target.is_none()
+    {
+        beacon(p, arena, [1.0, 0.3, 0.2]);
     }
 }
 

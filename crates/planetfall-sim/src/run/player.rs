@@ -1,7 +1,7 @@
 //! Players: movement, dash, damage taken and auto-mining.
 
 use super::{Mining, PickupKind, Run};
-use crate::content::{DT, Material, content};
+use crate::content::{DT, Material, MutatorEffect, content};
 use crate::events::GameEvent;
 use crate::input::GameInput;
 use crate::math;
@@ -46,9 +46,17 @@ impl Run {
             p.invulnerable_ticks = p.invulnerable_ticks.max(tuning.dash_ticks + 4);
             events.push(GameEvent::Dashed);
         }
+        let contract = self.mission.contract;
+        let p = &mut self.players[i];
+        let dash_speed = tuning.dash_speed
+            * if contract.has_mutator(MutatorEffect::LowGravity).is_some() {
+                1.3
+            } else {
+                1.0
+            };
         let velocity = if p.dash_ticks > 0 {
             p.dash_ticks -= 1;
-            p.dash_dir * tuning.dash_speed
+            p.dash_dir * dash_speed
         } else {
             movement * p.move_speed
         };
@@ -61,7 +69,7 @@ impl Run {
             p.yaw = math::turn_toward(p.yaw, math::yaw_of(movement), 0.35);
             p.walk += velocity.length() * DT * 1.6;
         }
-        if p.regeneration > 0.0 {
+        if p.regeneration > 0.0 && contract.has_mutator(MutatorEffect::NoRegen).is_none() {
             p.health = (p.health + p.regeneration * DT).min(p.max_health);
         }
         // Auto-mine the block the player is pushing into.
@@ -139,8 +147,17 @@ impl Run {
             Some(Material::Voidstone) => &[(Material::Voidstone, 1)],
             None => &[],
         };
+        // Site and mutator ore multipliers (fractions roll for one more).
+        let k = self.ore_multiplier();
         for &(m, amount) in drops {
-            self.drop_pickup(PickupKind::Material(m, amount), at);
+            let scaled = amount as f32 * k;
+            let mut n = scaled.floor() as u32;
+            if self.rng.chance(f64::from(scaled.fract())) {
+                n += 1;
+            }
+            if n > 0 {
+                self.drop_pickup(PickupKind::Material(m, n), at);
+            }
         }
         let bonus = self.players[i].ore_bonus;
         if let Some(m) = material
@@ -156,6 +173,12 @@ impl Run {
     }
 
     pub(super) fn hurt_player(&mut self, i: usize, amount: f32, events: &mut Vec<GameEvent>) {
+        let amount = amount
+            * self
+                .mission
+                .contract
+                .has_mutator(MutatorEffect::GlassCannon)
+                .unwrap_or(1.0);
         let p = &mut self.players[i];
         if self.invulnerable || p.down || p.invulnerable_ticks > 0 || amount <= 0.0 {
             return;

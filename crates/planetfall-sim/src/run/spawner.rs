@@ -3,7 +3,7 @@
 //! `spawn` rule in `enemies.toml`, scaled by the planet's `spawn_weights`).
 
 use super::{Affix, Enemy, Extraction, Run};
-use crate::content::{DT, EnemyId, content, seconds};
+use crate::content::{DT, EnemyId, MutatorEffect, content, seconds};
 use crate::events::GameEvent;
 use crate::math::V2;
 use crate::terrain::Terrain;
@@ -21,8 +21,10 @@ impl Run {
         } else {
             t.extraction_rate
         };
-        // Planet hazard already makes enemies tougher; the clock is the same.
-        self.threat += t.per_minute * rate * DT / 60.0;
+        // Planet hazard already makes enemies tougher; the clock is the same
+        // (sites can speed it up).
+        let site = self.mission.contract.site.info().threat;
+        self.threat += t.per_minute * rate * site * DT / 60.0;
         let level = self.threat_level();
         if level > before {
             events.push(GameEvent::ThreatRose { level });
@@ -59,17 +61,23 @@ impl Run {
         if !matches!(self.extraction, Extraction::Idle) {
             k *= tuning.threat.extraction_intensity;
         }
-        k
+        // Contract: hazard level, site and the double-swarm mutator.
+        let c = &self.mission.contract;
+        k * self.hazard_k(&tuning.hazard.spawn)
+            * c.site.info().spawn
+            * c.has_mutator(MutatorEffect::DoubleSwarm).unwrap_or(1.0)
     }
 
     /// Enemies allowed to spawn right now, with their planet-scaled weights.
     pub(super) fn spawn_table(&self) -> Vec<(EnemyId, f32)> {
         let planet = self.planet.info();
+        let site = self.mission.contract.site.info();
         EnemyId::all()
             .filter_map(|id| {
                 let rule = id.info().spawn;
                 let allowed = self.threat >= rule.threat && (rule.tutorial || !self.tutorial);
-                let scale = planet.spawn_weights.get(id.key()).copied().unwrap_or(1.0);
+                let scale = planet.spawn_weights.get(id.key()).copied().unwrap_or(1.0)
+                    * site.spawn_weights.get(id.key()).copied().unwrap_or(1.0);
                 let weight = rule.weight * scale;
                 (allowed && weight > 0.0).then_some((id, weight))
             })
@@ -146,11 +154,14 @@ impl Run {
         let tuning = &content().tuning;
         let health = kind.info().health
             * (1.0 + self.threat_curve() * tuning.threat.health_per_level)
-            * (0.6 + 0.4 * self.hazard);
+            * (0.6 + 0.4 * self.hazard)
+            * self.hazard_k(&tuning.hazard.enemy_health)
+            * self.mission.contract.site.info().enemy_health;
         let elite_chance = if self.tutorial {
             0.0
         } else {
             (self.threat * tuning.elites.per_level).min(tuning.elites.max)
+                + self.hazard_k(&tuning.hazard.elites)
         };
         for n in 0..count {
             let jitter = V2::new(self.rng.range_f32(-1.2..1.2), self.rng.range_f32(-1.2..1.2));

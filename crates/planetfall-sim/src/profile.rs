@@ -5,6 +5,7 @@ use crate::content::{
     ClassId, Materials, PlanetId, ShipBlock, UpgradeEffect, UpgradeId, WeaponId, class_level,
     content,
 };
+use crate::mission::{Contract, MAX_HAZARD};
 use crate::run::Loadout;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
@@ -15,7 +16,8 @@ use std::collections::BTreeMap;
 /// - 2: player-built ship blocks (`ship_edits`).
 /// - 3: content as data: upgrades keyed by module id, planets by id.
 /// - 4: crew classes: the active class and a record per class.
-pub const PROFILE_VERSION: u32 = 4;
+/// - 5: missions: unlocked hazard level and the mission board.
+pub const PROFILE_VERSION: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -79,6 +81,30 @@ pub struct Profile {
     /// Progress per class, by id. Classes no longer in the data are dropped.
     #[serde(deserialize_with = "known_classes")]
     pub classes: BTreeMap<ClassId, ClassRecord>,
+    /// Highest hazard level that can be chosen (1 to 5).
+    pub hazard_unlocked: u8,
+    /// The hazard level last chosen on the mission board.
+    pub hazard_choice: u8,
+    /// Contracts on offer for the planet in orbit. Contracts naming
+    /// content that no longer exists are dropped.
+    #[serde(deserialize_with = "known_contracts")]
+    pub board: Vec<Contract>,
+}
+
+fn known_contracts<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Contract>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Maybe {
+        Known(Contract),
+        Unknown(serde::de::IgnoredAny),
+    }
+    Ok(Vec::<Maybe>::deserialize(d)?
+        .into_iter()
+        .filter_map(|m| match m {
+            Maybe::Known(c) => Some(c),
+            Maybe::Unknown(_) => None,
+        })
+        .collect())
 }
 
 fn known_weapon<'de, D: Deserializer<'de>>(d: D) -> Result<Option<WeaponId>, D::Error> {
@@ -130,6 +156,9 @@ impl Default for Profile {
             ship_edits: Vec::new(),
             class: ClassId::starter(),
             classes: BTreeMap::new(),
+            hazard_unlocked: 1,
+            hazard_choice: 1,
+            board: Vec::new(),
         }
     }
 }
@@ -173,6 +202,14 @@ impl Profile {
         self.upgrades.retain(|_, level| *level > 0);
         if self.orbiting.is_some_and(|p| !self.unlocked(p)) {
             self.orbiting = None;
+        }
+        self.hazard_unlocked = self.hazard_unlocked.clamp(1, MAX_HAZARD);
+        self.hazard_choice = self.hazard_choice.clamp(1, self.hazard_unlocked);
+        if self
+            .orbiting
+            .is_none_or(|p| self.board.iter().any(|c| c.planet != p))
+        {
+            self.board.clear();
         }
         Ok(self)
     }
@@ -353,6 +390,9 @@ impl LegacyProfile {
             },
             class: ClassId::starter(),
             classes: BTreeMap::new(),
+            hazard_unlocked: 1,
+            hazard_choice: 1,
+            board: Vec::new(),
         }
         .migrate()
     }
