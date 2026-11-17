@@ -452,6 +452,40 @@ pub struct Deployable {
 /// Radius of a barrier post (enemies are pushed out of it).
 pub const BARRIER_RADIUS: f32 = 0.55;
 
+/// What makes an elite enemy dangerous.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Affix {
+    /// Much more health.
+    Armored,
+    /// Faster.
+    Swift,
+    /// Hits much harder.
+    Frenzied,
+}
+
+impl Affix {
+    pub const ALL: [Self; 3] = [Self::Armored, Self::Swift, Self::Frenzied];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Armored => "Armored",
+            Self::Swift => "Swift",
+            Self::Frenzied => "Frenzied",
+        }
+    }
+}
+
+/// Surge waves: warned, then a burst and a spell of heavy pressure.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Surge {
+    /// The threat level that triggers the next surge.
+    pub next: u32,
+    /// Ticks until a warned surge arrives (0: none pending).
+    pub warning: u32,
+    /// Ticks of surge pressure left.
+    pub active: u32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Enemy {
     pub id: u32,
@@ -476,6 +510,15 @@ pub struct Enemy {
     /// Builds up from cold hits (0..1); at 1 the enemy freezes.
     pub chill: f32,
     pub frozen: u32,
+    /// Elites carry an affix, glow and are worth more.
+    pub elite: Option<Affix>,
+}
+
+impl Enemy {
+    /// Heavy enemies take the Striker's bonus: brutes and every elite.
+    pub fn heavy(&self) -> bool {
+        self.elite.is_some() || self.kind.info().health >= weapons::HEAVY_HEALTH
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -653,6 +696,9 @@ pub struct Run {
     pub caches_opened: u32,
     pub blocks_mined: u32,
     hazard: f32,
+    /// Rises all drop long; see [`Run::threat_level`].
+    pub threat: f32,
+    pub surge: Surge,
     spawn_timer: f32,
     /// Fractional extraction progress from extraction-speed bonuses.
     hold_carry: f32,
@@ -721,6 +767,11 @@ impl Run {
             caches_opened: 0,
             blocks_mined: 0,
             hazard: info.hazard,
+            threat: 0.0,
+            surge: Surge {
+                next: content().tuning.threat.surge_every.max(1),
+                ..Surge::default()
+            },
             spawn_timer: 0.0,
             hold_carry: 0.0,
             next_id: 1,
@@ -733,6 +784,16 @@ impl Run {
 
     pub fn minutes(&self) -> f32 {
         self.ticks as f32 / 3600.0
+    }
+
+    /// The whole threat level (0, 1, 2, ...).
+    pub fn threat_level(&self) -> u32 {
+        self.threat.max(0.0) as u32
+    }
+
+    /// Threat shaped by `tuning.threat.curve` (for enemy health and damage).
+    pub(super) fn threat_curve(&self) -> f32 {
+        self.threat.max(0.0).powf(content().tuning.threat.curve)
     }
 
     /// The local player (index 0).
@@ -841,7 +902,8 @@ impl Run {
         self.remove_dead(events);
         self.update_pickups(events);
         self.update_caches(events);
-        self.update_spawner();
+        self.update_threat(events);
+        self.update_spawner(events);
         let call = inputs.iter().any(|i| i.call_extraction);
         self.update_extraction(call, events);
         self.update_effects();

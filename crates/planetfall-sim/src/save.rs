@@ -16,11 +16,12 @@ use serde::{Deserialize, Serialize};
 /// - 1: first slot format.
 /// - 2: drops hold a list of players with classes and abilities.
 /// - 3: weapon upgrades with rarities, elements and statuses.
+/// - 4: the threat level, surges and elites.
 ///
 /// A drop in progress from an older version cannot be resumed; the app
 /// strips it before parsing ([`SaveGame::strip_stale_run`]) and the slot
 /// resumes on the ship.
-pub const SAVE_VERSION: u32 = 3;
+pub const SAVE_VERSION: u32 = 4;
 /// Selectable save slots.
 pub const SLOTS: usize = 5;
 

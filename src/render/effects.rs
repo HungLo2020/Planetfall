@@ -32,9 +32,11 @@ pub mod outline {
     pub const PLAYER: u8 = 0;
     pub const ENEMY: u8 = 1;
     pub const EXPLODER: u8 = 2;
+    pub const ELITE: u8 = 3;
 
-    /// Only hidden parts are marked: the visible silhouette stays clean.
-    pub fn styles() -> [OutlineStyle; 3] {
+    /// Hidden parts are marked for everyone; elites also get a visible gold
+    /// ring so they stand out in the horde.
+    pub fn styles() -> [OutlineStyle; 4] {
         let hidden = |color: [f32; 3], fill: f32| OutlineStyle {
             outline: [0.0; 4],
             occluded_outline: [color[0], color[1], color[2], 0.9],
@@ -45,6 +47,12 @@ pub mod outline {
             hidden([0.35, 0.85, 1.0], 0.3),
             hidden([1.0, 0.25, 0.2], 0.18),
             hidden([1.0, 0.6, 0.15], 0.22),
+            OutlineStyle {
+                outline: [1.0, 0.78, 0.25, 0.8],
+                occluded_outline: [1.0, 0.78, 0.25, 0.9],
+                occluded_fill: [1.0, 0.78, 0.25, 0.22],
+                width: 2.0,
+            },
         ]
     }
 }
@@ -72,7 +80,7 @@ pub struct Effects {
     dust: ParticleSystem,
     decals: DecalRenderer,
     outlines: OutlineRenderer,
-    styles: [OutlineStyle; 3],
+    styles: [OutlineStyle; 4],
     marks: VecDeque<Mark>,
     /// The drop the marks belong to.
     drop: Option<(PlanetId, u32)>,

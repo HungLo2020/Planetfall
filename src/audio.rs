@@ -230,6 +230,9 @@ impl Audio {
                     };
                     self.play(clip, 0.7, None, 0);
                 }
+                GameEvent::SurgeWarning { .. } => self.play("alarm", 0.6, None, 0),
+                GameEvent::SurgeStarted { .. } => self.play("brute_roar", 0.8, None, 0),
+                GameEvent::ThreatRose { .. } => self.play("ui_deny", 0.4, None, 0),
                 // Statuses are visual (particles and tints).
                 GameEvent::Status { .. } => {}
                 GameEvent::Liftoff => self.play("liftoff", 0.9, None, 0),

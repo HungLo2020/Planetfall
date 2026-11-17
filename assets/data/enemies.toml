@@ -3,9 +3,9 @@
 #
 # behavior: "walker" (steady melee), "lunger" (speeds up when close),
 #           "exploder" (detonates on contact or death).
-# spawn: weight relative to other enemies, group size range, the minute a
-#        drop must reach first, and whether it waits for late game (2.5 min
-#        or extraction) or skips the tutorial. Planets scale weights.
+# spawn: weight relative to other enemies, group size range, the threat
+#        level a drop must reach first (see tuning.toml [threat]), and
+#        whether it appears in the tutorial. Planets scale weights.
 # drops: rolled on death; amount of a material with a chance (1 = always).
 
 [[enemy]]
@@ -54,7 +54,7 @@ model = "bloater"
 blood = [0.6, 0.7, 0.2]
 death_sound = "enemy_die"
 explosion = { radius = 3.0, enemy_damage = 30.0 }
-spawn = { weight = 0.14, count = [1, 2], after_minutes = 1.0 }
+spawn = { weight = 0.14, count = [1, 2], threat = 1.0 }
 
 [[enemy]]
 id = "brute"
@@ -70,7 +70,7 @@ blood = [0.3, 0.5, 0.2]
 death_sound = "enemy_die"
 alert_sound = "brute_roar"
 alert_chance = 0.35
-spawn = { weight = 0.06, count = [1, 1], late = true, tutorial = false }
+spawn = { weight = 0.06, count = [1, 1], threat = 3.0, tutorial = false }
 drops = [
   { material = "voidstone", amount = 1, chance = 1.0 },
   { material = "ferrite", amount = 3, chance = 1.0 },

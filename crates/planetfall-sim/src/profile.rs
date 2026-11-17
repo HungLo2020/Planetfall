@@ -26,6 +26,10 @@ pub struct Stats {
     pub kills: u32,
     pub best_level: u32,
     pub materials_banked: u32,
+    /// Seconds spent on planet surfaces.
+    pub surface_seconds: u32,
+    /// Highest threat level reached.
+    pub best_threat: u32,
 }
 
 /// One class's permanent progress (kept when switching classes).

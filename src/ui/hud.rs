@@ -3,10 +3,12 @@
 use super::Layer;
 use super::{Builder, format_materials};
 use crate::bindings::Prompts;
-use planetfall_sim::content::Material;
-use planetfall_sim::run::{Extraction, extraction_hold};
+use planetfall_sim::content::{Material, content};
+use planetfall_sim::run::{Extraction, Run, extraction_hold};
 use planetfall_sim::{Game, Phase};
-use quasar_ui::{Anchor, Edges, LayoutItem, Length, TextMeasure, TextStyle, Vec2};
+use quasar_ui::{
+    Anchor, Color, Edges, LayoutItem, Length, NodeStyle, TextMeasure, TextStyle, Vec2,
+};
 
 pub struct HudContext<'a> {
     pub game: &'a Game,
@@ -151,7 +153,51 @@ pub fn build(cx: &HudContext) -> Layer {
                     Extraction::Departed { .. } => "EXTRACTED".into(),
                 }
             };
-            b.label(cargo, objective, TextStyle::Body);
+            b.paragraph(cargo, &objective, TextStyle::Body);
+            // Threat: the level, progress to the next, and surge warnings.
+            if !run.tutorial {
+                let level = run.threat_level();
+                b.label(
+                    cargo,
+                    format!("THREAT {level}  ·  next in {}", threat_eta(run)),
+                    TextStyle::Small,
+                );
+                b.progress(cargo, "", run.threat.fract(), 1.0);
+                if run.surge.warning > 0 {
+                    let warn = b.card(
+                        root,
+                        LayoutItem::size(Length::fixed(420.0), Length::Auto)
+                            .with_anchor(Anchor::Top)
+                            .with_offset(Vec2::new(0.0, 16.0)),
+                        2.0,
+                        10.0,
+                    );
+                    let _ = b.ui.set_style(
+                        warn,
+                        Some(
+                            NodeStyle::filled(Color::rgba(60, 8, 8, 220))
+                                .with_border(2.0, Color::rgba(255, 70, 50, 255))
+                                .with_radius(3.0),
+                        ),
+                    );
+                    b.label(
+                        warn,
+                        format!("SURGE INCOMING  ·  {}s", run.surge.warning.div_ceil(60)),
+                        TextStyle::Body,
+                    );
+                    b.label(warn, "A wave is coming from every side.", TextStyle::Small);
+                } else if run.surge.active > 0 {
+                    let warn = b.card(
+                        root,
+                        LayoutItem::size(Length::fixed(300.0), Length::Auto)
+                            .with_anchor(Anchor::Top)
+                            .with_offset(Vec2::new(0.0, 16.0)),
+                        2.0,
+                        8.0,
+                    );
+                    b.label(warn, "SURGE", TextStyle::Body);
+                }
+            }
             if matches!(game.phase, Phase::Lost { .. }) {
                 let lost = b.card(
                     root,
@@ -226,6 +272,18 @@ pub fn build(cx: &HudContext) -> Layer {
         }
     }
     b.finish_laid_out(cx.size, cx.scale, cx.measure)
+}
+
+/// Time until the next threat level at the current rate ("38s").
+fn threat_eta(run: &Run) -> String {
+    let t = &content().tuning.threat;
+    let rate = if matches!(run.extraction, Extraction::Idle) {
+        t.per_minute
+    } else {
+        t.per_minute * t.extraction_rate
+    };
+    let seconds = (1.0 - run.threat.fract()) / rate.max(1e-3) * 60.0;
+    format!("{}s", seconds.ceil() as u32)
 }
 
 pub fn roman(n: u8) -> &'static str {

@@ -54,6 +54,8 @@ pub struct RunSummary {
     pub class: ClassId,
     pub class_xp: u32,
     pub class_levels: (u32, u32),
+    /// Threat level reached.
+    pub threat: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -425,6 +427,8 @@ impl Game {
         let stats = &mut self.profile.stats;
         stats.kills += run.kills;
         stats.best_level = stats.best_level.max(player.level);
+        stats.surface_seconds += run.ticks / 60;
+        stats.best_threat = stats.best_threat.max(run.threat_level());
         let (banked, lost) = if extracted {
             stats.extractions += 1;
             stats.materials_banked += run.carried.total();
@@ -459,6 +463,7 @@ impl Game {
             class,
             class_xp,
             class_levels,
+            threat: run.threat_level(),
         };
         self.phase = Phase::Ship;
         self.ship.place_at_drop_bay();

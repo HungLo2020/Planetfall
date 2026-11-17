@@ -78,7 +78,9 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         } else {
             0.0
         };
-        let root = at(e.pos, rise) * Mat4::rotation_y(e.yaw);
+        // Elites stand a quarter taller.
+        let k = if e.elite.is_some() { 1.25 } else { 1.0 };
+        let root = at(e.pos, rise) * Mat4::rotation_y(e.yaw) * s(k, k, k);
         let mut glow = if e.hit_ticks > 0 {
             e.hit_ticks as f32 / 6.0 * 0.9
         } else {
@@ -103,7 +105,9 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             let danger = (1.0 - (e.pos.distance(run.player().pos) / 5.0)).clamp(0.0, 1.0);
             glow += danger * 0.4 * ((p.time * 14.0).sin() * 0.5 + 0.5);
         }
-        let style = if info.behavior == EnemyBehavior::Exploder {
+        let style = if e.elite.is_some() {
+            outline::ELITE
+        } else if info.behavior == EnemyBehavior::Exploder {
             outline::EXPLODER
         } else {
             outline::ENEMY
@@ -121,15 +125,21 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         if e.burning > 0 {
             glow += 0.25 + 0.15 * (p.time * 18.0 + e.id as f32).sin();
         }
-        p.character_tinted(
-            &info.model,
-            root,
-            &layers,
-            glow,
-            Some(style),
-            tint,
-            [1.0; 3],
-        );
+        // Elite affixes tint the body and light the eyes.
+        let mut eyes = [1.0f32; 3];
+        match e.elite {
+            Some(Affix::Armored) => {
+                tint = [tint[0] * 0.7, tint[1] * 0.75, tint[2] * 0.85];
+                eyes = [1.0, 0.85, 0.3];
+            }
+            Some(Affix::Swift) => eyes = [0.3, 1.0, 1.6],
+            Some(Affix::Frenzied) => {
+                tint = [tint[0] * 1.2, tint[1] * 0.8, tint[2] * 0.75];
+                eyes = [2.0, 0.3, 0.2];
+            }
+            None => {}
+        }
+        p.character_tinted(&info.model, root, &layers, glow, Some(style), tint, eyes);
     }
     for c in &run.corpses {
         let info = c.kind.info();

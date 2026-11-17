@@ -512,6 +512,7 @@ impl App {
             match e {
                 GameEvent::ProfileChanged => save = true,
                 GameEvent::Explosion { .. } => self.shake = self.shake.max(0.6),
+                GameEvent::SurgeStarted { .. } => self.shake = self.shake.max(0.9),
                 GameEvent::PlayerHurt { .. } => self.shake = self.shake.max(0.45),
                 GameEvent::Landed | GameEvent::PodLanded { .. } => self.shake = self.shake.max(1.0),
                 GameEvent::Liftoff | GameEvent::FtlStarted { .. } => {

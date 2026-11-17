@@ -57,8 +57,8 @@ Save rules:
 - The active slot is saved every minute of play, whenever the profile changes
   (purchase, extraction, death, travel, tutorial completion), on save & quit,
   on suspend and on exit.
-- `SaveGame.version` (`SAVE_VERSION` 3: drops hold a list of players with
-  classes, upgrades with rarities and element statuses) and `Profile.version` (`PROFILE_VERSION` 4: the active class and
+- `SaveGame.version` (`SAVE_VERSION` 4: drops hold a list of players with
+  classes, upgrades with rarities, element statuses, threat and elites) and `Profile.version` (`PROFILE_VERSION` 4: the active class and
   per-class records) gate migrations. A slot from an older
   save version loads with its drop in progress dropped (that format cannot
   resume) and resumes on the ship. A newer save is

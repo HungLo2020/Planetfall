@@ -64,7 +64,9 @@ Rebind keys and buttons under Settings → Controls.
   lumite and voidstone ore; four enemy types (husks, skitters, bloaters, brutes)
   driven by a flow field; six auto-firing weapons in four slots (new picks at
   levels 5, 10 and 15); rarity-rolled upgrades with elements (fire, acid,
-  cold, shock) and legendary behaviour changes; supply caches; a timed extraction where
+  cold, shock) and legendary behaviour changes; supply caches; a threat
+  level that climbs all drop long, with elites and warned surge waves, so
+  greed decides when to leave; a timed extraction where
   the pod lands at your drop site and you must hold the zone.
 - **Persistence**: each slot (`data/save/slot-N.json`) holds materials,
   modules, ship edits, stats, tutorial state and any drop in progress;

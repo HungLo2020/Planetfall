@@ -2,8 +2,10 @@
 //! barriers, behaviour-specific attacks, deaths, drops and explosions.
 //! Numbers come from `enemies.toml`.
 
-use super::{BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, Hit, PickupKind, Run};
-use crate::content::{DT, EnemyBehavior, content};
+use super::{
+    Affix, BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, Hit, PickupKind, Run,
+};
+use crate::content::{DT, EnemyBehavior, Material, content};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
 use crate::terrain::TILE;
@@ -113,7 +115,12 @@ impl Run {
                 } else if en.attack_cooldown == 0 {
                     en.attack_cooldown = 60;
                     en.attack_ticks = 14;
-                    melee[target] += info.damage * self.damage_scale();
+                    let frenzy = if en.elite == Some(Affix::Frenzied) {
+                        content().tuning.elites.frenzied_damage
+                    } else {
+                        1.0
+                    };
+                    melee[target] += info.damage * frenzy * self.damage_scale();
                 }
             }
         }
@@ -127,10 +134,10 @@ impl Run {
         }
     }
 
-    /// Enemy damage grows with planet hazard and time on the surface.
+    /// Enemy damage grows with planet hazard and the threat level.
     pub(super) fn damage_scale(&self) -> f32 {
-        let ramp = content().tuning.horde.damage_ramp_per_minute;
-        (0.75 + 0.25 * self.hazard) * (1.0 + self.minutes() * ramp)
+        let ramp = content().tuning.threat.damage_per_level;
+        (0.75 + 0.25 * self.hazard) * (1.0 + self.threat_curve() * ramp)
     }
 
     pub(super) fn remove_dead(&mut self, events: &mut Vec<GameEvent>) {
@@ -158,7 +165,18 @@ impl Run {
                     yaw: e.yaw,
                     ticks: 0,
                 });
-                self.drop_pickup(PickupKind::Xp(info.xp), e.pos);
+                // Elites are worth more and always drop a little ore.
+                let elites = &content().tuning.elites;
+                let xp = if e.elite.is_some() {
+                    info.xp * elites.xp
+                } else {
+                    info.xp
+                };
+                self.drop_pickup(PickupKind::Xp(xp), e.pos);
+                if e.elite.is_some() {
+                    self.drop_pickup(PickupKind::Material(Material::Ferrite, 2), e.pos);
+                    self.drop_pickup(PickupKind::Material(Material::Lumite, 1), e.pos);
+                }
                 for drop in &info.drops {
                     if drop.chance >= 1.0 || self.rng.chance(f64::from(drop.chance)) {
                         self.drop_pickup(PickupKind::Material(drop.material, drop.amount), e.pos);

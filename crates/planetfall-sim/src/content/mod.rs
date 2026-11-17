@@ -836,7 +836,7 @@ impl Offer {
 /// XP needed to advance from `level` to `level + 1`.
 pub fn xp_to_next(level: u32) -> u32 {
     let xp = &content().tuning.xp;
-    xp.base + level * xp.per_level
+    xp.base + level * xp.per_level + (xp.square * (level * level) as f32).round() as u32
 }
 
 #[cfg(test)]

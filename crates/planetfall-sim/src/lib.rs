@@ -66,7 +66,7 @@ mod tests {
         let mut game = Game::new(Profile::default(), 1234);
         let mut pilot = Autopilot::new();
         let mut saw = std::collections::BTreeSet::new();
-        for _ in 0..60 * 60 * 25 {
+        for _ in 0..60 * 60 * 60 {
             if let Some(run) = &mut game.run {
                 run.invulnerable = true;
             }

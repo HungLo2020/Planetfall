@@ -147,7 +147,7 @@ fn headless(
     let history = history.events();
     let run = game.run.as_ref();
     println!(
-        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} hash={:016x}",
+        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} avg_drop={:.1}min best_threat={} threat={} surge={} hash={:016x}",
         game.tick,
         game.phase,
         match (&game.terminal, run.and_then(|r| r.level_up_choices())) {
@@ -178,6 +178,16 @@ fn headless(
             .collect::<Vec<_>>()
             .join(","),
         game.ship.build,
+        game.profile.stats.surface_seconds as f32 / 60.0 / game.profile.stats.drops.max(1) as f32,
+        game.profile.stats.best_threat,
+        run.map_or(0, |r| r.threat_level()),
+        run.map_or("-", |r| if r.surge.warning > 0 {
+            "warning"
+        } else if r.surge.active > 0 {
+            "active"
+        } else {
+            "-"
+        }),
         game.state_hash().value(),
     );
     if let Some(path) = &settings.screenshot {

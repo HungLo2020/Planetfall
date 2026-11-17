@@ -483,7 +483,7 @@ impl Run {
             return;
         }
         let mut amount = hit.damage;
-        if e.kind.info().health >= HEAVY_HEALTH {
+        if e.heavy() {
             amount *= 1.0 + hit.heavy;
         }
         if e.corroded > 0 {

@@ -83,6 +83,17 @@ pub enum GameEvent {
     RareUpgrade {
         rarity: Rarity,
     },
+    /// The threat level rose.
+    ThreatRose {
+        level: u32,
+    },
+    /// A surge arrives in `seconds`.
+    SurgeWarning {
+        seconds: u32,
+    },
+    SurgeStarted {
+        level: u32,
+    },
     /// An element status took hold on an enemy (for effects).
     Status {
         element: Element,

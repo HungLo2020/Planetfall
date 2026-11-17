@@ -25,8 +25,9 @@ the main menu. A drop in progress is saved too and resumes where you left it.
    rock to drill through it. Press Q / (LB) for the class ability. Collect XP shards to level up (pick 1 of 3 field
    upgrades; the run pauses while you choose). Walk over **supply caches** for
    a rare-or-better upgrade. Mine **lumite** to complete the objective.
-5. **Extract.** Press F / (Y) once the objective is done. The pod lands at the
-   drop site after 12 s and the horde intensifies. Stand inside the ring for 6 s
+5. **Extract.** Press F / (Y) any time after the objective is done. The pod
+   lands at the drop site after 12 s; the horde intensifies and the threat
+   climbs twice as fast. Stand inside the ring for 6 s
    (leaving drains progress) to lift off.
 6. **Debrief.** Carried materials are banked in the hold and the class earns
    class XP. Death or abandoning loses all cargo.
@@ -46,7 +47,7 @@ Warden loses nothing.
 
 | Class | Signature weapon | Ability (Q / LB) | Passive |
 |---|---|---|---|
-| Striker | Pulse Blaster | **Blink**: teleport ahead through enemies, damaging everything passed | **Hunter**: +25% damage to heavy enemies (100+ health), faster dash, slightly faster |
+| Striker | Pulse Blaster | **Blink**: teleport ahead through enemies, damaging everything passed | **Hunter**: +25% damage to heavy enemies (100+ health, and elites), faster dash, slightly faster |
 | Prospector | Seam Cutter | **Bore**: drill a straight tunnel ahead, breaking rock (with drops) and shredding enemies in it | **Deep Seams**: +50% mining, 25% chance of extra ore per vein, -15 max health |
 | Warden | Scattergun | **Barrier**: a row of shock posts the horde cannot pass | **Hold the Line**: +25 max health, extraction zone fills 30% faster |
 | Engineer | Orbit Drones | **Sentry Turret**: a turret that fires at the nearest hostile | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
@@ -84,8 +85,33 @@ show keyboard or controller labels depending on the last device used.
 | Cinder Reach | Reactor 1 | x1.45 | 9 lumite | Volcanic, dense lumite, skitter swarms |
 | Hollow Frost | Reactor 2 | x2.0 | 12 lumite | Icy, voidstone seams, brutes |
 
-Hazard scales enemy health and damage. Spawn pressure grows with time on the
-surface and nearly doubles during extraction.
+Hazard scales enemy health, damage and spawn pressure; the threat level
+(below) does the rest.
+
+## Escalation: why you leave
+
+Nothing stops you staying after the objective, except that the planet only
+gets worse:
+
+- **Threat level** rises all drop long (0.6 levels a minute, twice that
+  while the pod is inbound or waiting) and shows on the HUD with the time to
+  the next level. Each level adds spawn pressure (+32%) and makes new
+  spawns tougher and harder-hitting (health +15%, damage +6% per level,
+  growing with threat^1.3, so the late game bites). Bloaters join from
+  threat 1, brutes from threat 3.
+- **Surges** come every 3 threat levels: the HUD warns 8 seconds ahead,
+  then a wave arrives from several sides and spawning runs hot for a few
+  seconds.
+- **Elites** join from threat 1 (3% of spawns per level, up to 35%): taller,
+  gold-outlined, with an affix: Armored (triple health), Swift (faster),
+  Frenzied (hits much harder). They drop four times the XP plus a little
+  ore, and count as heavy (the Striker's bonus applies).
+- **Diminishing growth**: the XP needed per level grows with the square of
+  the level, so upgrades slow down while the threat keeps climbing.
+
+Measured with the autopilot (it never extracts in that probe), a build
+typical for each planet survives roughly 6 to 10 minutes: the soft cap a
+drop is tuned around. The debrief shows the threat reached.
 
 ## Weapons (4 slots)
 

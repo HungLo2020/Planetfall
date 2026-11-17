@@ -29,7 +29,7 @@ use planetfall_sim::content::{
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};
 use planetfall_sim::run::{
-    BlastKind, DeployableKind, Extraction, Player, ProjectileKind, Run, extraction_hold,
+    Affix, BlastKind, DeployableKind, Extraction, Player, ProjectileKind, Run, extraction_hold,
     extraction_inbound, extraction_radius,
 };
 use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};

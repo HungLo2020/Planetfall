@@ -418,9 +418,10 @@ impl Menu {
                     b.label(
                         card,
                         format!(
-                            "Time {:02}:{:02}   ·   Kills {}   ·   Level {}",
+                            "Time {:02}:{:02}   ·   Threat {}   ·   Kills {}   ·   Level {}",
                             summary.seconds / 60,
                             summary.seconds % 60,
+                            summary.threat,
                             summary.kills,
                             summary.level
                         ),

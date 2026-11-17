@@ -2,7 +2,8 @@
 //! soak tests and CI, so every feature is drivable without a window.
 
 use crate::content::{
-    ClassId, Material, ModStat, Offer, PerkEffect, PlanetId, ShipBlock, Upgrade, UpgradeId,
+    AbilityKind, ClassId, Material, ModStat, Offer, PerkEffect, PlanetId, ShipBlock, Upgrade,
+    UpgradeId,
 };
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
@@ -173,10 +174,14 @@ impl Autopilot {
             };
         }
         let player = run.player().pos;
-        // Build up before calling the pod, as a player would: a couple of
-        // minutes or a few levels, whichever comes first.
-        let ready =
-            run.objective_done && (run.tutorial || run.minutes() >= 2.0 || run.player().level >= 6);
+        // Greed, as a player would: keep fighting and mining after the
+        // objective until hurt, the threat is high or time is long.
+        let p = run.player();
+        let ready = run.objective_done
+            && (run.tutorial
+                || p.health < p.max_health * 0.45
+                || run.threat_level() >= 8
+                || run.minutes() >= 14.0);
         let goal: Option<V2> = if ready {
             Some(run.landing)
         } else if let Some(cache) = run
@@ -200,13 +205,25 @@ impl Autopilot {
                 movement += away * 0.6 / d;
             }
         }
-        // Use the class ability when the horde closes in.
-        let crowd = run
+        // Use the class ability when the horde closes in. A blink is an
+        // escape: only when hurt, and only once facing away from the crowd.
+        let near: Vec<V2> = run
             .enemies
             .iter()
             .filter(|e| e.pos.distance(player) < 6.0)
-            .count();
-        let ability = run.player().ability.cooldown == 0 && crowd >= 3 && pulse;
+            .map(|e| e.pos)
+            .collect();
+        let me = run.player();
+        let mut ability = me.ability.charges > 0 && near.len() >= 3 && pulse;
+        if me.class.info().ability.kind == AbilityKind::Blink {
+            let centroid = near.iter().fold(V2::ZERO, |a, b| a + *b) / near.len().max(1) as f32;
+            let away = (player - centroid).normalize_or_zero();
+            let hurt = me.health < me.max_health * 0.6;
+            if hurt && near.len() >= 3 {
+                movement = away;
+            }
+            ability &= hurt && crate::math::from_yaw(me.yaw).dot(away) > 0.7;
+        }
         GameInput {
             movement: movement.clamp_length_max(1.0),
             call_extraction: ready && matches!(run.extraction, Extraction::Idle) && pulse,

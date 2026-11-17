@@ -368,11 +368,8 @@ fn spawn_tables_cover_the_content() {
             planet,
             ..config(3)
         });
-        run.ticks = 60 * 60 * 6;
-        run.extraction = Extraction::Inbound {
-            ticks: 999,
-            pos: run.landing,
-        };
+        // A high threat unlocks every spawn rule.
+        run.threat = 10.0;
         let table = run.spawn_table();
         for enemy in EnemyId::all() {
             assert!(
@@ -544,4 +541,137 @@ fn co_op_ready_players_list() {
     run.players[1].health = 0.0;
     run.update_players(&[a, b], &mut events);
     assert_eq!(run.outcome(), Some(RunOutcome::Died));
+}
+
+/// The threat rises all drop long (faster during extraction), surges are
+/// warned before they hit, and elites join the horde as it climbs.
+#[test]
+fn threat_escalates_with_surges_and_elites() {
+    let mut run = Run::new(config(12));
+    run.invulnerable = true;
+    let mut events = Vec::new();
+    let mut warned_at = None;
+    let mut surged_at = None;
+    for tick in 0..60 * 60 * 9 {
+        if let Some(choices) = run.level_up_choices() {
+            let pick = Command::ChoosePerk(choices.len() - 1);
+            run.update(
+                &GameInput {
+                    command: Some(pick),
+                    ..GameInput::default()
+                },
+                &mut events,
+            );
+        }
+        run.update(&GameInput::default(), &mut events);
+        for e in events.drain(..) {
+            match e {
+                GameEvent::SurgeWarning { .. } if warned_at.is_none() => warned_at = Some(tick),
+                GameEvent::SurgeStarted { .. } if surged_at.is_none() => surged_at = Some(tick),
+                _ => {}
+            }
+        }
+    }
+    assert!(run.threat_level() >= 4, "threat {}", run.threat);
+    let (warned, surged) = (warned_at.unwrap(), surged_at.unwrap());
+    assert!(surged > warned, "the warning comes first");
+    assert!(surged - warned >= 60 * 5);
+    assert!(
+        run.enemies.iter().any(|e| e.elite.is_some()) || run.kills > 0,
+        "no elites by threat {}",
+        run.threat_level()
+    );
+    // Extraction speeds the threat up.
+    let mut a = Run::new(config(2));
+    let mut b = Run::new(config(2));
+    b.extraction = Extraction::Inbound {
+        ticks: 9999,
+        pos: b.landing,
+    };
+    for _ in 0..600 {
+        a.update_threat(&mut events);
+        b.update_threat(&mut events);
+    }
+    assert!(b.threat > a.threat * 1.5);
+}
+
+/// Elites are tougher and count as heavy; later levels need more XP.
+#[test]
+fn elites_and_xp_curve() {
+    let mut run = Run::new(config(4));
+    run.threat = 12.0;
+    run.spawning_enabled = true;
+    let mut elites = 0;
+    for _ in 0..60 * 40 {
+        run.update_spawner(&mut Vec::new());
+        elites = run.enemies.iter().filter(|e| e.elite.is_some()).count();
+        if elites > 0 {
+            break;
+        }
+    }
+    assert!(elites > 0);
+    let e = run.enemies.iter().find(|e| e.elite.is_some()).unwrap();
+    assert!(e.heavy());
+    use crate::content::xp_to_next;
+    let early = xp_to_next(2) - xp_to_next(1);
+    let late = xp_to_next(16) - xp_to_next(15);
+    assert!(late > early * 2, "the XP curve steepens");
+}
+
+/// Tuning probe (run with `--ignored --nocapture`): how long each class
+/// survives on each planet when it never extracts, with the autopilot's
+/// upgrade picks and movement. This is the soft cap the threat sets.
+#[test]
+#[ignore]
+fn survival_time_probe() {
+    use crate::autoplay::Autopilot;
+    use crate::game::Game;
+    let only = std::env::var("PROBE_PLANET").ok();
+    for planet in PlanetId::all().filter(|p| only.as_deref().is_none_or(|k| k == p.key())) {
+        for key in ["striker", "prospector", "warden", "engineer"] {
+            let mut minutes = Vec::new();
+            for seed in 0..4u64 {
+                // Progress typical of reaching this planet: health and
+                // damage modules and some class levels.
+                let nav = f32::from(planet.info().nav_level);
+                let mut loadout = Loadout::basic(class(key));
+                loadout.class_level = 1 + 3 * u32::from(planet.info().nav_level);
+                let mut run = Run::new(RunConfig {
+                    planet,
+                    players: vec![loadout],
+                    max_health: 100.0 + 25.0 * nav,
+                    damage_multiplier: 1.0 + 0.12 * nav,
+                    ..config(seed * 7 + 1)
+                });
+                let mut game = Game::new(crate::Profile::default(), 1);
+                game.phase = crate::Phase::Surface;
+                let mut pilot = Autopilot::new();
+                let mut events = Vec::new();
+                for _ in 0..60 * 60 * 30 {
+                    run.objective_done = false;
+                    game.run = Some(run);
+                    let mut input = pilot.input(&game);
+                    run = game.run.take().unwrap();
+                    input.call_extraction = false;
+                    run.update(&input, &mut events);
+                    events.clear();
+                    if run.outcome().is_some() {
+                        break;
+                    }
+                }
+                minutes.push(run.minutes());
+            }
+            minutes.sort_by(f32::total_cmp);
+            eprintln!(
+                "{:<8} {:<10} survives {:.1} min (median of {:?})",
+                planet.key(),
+                key,
+                (minutes[1] + minutes[2]) / 2.0,
+                minutes
+                    .iter()
+                    .map(|m| (m * 10.0).round() / 10.0)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
 }

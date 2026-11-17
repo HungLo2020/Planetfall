@@ -22,11 +22,12 @@ SHOTS = {
     "ftl": 300,
     "descent": 660,
     "surface": 2400,
-    "debrief": 3300,
-    "construct": 3405,
-    "build": 5520,
-    "locker": 5656,
-    "levelup": 7110,
+    "debrief": 3060,
+    "construct": 3165,
+    "build": 5200,
+    "locker": 5376,
+    "levelup": 5714,
+    "surge": 27560,
 }
 
 
@@ -43,7 +44,7 @@ def step(title: str, command: list[str]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gpu", action="store_true", help="also render offscreen screenshots")
-    parser.add_argument("--soak-ticks", type=int, default=60 * 60 * 15)
+    parser.add_argument("--soak-ticks", type=int, default=60 * 60 * 30)
     args = parser.parse_args()
 
     step("format", ["cargo", "fmt", "--all", "--", "--check"])

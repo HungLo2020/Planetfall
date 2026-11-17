@@ -37,7 +37,7 @@ model_yaw = 180.0
 sound = "scatter"
 volume = 0.5
 color = [1.0, 0.7, 0.25]
-stats = { cooldown = 1.05, damage = 7.0, range = 7.5, count = 5, speed = 22.0, radius = 0.22, pierce = 0 }
+stats = { cooldown = 1.0, damage = 8.0, range = 8.5, count = 5, speed = 22.0, radius = 0.22, pierce = 0 }
 
 [[weapon]]
 id = "arc-caster"

@@ -282,11 +282,9 @@ pub struct Explosion {
 pub struct Spawn {
     pub weight: f32,
     pub count: [u32; 2],
+    /// Threat level a drop must reach before this enemy spawns.
     #[serde(default)]
-    pub after_minutes: f32,
-    /// Waits for the late game (time or extraction).
-    #[serde(default)]
-    pub late: bool,
+    pub threat: f32,
     /// Whether it appears in the tutorial drop.
     #[serde(default = "yes")]
     pub tutorial: bool,
@@ -543,6 +541,8 @@ pub struct Tuning {
     pub rarity: RarityTuning,
     pub xp: XpTuning,
     pub horde: HordeTuning,
+    pub threat: ThreatTuning,
+    pub elites: EliteTuning,
     pub class: ClassTuning,
     pub extraction: ExtractionTuning,
     pub tutorial: TutorialTuning,
@@ -595,6 +595,7 @@ pub struct RarityTuning {
 pub struct XpTuning {
     pub base: u32,
     pub per_level: u32,
+    pub square: f32,
     pub cache_xp: u32,
 }
 
@@ -605,11 +606,37 @@ pub struct HordeTuning {
     pub cap: usize,
     pub tutorial_cap: usize,
     pub tutorial_intensity: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThreatTuning {
+    pub per_minute: f32,
+    pub extraction_rate: f32,
     pub extraction_intensity: f32,
-    pub minutes_ramp: f32,
-    pub late_minutes: f32,
-    pub health_ramp_per_minute: f32,
-    pub damage_ramp_per_minute: f32,
+    pub spawn_per_level: f32,
+    pub health_per_level: f32,
+    pub damage_per_level: f32,
+    pub curve: f32,
+    pub surge_every: u32,
+    pub surge_warning: f32,
+    pub surge_duration: f32,
+    pub surge_intensity: f32,
+    pub surge_burst: u32,
+    pub surge_burst_per_level: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EliteTuning {
+    pub per_level: f32,
+    pub max: f32,
+    pub xp: u32,
+    pub armored_health: f32,
+    pub swift_speed: f32,
+    pub swift_health: f32,
+    pub frenzied_damage: f32,
+    pub frenzied_health: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
