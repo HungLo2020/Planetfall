@@ -20,6 +20,8 @@ max_level = 5
 cache_overflow_damage = 0.1
 new_weapon_weight = 3
 level_up_weight = 4
+# Weight multiplier for weapons the class is familiar with.
+familiar_weight = 3.0
 
 [xp]
 # XP to advance from level n: base + n * per_level.
@@ -39,6 +41,17 @@ minutes_ramp = 0.5
 late_minutes = 2.5
 health_ramp_per_minute = 0.22
 damage_ramp_per_minute = 0.08
+
+[class]
+# Class XP is earned from the XP collected on a dive plus
+# `extraction_bonus` for getting out: all of it when the drop extracts,
+# `failed_share` of the collected XP otherwise.
+failed_share = 0.5
+extraction_bonus = 40
+# XP from class level n to n + 1: xp_base * xp_growth^(n - 1).
+xp_base = 100.0
+xp_growth = 1.3
+max_level = 20
 
 [extraction]
 inbound = 12.0

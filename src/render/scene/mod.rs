@@ -24,13 +24,13 @@ use super::voxels::{self, VoxelScene, WorldKey};
 use crate::render::camera::{ascent_height, descent_height};
 use planetfall_sim::content::ShipBlock;
 use planetfall_sim::content::{
-    Axis, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,
+    Axis, ClassId, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,
 };
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};
 use planetfall_sim::run::{
-    BlastKind, Extraction, ProjectileKind, Run, extraction_hold, extraction_inbound,
-    extraction_radius,
+    BlastKind, DeployableKind, Extraction, Player, ProjectileKind, Run, extraction_hold,
+    extraction_inbound, extraction_radius,
 };
 use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};
 use planetfall_sim::terrain::{TILE, Terrain, Tile};
@@ -238,6 +238,25 @@ impl<'a, 's> Painter<'a, 's> {
         flash: f32,
         outline: Option<u8>,
     ) -> Posed {
+        self.character_tinted(id, root, layers, flash, outline, [1.0; 3], [1.0; 3])
+    }
+
+    /// [`Self::character`] with the body multiplied by `tint` and the glow
+    /// parts lit in `glow`.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a skinned draw is fully described by these values"
+    )]
+    fn character_tinted(
+        &mut self,
+        id: &'static str,
+        root: Mat4,
+        layers: &[Layer],
+        flash: f32,
+        outline: Option<u8>,
+        tint: [f32; 3],
+        glow: [f32; 3],
+    ) -> Posed {
         let posed = self.skins.character(id).pose(layers);
         self.skinned.push(SkinRequest {
             id,
@@ -245,6 +264,8 @@ impl<'a, 's> Painter<'a, 's> {
             root,
             flash,
             outline,
+            tint,
+            glow,
         });
         posed
     }
@@ -356,7 +377,7 @@ fn post_settings(game: &Game, time: f32) -> PostSettings {
     };
     match game.phase {
         Phase::Surface => {
-            let p = &run.player;
+            let p = &run.player();
             let danger = (1.0 - p.health / p.max_health).max(0.0);
             let hurt = p.hurt_ticks as f32 / 18.0;
             let pulse = 0.8 + 0.2 * (time * 6.0).sin();

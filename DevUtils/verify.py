@@ -24,7 +24,8 @@ SHOTS = {
     "surface": 2400,
     "debrief": 3060,
     "construct": 3165,
-    "build": 5470,
+    "build": 5235,
+    "locker": 5368,
 }
 
 

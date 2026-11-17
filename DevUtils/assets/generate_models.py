@@ -974,6 +974,23 @@ def ship_exterior() -> list[Part]:
     return [hull, engines]
 
 
+def locker() -> list[Part]:
+    """Four crew lockers in a row, one per class colour, facing +Z."""
+    part = Part("lockers")
+    part.box("hull_dark", (0, 0.06, 0), (2.3, 0.12, 0.7))
+    part.box("hull_dark", (0, 2.3, 0), (2.3, 0.1, 0.7))
+    for i, glow in enumerate(("glow_orange", "glow_yellow", "glow_blue", "glow_green")):
+        x = -0.84 + i * 0.56
+        part.box("hull", (x, 1.18, 0), (0.5, 2.1, 0.6))
+        part.box("hull_dark", (x, 1.18, 0.31), (0.42, 1.95, 0.02))
+        part.box(glow, (x, 1.75, 0.33), (0.3, 0.06, 0.02))
+        part.box("rubber", (x + 0.14, 1.15, 0.34), (0.04, 0.25, 0.03))
+        for y in (2.0, 2.06, 2.12):
+            part.box("rubber", (x, y, 0.325), (0.28, 0.02, 0.02))
+    part.box("accent", (0, 2.38, 0.3), (2.3, 0.06, 0.04))
+    return [part]
+
+
 def planet() -> list[Part]:
     body = Part("planet")
     body.sphere("white", (0, 0, 0), 1.0, subdivisions=3)
@@ -995,6 +1012,7 @@ MODELS = {
     "beacon": beacon,
     "nav-console": nav_console,
     "pod-cradle": pod_cradle,
+    "locker": locker,
     "reactor-core": reactor_core,
     "med-bay": med_bay,
     "weapon-rack": weapon_rack,

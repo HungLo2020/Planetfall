@@ -26,6 +26,7 @@ cargo run --release
 | Move | WASD / arrows | Left stick / D-pad |
 | Use station / deploy | E / Enter | A (South) |
 | Dash (brief invulnerability) | Space / Shift | B (East) / RB |
+| Class ability | Q | LB / RT |
 | Call extraction pod | F | Y (North) |
 | Ship build mode (after the tutorial) | B | X (West) |
 | Build: place / remove / next block | E / Space / F | A / B / Y |
@@ -42,6 +43,10 @@ Rebind keys and buttons under Settings → Controls.
   slot, settings (volumes, fullscreen, shadows, bloom, screen shake) and a
   controls screen that rebinds keyboard and controller buttons.
   Progress autosaves, and quitting mid-drop resumes the drop later.
+- **Four classes**: Striker, Prospector, Warden and Engineer, each with a
+  signature weapon, familiar weapons, an active ability (blink, bore,
+  barrier, turret) and a passive. Switch in the ship's locker room; every
+  class keeps its own level, unlocks and starting weapon.
 - **Tutorial**: a ship AI walks a new commander from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
   cache, extraction and the first module build. It only runs once.

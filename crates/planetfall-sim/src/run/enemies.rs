@@ -1,7 +1,8 @@
-//! The horde: flow-field steering, separation, behaviour-specific attacks,
-//! deaths, drops and explosions. Numbers come from `enemies.toml`.
+//! The horde: flow-field steering toward the nearest player, separation,
+//! barriers, behaviour-specific attacks, deaths, drops and explosions.
+//! Numbers come from `enemies.toml`.
 
-use super::{Blast, BlastKind, Corpse, PickupKind, Run};
+use super::{BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, PickupKind, Run};
 use crate::content::{DT, EnemyBehavior, content};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
@@ -9,15 +10,24 @@ use crate::terrain::TILE;
 
 impl Run {
     pub(super) fn update_enemies(&mut self, events: &mut Vec<GameEvent>) {
-        let player = self.player.pos;
         let player_radius = content().tuning.player.radius;
-        let mut melee = 0.0f32;
+        let mut melee = vec![0.0f32; self.players.len()];
         let mut detonate = Vec::new();
+        let barriers: Vec<V2> = self
+            .deployables
+            .iter()
+            .filter(|d| d.kind == DeployableKind::Barrier)
+            .map(|d| d.pos)
+            .collect();
         for i in 0..self.enemies.len() {
             let e = self.enemies[i];
             if e.health <= 0.0 {
                 continue;
             }
+            let Some(target) = self.nearest_player(e.pos) else {
+                continue;
+            };
+            let player = self.players[target].pos;
             let info = e.kind.info();
             let to_player = player - e.pos;
             let dist = to_player.length();
@@ -60,7 +70,22 @@ impl Run {
                 speed *= lunge.speed;
             }
             let step = dir * speed * DT + push * 0.35;
-            let (pos, _) = self.terrain.resolve_circle(e.pos + step, info.radius * 0.9);
+            let (mut pos, _) = self.terrain.resolve_circle(e.pos + step, info.radius * 0.9);
+            // Barrier posts are solid to the horde.
+            for &post in &barriers {
+                let d = pos - post;
+                let min = BARRIER_RADIUS + info.radius;
+                let l = d.length();
+                if l < min {
+                    let out = if l > 1e-4 { d / l } else { V2::X };
+                    let pushed = post + out * min;
+                    if !self.terrain.solid_at(pushed) {
+                        pos = pushed;
+                    } else {
+                        pos = e.pos;
+                    }
+                }
+            }
             let en = &mut self.enemies[i];
             en.pos = pos;
             en.spawn_ticks = en.spawn_ticks.saturating_sub(1);
@@ -87,12 +112,14 @@ impl Run {
                 } else if en.attack_cooldown == 0 {
                     en.attack_cooldown = 60;
                     en.attack_ticks = 14;
-                    melee += info.damage * self.damage_scale();
+                    melee[target] += info.damage * self.damage_scale();
                 }
             }
         }
-        if melee > 0.0 {
-            self.hurt_player(melee, events);
+        for (player, amount) in melee.into_iter().enumerate() {
+            if amount > 0.0 {
+                self.hurt_player(player, amount, events);
+            }
         }
         for i in detonate {
             self.enemies[i].health = 0.0;
@@ -154,11 +181,13 @@ impl Run {
                     at,
                     radius: explosion.radius,
                 });
-                if at.distance(self.player.pos) < explosion.radius + player_radius {
-                    self.hurt_player(kind.info().damage * self.damage_scale(), events);
+                for player in 0..self.players.len() {
+                    if at.distance(self.players[player].pos) < explosion.radius + player_radius {
+                        self.hurt_player(player, kind.info().damage * self.damage_scale(), events);
+                    }
                 }
                 for j in self.enemies_near(at, explosion.radius) {
-                    self.damage_enemy(j, explosion.enemy_damage, events);
+                    self.damage_enemy(j, explosion.enemy_damage, 0.0, events);
                 }
             }
         }

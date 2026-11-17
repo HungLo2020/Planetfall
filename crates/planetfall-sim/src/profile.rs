@@ -1,7 +1,11 @@
 //! Persistent player progress. This module only defines the data, its rules
 //! and migrations; the app stores it in a save slot (see `save`).
 
-use crate::content::{Materials, PlanetId, ShipBlock, UpgradeEffect, UpgradeId, content};
+use crate::content::{
+    ClassId, Materials, PlanetId, ShipBlock, UpgradeEffect, UpgradeId, WeaponId, class_level,
+    content,
+};
+use crate::run::Loadout;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
@@ -10,7 +14,8 @@ use std::collections::BTreeMap;
 /// - 1: first release (upgrades as named fields, planets as enum names).
 /// - 2: player-built ship blocks (`ship_edits`).
 /// - 3: content as data: upgrades keyed by module id, planets by id.
-pub const PROFILE_VERSION: u32 = 3;
+/// - 4: crew classes: the active class and a record per class.
+pub const PROFILE_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -21,6 +26,21 @@ pub struct Stats {
     pub kills: u32,
     pub best_level: u32,
     pub materials_banked: u32,
+}
+
+/// One class's permanent progress (kept when switching classes).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ClassRecord {
+    /// Class XP earned in total (the level is derived from it).
+    pub xp: u32,
+    /// Chosen starting weapon; `None` (or no longer allowed) means the
+    /// signature weapon.
+    #[serde(deserialize_with = "known_weapon")]
+    pub start_weapon: Option<WeaponId>,
+    /// Familiar weapons found on dives, unlocked as starting weapons.
+    #[serde(deserialize_with = "known_weapons")]
+    pub found_weapons: Vec<WeaponId>,
 }
 
 /// One cell of free-form ship construction.
@@ -49,6 +69,37 @@ pub struct Profile {
     /// Player-built ship blocks over the base layout, one entry per cell.
     /// `block: None` removes a base block.
     pub ship_edits: Vec<ShipEdit>,
+    /// The class chosen in the locker room.
+    #[serde(deserialize_with = "known_class")]
+    pub class: ClassId,
+    /// Progress per class, by id. Classes no longer in the data are dropped.
+    #[serde(deserialize_with = "known_classes")]
+    pub classes: BTreeMap<ClassId, ClassRecord>,
+}
+
+fn known_weapon<'de, D: Deserializer<'de>>(d: D) -> Result<Option<WeaponId>, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.and_then(|k| WeaponId::from_key(&k)))
+}
+
+fn known_weapons<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<WeaponId>, D::Error> {
+    Ok(Vec::<String>::deserialize(d)?
+        .iter()
+        .filter_map(|k| WeaponId::from_key(k))
+        .collect())
+}
+
+fn known_class<'de, D: Deserializer<'de>>(d: D) -> Result<ClassId, D::Error> {
+    Ok(ClassId::from_key(&String::deserialize(d)?).unwrap_or_else(ClassId::starter))
+}
+
+fn known_classes<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<BTreeMap<ClassId, ClassRecord>, D::Error> {
+    let raw = BTreeMap::<String, ClassRecord>::deserialize(d)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|(k, v)| ClassId::from_key(&k).map(|id| (id, v)))
+        .collect())
 }
 
 fn known_upgrades<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<UpgradeId, u8>, D::Error> {
@@ -73,6 +124,8 @@ impl Default for Profile {
             orbiting: None,
             stats: Stats::default(),
             ship_edits: Vec::new(),
+            class: ClassId::starter(),
+            classes: BTreeMap::new(),
         }
     }
 }
@@ -171,6 +224,71 @@ impl Profile {
     pub fn pickup_bonus(&self) -> f32 {
         self.bonus(UpgradeEffect::PickupRange)
     }
+
+    // -- classes ------------------------------------------------------------
+
+    pub fn class_record(&self, class: ClassId) -> ClassRecord {
+        self.classes.get(&class).cloned().unwrap_or_default()
+    }
+
+    /// Class level and XP into that level.
+    pub fn class_level(&self, class: ClassId) -> (u32, u32) {
+        class_level(self.class_record(class).xp)
+    }
+
+    /// Weapons the class may start with: its signature, familiar weapons
+    /// unlocked by level, and familiar weapons found on dives.
+    pub fn start_options(&self, class: ClassId) -> Vec<WeaponId> {
+        let (level, _) = self.class_level(class);
+        let mut options = vec![class.signature()];
+        let found = self.class_record(class).found_weapons;
+        for w in class
+            .level_unlocks(level)
+            .chain(found.into_iter().filter(|&w| class.is_familiar(w)))
+        {
+            if !options.contains(&w) {
+                options.push(w);
+            }
+        }
+        options
+    }
+
+    /// The weapon the class starts dives with.
+    pub fn start_weapon(&self, class: ClassId) -> WeaponId {
+        self.class_record(class)
+            .start_weapon
+            .filter(|w| self.start_options(class).contains(w))
+            .unwrap_or_else(|| class.signature())
+    }
+
+    /// The active class as it drops.
+    pub fn loadout(&self) -> Loadout {
+        Loadout {
+            class: self.class,
+            class_level: self.class_level(self.class).0,
+            start_weapon: self.start_weapon(self.class),
+        }
+    }
+
+    /// Choose the starting weapon for the active class. Returns whether it
+    /// is allowed.
+    pub fn set_start_weapon(&mut self, weapon: WeaponId) -> bool {
+        let class = self.class;
+        if !self.start_options(class).contains(&weapon) {
+            return false;
+        }
+        self.classes.entry(class).or_default().start_weapon =
+            (weapon != class.signature()).then_some(weapon);
+        true
+    }
+
+    /// Add class XP; returns the class level before and after.
+    pub fn award_class_xp(&mut self, class: ClassId, xp: u32) -> (u32, u32) {
+        let before = self.class_level(class).0;
+        let record = self.classes.entry(class).or_default();
+        record.xp = record.xp.saturating_add(xp);
+        (before, self.class_level(class).0)
+    }
 }
 
 /// The on-disk shape of version 1 and 2 profiles (`data/save/profile.json`
@@ -229,6 +347,8 @@ impl LegacyProfile {
             } else {
                 Vec::new()
             },
+            class: ClassId::starter(),
+            classes: BTreeMap::new(),
         }
         .migrate()
     }
@@ -306,6 +426,40 @@ mod tests {
             ..Profile::default()
         };
         assert_eq!(p.migrate(), Err(ProfileError::Newer(PROFILE_VERSION + 1)));
+    }
+
+    /// Each class keeps its own progress and loadout across switches.
+    #[test]
+    fn classes_keep_their_progress() {
+        let warden = ClassId::from_key("warden").unwrap();
+        let engineer = ClassId::from_key("engineer").unwrap();
+        let mut p = Profile {
+            class: warden,
+            ..Profile::default()
+        };
+        assert_eq!(p.start_weapon(warden), warden.signature());
+        // Level 2 unlocks a familiar weapon as a starting option.
+        let (before, after) = p.award_class_xp(warden, 10_000);
+        assert_eq!(before, 1);
+        assert!(after >= 5);
+        let options = p.start_options(warden);
+        assert!(options.len() > 1);
+        assert!(p.set_start_weapon(options[1]));
+        // A weapon the class is not familiar with is refused.
+        let foreign = WeaponId::all().find(|&w| !warden.is_familiar(w)).unwrap();
+        assert!(!p.set_start_weapon(foreign));
+        p.class = engineer;
+        assert_eq!(p.class_level(engineer).0, 1);
+        p.class = warden;
+        assert_eq!(p.start_weapon(warden), options[1]);
+        let text = serde_json::to_string(&p).unwrap();
+        let back: Profile = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.migrate().unwrap(), p);
+        // Version 3 saves (no classes) start as the starter class.
+        let v3: Profile = serde_json::from_str(r#"{"version":3}"#).unwrap();
+        let v3 = v3.migrate().unwrap();
+        assert_eq!(v3.class, ClassId::starter());
+        assert!(v3.classes.is_empty());
     }
 
     #[test]

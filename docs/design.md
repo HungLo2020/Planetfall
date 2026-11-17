@@ -292,7 +292,7 @@ Ferrite, lumite and voidstone still pay for the ship. Selling equipment earns
 
 ## 14. Roadmap
 
-Each milestone is playable and releasable.
+Each milestone is playable and releasable. Status: stage 1 is done.
 
 1. **Classes and the locker room.** Four classes (ability, passive,
    signature and familiar weapons), per-class records, class XP, players

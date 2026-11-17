@@ -11,7 +11,7 @@
 //! - **Outlines** (`OutlineRenderer`): rings and a fill over the parts of the
 //!   player and the horde hidden behind rock, so nothing fights unseen.
 
-use planetfall_sim::content::{EnemyBehavior, Material, PlanetId};
+use planetfall_sim::content::{AbilityKind, EnemyBehavior, Material, PlanetId};
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::math::V2;
 use planetfall_sim::{Game, Phase};
@@ -298,8 +298,66 @@ impl Effects {
                     })?;
                     self.mark(MarkKind::Scorch, at, 6.0, [1.0, 1.0, 1.0, 0.8]);
                 }
+                GameEvent::AbilityUsed {
+                    player,
+                    kind,
+                    from,
+                    to,
+                } => {
+                    let c = run
+                        .players
+                        .get(player)
+                        .map_or([1.0; 3], |p| p.class.info().color);
+                    let hot = [c[0] * 2.4, c[1] * 2.4, c[2] * 2.4];
+                    let length = from.distance(to);
+                    let steps = ((length / 0.6) as u32).clamp(1, 24);
+                    match kind {
+                        AbilityKind::Bore | AbilityKind::Blink => {
+                            // A streak of sparks along the path.
+                            for n in 0..=steps {
+                                let p = from.lerp(to, n as f32 / steps as f32);
+                                glow.emit(&ParticleBurst {
+                                    position: [p[0], 1.0, p[1]],
+                                    position_jitter: 0.3,
+                                    count: if kind == AbilityKind::Bore { 6 } else { 3 },
+                                    direction: [0.0, 1.0, 0.0],
+                                    spread: 1.4,
+                                    speed: [1.0, 3.5],
+                                    life: [0.2, 0.5],
+                                    size: [0.12, 0.02],
+                                    color_start: [hot[0], hot[1], hot[2], 1.0],
+                                    color_end: [c[0], c[1], c[2], 0.0],
+                                })?;
+                            }
+                            if kind == AbilityKind::Bore {
+                                for n in 0..=steps {
+                                    let p = from.lerp(to, n as f32 / steps as f32);
+                                    dust.emit(&chips(p, 1.0, rock, 6, 0.2))?;
+                                }
+                            }
+                        }
+                        AbilityKind::Barrier | AbilityKind::Turret => {
+                            glow.emit(&ParticleBurst {
+                                position: [to[0], 0.4, to[1]],
+                                position_jitter: if kind == AbilityKind::Barrier {
+                                    1.6
+                                } else {
+                                    0.4
+                                },
+                                count: 30,
+                                direction: [0.0, 1.0, 0.0],
+                                spread: 0.8,
+                                speed: [1.5, 4.0],
+                                life: [0.3, 0.7],
+                                size: [0.12, 0.02],
+                                color_start: [hot[0], hot[1], hot[2], 1.0],
+                                color_end: [c[0], c[1], c[2], 0.0],
+                            })?;
+                        }
+                    }
+                }
                 GameEvent::Dashed => {
-                    let p = run.player.pos;
+                    let p = run.player().pos;
                     dust.emit(&ParticleBurst {
                         position: [p[0], 0.2, p[1]],
                         position_jitter: 0.3,

@@ -205,7 +205,25 @@ impl Storage {
 
     fn read_slot(&self, slot: usize) -> Result<Option<SaveGame>, String> {
         let path = self.slot_path(slot);
-        let save = read_json::<SaveGame>(&path).map_err(|e| format!("unreadable save ({e})"))?;
+        // Read as a tree first: an older save's drop in progress may be in a
+        // format this build cannot resume, and is dropped before parsing.
+        let raw =
+            read_json::<serde_json::Value>(&path).map_err(|e| format!("unreadable save ({e})"))?;
+        let save = raw
+            .map(|mut value| {
+                let version = value
+                    .get("version")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0);
+                if SaveGame::strip_stale_run(version as u32)
+                    && let Some(session) = value.get_mut("session").and_then(|s| s.as_object_mut())
+                {
+                    session.insert("run".into(), serde_json::Value::Null);
+                }
+                serde_json::from_value::<SaveGame>(value)
+            })
+            .transpose()
+            .map_err(|e| format!("unreadable save ({e})"))?;
         save.map(|s| s.migrate().map_err(|e| e.to_string()))
             .transpose()
     }
@@ -476,6 +494,27 @@ mod tests {
         storage.delete_slot(3).unwrap();
         assert_eq!(storage.slots()[2].1, SlotState::Empty);
         assert!(storage.paths.save.join("slot-3.deleted.json").exists());
+    }
+
+    /// A version 1 save with a drop in progress (old run format) still
+    /// loads: the drop is dropped and the slot resumes on the ship.
+    #[test]
+    fn old_drops_in_progress_are_dropped_not_fatal() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = storage_in(dir.path());
+        let game = Game::new(Profile::default(), 1);
+        let mut value = serde_json::to_value(SaveGame::capture(&game, new_meta())).unwrap();
+        value["version"] = 1.into();
+        value["session"]["run"] = serde_json::json!({ "player": { "pos": [1, 2] }, "weapons": [] });
+        std::fs::write(storage.slot_path(2), value.to_string()).unwrap();
+        let loaded = storage.load_slot(2).unwrap();
+        assert!(
+            loaded
+                .session
+                .as_ref()
+                .is_some_and(|s| s.run_planet().is_none())
+        );
+        assert_eq!(loaded.version, planetfall_sim::save::SAVE_VERSION);
     }
 
     #[test]

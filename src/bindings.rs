@@ -2,18 +2,19 @@
 //! prompts derived from them through `quasar-input`.
 //!
 //! Prompt templates (tutorial lines, hints, menus) name actions as
-//! `{interact}`, `{dash}`, `{extract}`, `{build}` and `{move}`. [`Prompts`] replaces them
+//! `{interact}`, `{dash}`, `{extract}`, `{build}`, `{ability}` and `{move}`. [`Prompts`] replaces them
 //! with the active device family's binding names (`E`, `A`, `Cross`, ...).
 
 use quasar_input::{Binding, Bindings, DeviceFamily, GamepadAxis, GamepadButton, InputDevice, Key};
 
 /// Gameplay actions on the controls screen, with their labels. Movement is
 /// rebindable on the keyboard only (the stick is an analogue axis).
-pub const REBINDABLE: [(&str, &str, bool); 7] = [
+pub const REBINDABLE: [(&str, &str, bool); 8] = [
     ("move_x", "Move left / right", false),
     ("move_z", "Move up / down", false),
     ("interact", "Use / deploy", true),
     ("dash", "Dash", true),
+    ("ability", "Class ability", true),
     ("extract", "Call extraction pod", true),
     ("build", "Ship build mode", true),
     ("pause", "Pause", true),
@@ -85,6 +86,7 @@ pub fn keyboard() -> Bindings {
         .bind("dash", Binding::key(Key::ShiftLeft))
         .bind("extract", Binding::key(Key::KeyF))
         .bind("build", Binding::key(Key::KeyB))
+        .bind("ability", Binding::key(Key::KeyQ))
         .bind("pause", Binding::key(Key::Escape));
     ui_actions(&mut b, false);
     b
@@ -111,6 +113,14 @@ pub fn gamepad() -> Bindings {
         .bind("dash", Binding::gamepad_button(GamepadButton::RightBumper))
         .bind("extract", Binding::gamepad_button(GamepadButton::North))
         .bind("build", Binding::gamepad_button(GamepadButton::West))
+        .bind(
+            "ability",
+            Binding::gamepad_button(GamepadButton::LeftBumper),
+        )
+        .bind(
+            "ability",
+            Binding::gamepad_button(GamepadButton::RightTrigger),
+        )
         .bind("pause", Binding::gamepad_button(GamepadButton::Start));
     ui_actions(&mut b, true);
     b
@@ -153,7 +163,7 @@ impl Prompts {
             "WASD"
         };
         let mut text = template.replace("{move}", movement);
-        for action in ["interact", "dash", "extract", "build"] {
+        for action in ["interact", "dash", "extract", "build", "ability"] {
             text = text.replace(&format!("{{{action}}}"), &format!("[{{{action}}}]"));
         }
         let bindings = if self.gamepad() {

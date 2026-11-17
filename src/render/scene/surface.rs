@@ -26,66 +26,11 @@ pub fn surface<'a>(
     pickups(p, run);
     enemies(p, run);
     if !hide_player {
-        let pl = &run.player;
-        let dying = if let Phase::Lost { ticks } = game.phase {
-            1.0 - ticks as f32 / LOST_TICKS as f32
-        } else {
-            0.0
-        };
-        let flash = if pl.hurt_ticks > 0 {
-            pl.hurt_ticks as f32 / 18.0 * 0.8
-        } else {
-            0.0
-        };
-        if dying > 0.0 {
-            let root = at(pl.pos, 0.0)
-                * Mat4::rotation_y(pl.yaw)
-                * Mat4::rotation_x((dying * 3.0).min(1.0) * 1.45);
-            p.character(
-                names::ASTRONAUT,
-                root,
-                &[Layer::full("idle", 0.0)],
-                0.0,
-                None,
-            );
-        } else {
-            let held = run
-                .weapons
-                .iter()
-                .find(|w| w.kind.info().behavior != WeaponBehavior::Orbit)
-                .map(|w| w.kind);
-            // Face the most recent shot while standing still.
-            let yaw = if pl.moving {
-                pl.yaw
-            } else {
-                run.weapons
-                    .iter()
-                    .filter(|w| w.since_fired < 30)
-                    .map(|w| w.aim)
-                    .next()
-                    .unwrap_or(pl.yaw)
-            };
-            p.astronaut(pl.pos, 0.0, yaw, pl.walk, pl.moving, flash, held);
-            if pl.dash_ticks > 0 {
-                let back = math::from_yaw(pl.yaw);
-                for i in 1..4 {
-                    let q = pl.pos - (back * i as f32 * 0.5);
-                    let k = 0.12 - i as f32 * 0.025;
-                    p.glow(at(q, 0.9) * s(k, k, k), [0.5, 0.85, 1.0]);
-                }
-            }
-        }
-        for (i, d) in run.drone_positions().into_iter().enumerate() {
-            let bob = (p.time * 3.0 + i as f32).sin() * 0.15;
-            p.rig(names::DRONE, at(d, 1.3 + bob), 0.0, |n| {
-                if n == "rotor" {
-                    Mat4::rotation_y(time * 14.0)
-                } else {
-                    Mat4::IDENTITY
-                }
-            });
+        for (index, pl) in run.players.iter().enumerate() {
+            player(p, game, run, index, pl);
         }
     }
+    deployables(p, run);
     projectiles(p, run);
     effects(p, run);
     objective_markers(p, game, run);
@@ -111,6 +56,126 @@ pub fn surface<'a>(
                 end: 95.0,
             }),
         }),
+    }
+}
+
+/// One player: the suited character (or their fall), dash trail and drones.
+fn player(p: &mut Painter<'_, '_>, game: &Game, run: &Run, index: usize, pl: &Player) {
+    let time = p.time;
+    let dying = match game.phase {
+        Phase::Lost { ticks } => 1.0 - ticks as f32 / LOST_TICKS as f32,
+        _ if pl.down => 1.0,
+        _ => 0.0,
+    };
+    let flash = if pl.hurt_ticks > 0 {
+        pl.hurt_ticks as f32 / 18.0 * 0.8
+    } else {
+        0.0
+    };
+    if dying > 0.0 {
+        let root = at(pl.pos, 0.0)
+            * Mat4::rotation_y(pl.yaw)
+            * Mat4::rotation_x((dying * 3.0).min(1.0) * 1.45);
+        p.suit(pl.class, root, &[Layer::full("idle", 0.0)], 0.0, None);
+        return;
+    }
+    let held = pl
+        .weapons
+        .iter()
+        .find(|w| w.kind.info().behavior != WeaponBehavior::Orbit)
+        .map(|w| w.kind);
+    // Face the most recent shot while standing still.
+    let yaw = if pl.moving {
+        pl.yaw
+    } else {
+        pl.weapons
+            .iter()
+            .filter(|w| w.since_fired < 30)
+            .map(|w| w.aim)
+            .next()
+            .unwrap_or(pl.yaw)
+    };
+    p.astronaut(pl.class, pl.pos, 0.0, yaw, pl.walk, pl.moving, flash, held);
+    if pl.dash_ticks > 0 {
+        let back = math::from_yaw(pl.yaw);
+        for i in 1..4 {
+            let q = pl.pos - (back * i as f32 * 0.5);
+            let k = 0.12 - i as f32 * 0.025;
+            p.glow(at(q, 0.9) * s(k, k, k), [0.5, 0.85, 1.0]);
+        }
+    }
+    for (i, d) in run.drone_positions(index).into_iter().enumerate() {
+        let bob = (time * 3.0 + i as f32).sin() * 0.15;
+        p.rig(names::DRONE, at(d, 1.3 + bob), 0.0, |n| {
+            if n == "rotor" {
+                Mat4::rotation_y(time * 14.0)
+            } else {
+                Mat4::IDENTITY
+            }
+        });
+    }
+}
+
+/// Barrier posts and turrets left by class abilities.
+fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
+    let time = p.time;
+    for d in &run.deployables {
+        let color = run.players[d.owner].class.info().color;
+        // Fade in over a few ticks and flicker out at the end.
+        let age = d.total - d.ttl;
+        let rise = (age as f32 / 8.0).min(1.0);
+        let fading = d.ttl < 60 && (d.ttl / 4) % 2 == 0;
+        let zap = (1.0 - d.since_fired as f32 / 10.0).max(0.0);
+        match d.kind {
+            DeployableKind::Barrier => {
+                let h = 1.5 * rise;
+                p.block(
+                    at(d.pos, h * 0.5) * s(0.16, h * 0.5, 0.16),
+                    [0.3, 0.32, 0.36],
+                    Surface::Metal,
+                    1.0,
+                );
+                if !fading {
+                    let pulse = 0.6 + 0.4 * (time * 9.0 + d.pos[0]).sin() + zap;
+                    p.glow(at(d.pos, h) * s(0.12, 0.12, 0.12), color);
+                    p.ghost(
+                        at(d.pos, h * 0.5) * s(0.42, h * 0.5, 0.42),
+                        color,
+                        0.12 * pulse,
+                    );
+                }
+            }
+            DeployableKind::Turret { weapon } => {
+                let root = at(d.pos, 0.0);
+                p.block(
+                    root * t(0.0, 0.25, 0.0) * s(0.35, 0.25, 0.35),
+                    [0.3, 0.32, 0.36],
+                    Surface::Metal,
+                    1.0,
+                );
+                let head = root * t(0.0, 0.75 * rise, 0.0) * Mat4::rotation_y(d.yaw);
+                p.block(head * s(0.28, 0.2, 0.36), color, Surface::Metal, 1.0);
+                p.glow(
+                    head * t(0.0, 0.05, 0.42) * s(0.06, 0.06, 0.12),
+                    weapon.info().color,
+                );
+                if zap > 0.0 {
+                    p.point(
+                        [d.pos[0], 1.2, d.pos[1]],
+                        weapon.info().color,
+                        1.2 * zap,
+                        4.0,
+                    );
+                }
+                if !fading {
+                    p.ghost(
+                        root * t(0.0, 0.02, 0.0) * s(d.range * 0.04, 0.01, d.range * 0.04),
+                        color,
+                        0.05,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -149,7 +214,7 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
                     p.model(id, at(c, TILE * 0.5) * s(1.02, 1.02, 1.02));
                     if let Some(color) = light {
                         glows.push((
-                            c.distance_squared(run.player.pos),
+                            c.distance_squared(run.player().pos),
                             [c[0], TILE + 0.8, c[1]],
                             color,
                         ));
@@ -166,7 +231,7 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
         p.point(pos, color, 1.6 * pulse, 7.0);
     }
     // The block being drilled: an outline that heats up with progress.
-    run.player.mining.map(|m| {
+    run.player().mining.map(|m| {
         let k = m.progress.clamp(0.0, 1.0);
         let jitter = (p.time * 50.0).sin() * 0.01 * (1.0 + k);
         voxels::block_box(

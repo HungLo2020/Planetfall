@@ -623,7 +623,7 @@ impl Application for App {
         if let Some(audio) = &mut self.audio {
             audio.set_scene(self.game.phase, title);
             let focus = match (&self.game.run, self.game.phase) {
-                (Some(run), Phase::Surface | Phase::Lost { .. }) => run.player.pos,
+                (Some(run), Phase::Surface | Phase::Lost { .. }) => run.player().pos,
                 _ => self.game.ship.player.pos,
             };
             audio.set_listener([focus[0], 6.0, focus[1]]);

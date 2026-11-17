@@ -12,7 +12,12 @@ use quasar_core::Rng;
 use serde::{Deserialize, Serialize};
 
 /// Save-file schema. The profile inside has its own version.
-pub const SAVE_VERSION: u32 = 1;
+///
+/// - 1: first slot format.
+/// - 2: drops hold a list of players with classes and abilities. A version 1
+///   drop in progress cannot be resumed; the app strips it before parsing
+///   ([`SaveGame::strip_stale_run`]) and the slot resumes on the ship.
+pub const SAVE_VERSION: u32 = 2;
 /// Selectable save slots.
 pub const SLOTS: usize = 5;
 
@@ -94,6 +99,12 @@ impl SaveGame {
             profile: settled.profile,
             session: Some(session),
         }
+    }
+
+    /// Whether a save of `version` can resume its drop in progress (older
+    /// drops are stored in a format this build cannot read).
+    pub fn strip_stale_run(version: u32) -> bool {
+        version < 2
     }
 
     /// Check versions and migrate the profile.

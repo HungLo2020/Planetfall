@@ -7,7 +7,7 @@
 use super::{Builder, Layer, format_cost, format_materials, hud::roman};
 use crate::bindings::{self, Prompts};
 use crate::storage::{SlotState, SlotSummary};
-use planetfall_sim::content::{PlanetId, UpgradeId};
+use planetfall_sim::content::{ClassId, PlanetId, UpgradeId, class_xp_to_next, content};
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
 use quasar_input::{Bindings, Button, DeviceFamily, InputDevice};
@@ -334,7 +334,7 @@ impl Menu {
             Content::Screen(screen) => self.build_screen(b, screen, prompts, context),
             Content::LevelUp => {
                 let card = Self::card(b, 560.0);
-                let level = game.run.as_ref().map_or(1, |r| r.player.level);
+                let level = game.run.as_ref().map_or(1, |r| r.player().level);
                 b.label(
                     card,
                     format!("LEVEL {level} — FIELD UPGRADE"),
@@ -364,6 +364,7 @@ impl Menu {
             Content::Terminal => match &game.terminal {
                 Some(Terminal::Navigation) => self.navigation(b, game),
                 Some(Terminal::Fabricator) => self.fabricator(b, game),
+                Some(Terminal::Locker) => self.locker(b, game),
                 Some(Terminal::Debrief(summary)) => {
                     let card = Self::card(b, 560.0);
                     let (title, tone) = match summary.outcome {
@@ -405,6 +406,24 @@ impl Menu {
                         format!("Loadout: {}", weapons.join(", ")),
                         TextStyle::Small,
                     );
+                    let (before, after) = summary.class_levels;
+                    let class_line = if after > before {
+                        format!(
+                            "{} +{} class XP  ·  LEVEL UP: {} → {}",
+                            summary.class.name(),
+                            summary.class_xp,
+                            before,
+                            after
+                        )
+                    } else {
+                        format!(
+                            "{} +{} class XP  ·  level {}",
+                            summary.class.name(),
+                            summary.class_xp,
+                            after
+                        )
+                    };
+                    b.label(card, class_line, TextStyle::Body);
                     if summary.outcome == RunOutcome::Extracted {
                         b.label(
                             card,
@@ -500,6 +519,115 @@ impl Menu {
                     TextStyle::Small,
                 );
             }
+        }
+        self.cancel = MenuAction::Game(Command::Close);
+        self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
+    }
+
+    /// Locker room: pick a class, see its kit and progress, choose the
+    /// starting weapon. Every class keeps its own progress.
+    fn locker(&mut self, b: &mut Builder, game: &Game) {
+        let profile = &game.profile;
+        let card = Self::card(b, 720.0);
+        b.label(card, "LOCKER ROOM", TextStyle::Heading);
+        b.label(
+            card,
+            "Suit up as any class. Each keeps its own level and loadout.",
+            TextStyle::Small,
+        );
+        for class in ClassId::all() {
+            let (level, into) = profile.class_level(class);
+            let info = class.info();
+            let active = profile.class == class;
+            let progress = if level >= content().tuning.class.max_level {
+                "MAX".to_owned()
+            } else {
+                format!("{into}/{} XP", class_xp_to_next(level))
+            };
+            let label = format!(
+                "{}{}  —  {}  ·  level {level}  ·  {progress}",
+                if active { "▶ " } else { "" },
+                info.name.to_uppercase(),
+                info.role,
+            );
+            self.button(
+                b,
+                card,
+                label,
+                MenuAction::Game(Command::SelectClass(class)),
+                !active,
+            );
+        }
+        let class = profile.class;
+        let info = class.info();
+        let (level, _) = profile.class_level(class);
+        let ability_tier = class.ability_tier(level);
+        let passive_tier = class.passive_tier(level);
+        b.label(card, info.name.to_uppercase(), TextStyle::Body);
+        b.paragraph(card, &info.description, TextStyle::Small);
+        b.paragraph(
+            card,
+            &format!(
+                "Ability: {} {} — {}",
+                info.ability.name,
+                roman(ability_tier),
+                info.ability.description
+            ),
+            TextStyle::Small,
+        );
+        b.paragraph(
+            card,
+            &format!(
+                "Passive: {} {} — {}",
+                info.passive.name,
+                roman(passive_tier),
+                info.passive.description
+            ),
+            TextStyle::Small,
+        );
+        let familiar: Vec<&str> = class.familiar().map(|w| w.name()).collect();
+        b.paragraph(
+            card,
+            &format!("Familiar weapons: {}", familiar.join(", ")),
+            TextStyle::Small,
+        );
+        b.label(card, "STARTING WEAPON", TextStyle::Small);
+        let options = profile.start_options(class);
+        let current = profile.start_weapon(class);
+        for weapon in class
+            .familiar()
+            .chain(std::iter::once(class.signature()))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            let unlocked = options.contains(&weapon);
+            let tag = if weapon == class.signature() {
+                " (signature)"
+            } else {
+                ""
+            };
+            let label = if weapon == current {
+                format!("▶ {}{tag}  —  EQUIPPED", weapon.name())
+            } else if unlocked {
+                format!("{}{tag}", weapon.name())
+            } else {
+                let at = info
+                    .unlocks
+                    .iter()
+                    .find(|u| u.weapon == weapon.key())
+                    .map_or("find it on a dive".to_owned(), |u| {
+                        format!("class level {}", u.level)
+                    });
+                format!("{}  —  LOCKED ({at})", weapon.name())
+            };
+            self.button(
+                b,
+                card,
+                label,
+                MenuAction::Game(Command::SetStartWeapon(weapon)),
+                unlocked && weapon != current,
+            );
         }
         self.cancel = MenuAction::Game(Command::Close);
         self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
@@ -844,8 +972,13 @@ fn signature(content: Content, game: &Game, prompts: &Prompts, context: &MenuCon
     match content {
         Content::Terminal => {
             s.push_str(&format!(
-                "|{:?}|{:?}|{:?}|{:?}",
-                game.terminal, game.profile.materials, game.profile.upgrades, game.profile.orbiting
+                "|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+                game.terminal,
+                game.profile.materials,
+                game.profile.upgrades,
+                game.profile.orbiting,
+                game.profile.class,
+                game.profile.classes
             ));
         }
         Content::LevelUp => {

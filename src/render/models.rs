@@ -29,6 +29,7 @@ pub mod names {
     pub const SHIP_EXTERIOR: &str = "ship-exterior";
     pub const NAV_CONSOLE: &str = "nav-console";
     pub const POD_CRADLE: &str = "pod-cradle";
+    pub const LOCKER: &str = "locker";
     pub const WORKBENCH: &str = "workbench";
     pub const METAL_PANEL: &str = "metal-panel";
     pub const CRATE_MEDIUM: &str = "crate-medium";
@@ -42,7 +43,7 @@ pub mod names {
     pub const LUMITE_CHUNK: &str = "lumite-chunk";
     pub const VOIDSTONE_CHUNK: &str = "voidstone-chunk";
 
-    pub const ALL: [&str; 19] = [
+    pub const ALL: [&str; 20] = [
         ASTRONAUT,
         DROP_POD,
         DRONE,
@@ -50,6 +51,7 @@ pub mod names {
         SHIP_EXTERIOR,
         NAV_CONSOLE,
         POD_CRADLE,
+        LOCKER,
         WORKBENCH,
         METAL_PANEL,
         CRATE_MEDIUM,

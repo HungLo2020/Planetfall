@@ -89,7 +89,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Lost { ticks } => {
-            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player.pos);
+            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player().pos);
             let t = 1.0 - ticks as f32 / LOST_TICKS as f32;
             Framing {
                 target: [p[0], 0.0, p[1]],
@@ -99,7 +99,7 @@ pub fn framing(game: &Game) -> Framing {
             }
         }
         Phase::Surface => {
-            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player.pos);
+            let p = game.run.as_ref().map_or(V2::ZERO, |r| r.player().pos);
             Framing {
                 target: [p[0], 0.0, p[1]],
                 offset: top_down,

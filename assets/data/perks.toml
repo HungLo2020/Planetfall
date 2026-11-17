@@ -1,7 +1,13 @@
 # Level-up field perks (lost when the drop ends). New-weapon and weapon-level
-# choices come from weapons.toml. effect: max_health (also heals), move_speed
-# (multiplier), damage, fire_rate (cooldown multiplier), pickup_range,
-# mining, regeneration (HP/s). `max` caps the stacked total of an effect.
+# choices come from weapons.toml.
+#
+# effect: max_health (also heals), move_speed (multiplier), damage,
+# fire_rate (cooldown multiplier), pickup_range, mining, regeneration (HP/s),
+# ore_bonus (chance of an extra ore drop), extraction_speed (faster hold),
+# dash_cooldown (multiplier), heavy_damage (bonus against enemies with 100+
+# health), ability_cooldown (multiplier). `max` caps the stacked total of an
+# additive effect. Class perks (`class`) are only offered to that class,
+# from class level `class_level`.
 
 [[perk]]
 id = "reinforced-suit"
@@ -59,3 +65,83 @@ effect = "regeneration"
 amount = 1.0
 weight = 2
 max = 3.0
+
+# -- Class perks ------------------------------------------------------------
+
+[[perk]]
+id = "momentum"
+title = "Momentum"
+description = "Dash recharges 20% faster."
+effect = "dash_cooldown"
+amount = 0.8
+weight = 2
+class = "striker"
+
+[[perk]]
+id = "executioner"
+title = "Executioner"
+description = "+25% damage against heavy enemies."
+effect = "heavy_damage"
+amount = 0.25
+weight = 2
+class = "striker"
+class_level = 3
+
+[[perk]]
+id = "rich-veins"
+title = "Rich Veins"
+description = "+20% chance of extra ore from every vein."
+effect = "ore_bonus"
+amount = 0.2
+weight = 2
+class = "prospector"
+
+[[perk]]
+id = "overclocked-drill"
+title = "Overclocked Drill"
+description = "+60% mining speed."
+effect = "mining"
+amount = 0.6
+weight = 2
+class = "prospector"
+class_level = 3
+
+[[perk]]
+id = "bulwark"
+title = "Bulwark"
+description = "+30 max health and heal 30."
+effect = "max_health"
+amount = 30.0
+weight = 2
+class = "warden"
+
+[[perk]]
+id = "dug-in"
+title = "Dug In"
+description = "Hold the extraction zone 25% faster."
+effect = "extraction_speed"
+amount = 0.25
+weight = 1
+class = "warden"
+class_level = 3
+max = 1.5
+
+[[perk]]
+id = "capacitors"
+title = "Capacitors"
+description = "Ability recharges 15% faster."
+effect = "ability_cooldown"
+amount = 0.85
+weight = 2
+class = "engineer"
+
+[[perk]]
+id = "auto-repair"
+title = "Auto-Repair"
+description = "Regenerate 1.5 health per second."
+effect = "regeneration"
+amount = 1.5
+weight = 2
+class = "engineer"
+class_level = 3
+max = 5.0

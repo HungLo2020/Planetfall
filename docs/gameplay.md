@@ -16,25 +16,53 @@ the main menu. A drop in progress is saved too and resumes where you left it.
 ## The loop
 
 1. **Ship.** Walk the ship. The **Navigation Console** plots FTL jumps, the
-   **Fabricator** builds and upgrades modules, the **Drop Pod** deploys to the
-   planet you are orbiting.
+   **Fabricator** builds and upgrades modules, the **Locker Room** switches
+   class and starting weapon, the **Drop Pod** deploys to the planet you are
+   orbiting.
 2. **FTL.** A short warp cinematic; the ship arrives in orbit.
 3. **Drop.** The pod falls to a landing site in a generated cave.
 4. **Surface.** Weapons fire automatically at the nearest hostile. Walk into
-   rock to drill through it. Collect XP shards to level up (pick 1 of 3 field
+   rock to drill through it. Press Q / (LB) for the class ability. Collect XP shards to level up (pick 1 of 3 field
    perks; the run pauses while you choose). Walk over **weapon caches** for new
    weapons. Mine **lumite** to complete the objective.
 5. **Extract.** Press F / (Y) once the objective is done. The pod lands at the
    drop site after 12 s and the horde intensifies. Stand inside the ring for 6 s
    (leaving drains progress) to lift off.
-6. **Debrief.** Carried materials are banked in the hold. Death or abandoning
-   loses all cargo.
+6. **Debrief.** Carried materials are banked in the hold and the class earns
+   class XP. Death or abandoning loses all cargo.
 7. **Upgrade.** Spend ferrite, lumite and voidstone at the Fabricator, or
    build onto the hull yourself in build mode.
 
 Persistent: materials, ship modules and levels, player-built ship blocks,
-stats, tutorial completion, current orbit. Per-run only: weapons, weapon
+stats, tutorial completion, current orbit, the active class and every
+class's level, unlocks and starting weapon. Per-run only: weapons, weapon
 levels, perks, XP level.
+
+## Classes and the locker room
+
+Four crew classes, switched any time at the **Locker Room** in the corridor.
+Every class keeps its own record per save: switching Warden → Engineer →
+Warden loses nothing.
+
+| Class | Signature weapon | Ability (Q / LB) | Passive |
+|---|---|---|---|
+| Striker | Pulse Blaster | **Blink**: teleport ahead through enemies, damaging everything passed | **Hunter**: +25% damage to heavy enemies (100+ health), faster dash, slightly faster |
+| Prospector | Seam Cutter | **Bore**: drill a straight tunnel ahead, breaking rock (with drops) and shredding enemies in it | **Deep Seams**: +50% mining, 25% chance of extra ore per vein, -15 max health |
+| Warden | Scattergun | **Barrier**: a row of shock posts the horde cannot pass | **Hold the Line**: +25 max health, extraction zone fills 30% faster |
+| Engineer | Orbit Drones | **Sentry Turret**: a turret that fires at the nearest hostile | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
+
+- **Familiar weapons** (two per class) are offered three times as often on
+  level-ups and from caches. Each can be chosen as the starting weapon once
+  unlocked (class levels 2 and 5, or found on a dive in a later stage); the
+  signature weapon then joins the pool.
+- **Class XP**: everything collected on a dive plus a bonus for extracting
+  (half of the collected XP, no bonus, after a failed drop). Levels grow the
+  ability (tiers at class levels 4 and 8) and passive (6 and 10), unlock
+  familiar starting weapons and add class perks to level-up offers.
+- **Class perks** (two per class, one from class level 3) appear only for
+  their class: e.g. Momentum and Executioner for the Striker, Rich Veins and
+  Overclocked Drill for the Prospector.
+- New commanders start as the Striker; the tutorial is unchanged.
 
 ## Tutorial
 
@@ -63,7 +91,8 @@ surface and nearly doubles during extraction.
 
 | Weapon | Behaviour |
 |---|---|
-| Pulse Blaster | Starter. Fast bolts at the nearest target; twin bolts at 4, pierce at 5 |
+| Pulse Blaster | Striker signature. Fast bolts at the nearest target; twin bolts at 4, pierce at 5 |
+| Seam Cutter | Prospector signature. Short-range piercing cutting bolts |
 | Scattergun | Short-range pellet fan; more pellets per level |
 | Arc Caster | Chain lightning jumping between nearby enemies |
 | Plasma Mortar | Lobbed shells that burst in an area |
@@ -136,7 +165,8 @@ Content and balance are TOML in `assets/data/` (shipped as
 | `weapons.toml` | Behaviour archetype, five levels of stats, held model, sound, colour, starter flag |
 | `enemies.toml` | Behaviour archetype, stats, spawn rules (weight, group size, first minute, late or tutorial), drops, model, blood colour, sounds |
 | `planets.toml` | Unlock level, hazard, objective, ore chances, voxel palette, per-enemy spawn weights |
-| `perks.toml` | Field perks: effect, amount, weight, optional cap |
+| `perks.toml` | Field perks: effect, amount, weight, optional cap, optional class and class level |
+| `classes.toml` | Classes: signature and familiar weapons, ability archetype and tiers, passive effects, unlock levels, suit colour |
 | `upgrades.toml` | Ship modules: effect, per-level amount, costs, room rectangle, station model and light |
 | `tuning.toml` | Player, weapon, XP, horde, extraction, tutorial and build-block numbers |
 | `models.toml` | Model names for files outside `assets/models` (Kenney props) |

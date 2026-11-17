@@ -89,6 +89,7 @@ fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
         perks: &texts[3],
         upgrades: &texts[4],
         tuning: &texts[5],
+        classes: &texts[6],
     })
     .map_err(|e| format!("content data in {}: {e}", dir.display()))?;
     content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())
@@ -145,7 +146,7 @@ fn headless(
     let history = history.events();
     let run = game.run.as_ref();
     println!(
-        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} hash={:016x}",
+        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} hash={:016x}",
         game.tick,
         game.phase,
         match (&game.terminal, run.and_then(|r| r.level_up_choices())) {
@@ -154,6 +155,7 @@ fn headless(
             (Some(planetfall_sim::Terminal::Fabricator), _) => "fabricator",
             (Some(planetfall_sim::Terminal::Debrief(_)), _) => "debrief",
             (Some(planetfall_sim::Terminal::Module(_)), _) => "module",
+            (Some(planetfall_sim::Terminal::Locker), _) => "locker",
             (None, None) => "none",
         },
         game.tutorial_step(),
@@ -163,7 +165,18 @@ fn headless(
         game.profile.stats.kills + run.map_or(0, |r| r.kills),
         game.profile.materials,
         game.ship.layout.rooms.len().saturating_sub(3),
-        run.map_or(0, |r| r.player.level),
+        run.map_or(0, |r| r.player().level),
+        game.profile.class.key(),
+        planetfall_sim::content::ClassId::all()
+            .map(|c| format!(
+                "{}:{}/{}xp",
+                c.key(),
+                game.profile.class_level(c).0,
+                game.profile.class_record(c).xp
+            ))
+            .collect::<Vec<_>>()
+            .join(","),
+        game.ship.build,
         game.state_hash().value(),
     );
     if let Some(path) = &settings.screenshot {
@@ -327,7 +340,7 @@ fn cover(asset_root: &std::path::Path, path: &std::path::Path) -> Result<(), Str
                     && run
                         .enemies
                         .iter()
-                        .filter(|e| e.pos.distance(run.player.pos) < 9.0)
+                        .filter(|e| e.pos.distance(run.player().pos) < 9.0)
                         .count()
                         >= 7
                     && !run.beams.is_empty()

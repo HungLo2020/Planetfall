@@ -57,7 +57,7 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
     if game.phase != Phase::Surface {
         return;
     }
-    let p = &run.player;
+    let p = &run.player();
     // Mining progress over the block being drilled.
     if let Some(m) = p.mining {
         let center = Terrain::center_of(m.tile.0, m.tile.1);

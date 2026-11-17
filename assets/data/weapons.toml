@@ -1,5 +1,6 @@
 # Weapons: behaviour archetypes are code (bolt, scatter, arc, mortar,
-# orbit); everything else is data. `levels` lists levels 1..5.
+# orbit); everything else is data. `levels` lists levels 1..5. Which weapon a
+# dive starts with comes from the class (classes.toml).
 # model: held model (a name from assets/models or models.toml),
 # turned by model_yaw degrees; color: linear
 # RGB of projectiles and muzzle light; sound: clip name in assets/sounds.
@@ -9,7 +10,6 @@ id = "pulse-blaster"
 name = "Pulse Blaster"
 description = "Rapid bolts at the nearest hostile."
 behavior = "bolt"
-starter = true
 model = "blaster"
 model_scale = 0.7
 # Kenney blasters face the other way.
@@ -99,4 +99,23 @@ levels = [
   { cooldown = 0.5, damage = 13.0, range = 2.6, count = 4, speed = 2.6, radius = 0.7, pierce = 0 },
   { cooldown = 0.5, damage = 15.0, range = 2.6, count = 5, speed = 2.6, radius = 0.7, pierce = 0 },
   { cooldown = 0.5, damage = 17.0, range = 2.6, count = 6, speed = 2.6, radius = 0.7, pierce = 0 },
+]
+
+[[weapon]]
+id = "seam-cutter"
+name = "Seam Cutter"
+description = "A short-range cutting beam that punches through lines of enemies."
+behavior = "bolt"
+model = "scattergun"
+model_scale = 0.7
+model_yaw = 180.0
+sound = "blaster"
+volume = 0.4
+color = [1.0, 0.62, 0.2]
+levels = [
+  { cooldown = 0.62, damage = 16.0, range = 9.0, count = 1, speed = 30.0, radius = 0.3, pierce = 2 },
+  { cooldown = 0.56, damage = 20.0, range = 9.5, count = 1, speed = 30.0, radius = 0.3, pierce = 2 },
+  { cooldown = 0.5, damage = 24.0, range = 10.0, count = 1, speed = 30.0, radius = 0.32, pierce = 3 },
+  { cooldown = 0.45, damage = 28.0, range = 10.5, count = 1, speed = 30.0, radius = 0.32, pierce = 3 },
+  { cooldown = 0.4, damage = 33.0, range = 11.0, count = 2, speed = 30.0, radius = 0.34, pierce = 4 },
 ]

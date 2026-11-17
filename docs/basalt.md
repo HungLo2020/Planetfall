@@ -57,8 +57,10 @@ Save rules:
 - The active slot is saved every minute of play, whenever the profile changes
   (purchase, extraction, death, travel, tutorial completion), on save & quit,
   on suspend and on exit.
-- `SaveGame.version` (`SAVE_VERSION` 1) and `Profile.version`
-  (`PROFILE_VERSION` 3: string-keyed modules) gate migrations. A newer save is
+- `SaveGame.version` (`SAVE_VERSION` 2: drops hold a list of players with
+  classes) and `Profile.version` (`PROFILE_VERSION` 4: the active class and
+  per-class records) gate migrations. A version 1 slot loads with its drop
+  in progress dropped (that format cannot resume) and resumes on the ship. A newer save is
   listed as unusable and never overwritten. An unreadable slot is copied
   aside as `slot-N.corrupt-<time>.json` so the slot can be reused. Deleting a
   slot renames it `slot-N.deleted.json` (one level of undo by hand).

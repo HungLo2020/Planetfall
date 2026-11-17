@@ -11,6 +11,7 @@ impl Painter<'_, '_> {
     )]
     pub(super) fn astronaut(
         &mut self,
+        class: ClassId,
         pos: V2,
         y: f32,
         yaw: f32,
@@ -28,13 +29,7 @@ impl Painter<'_, '_> {
         if weapon.is_some() {
             layers.push(Layer::full("aim", 0.0));
         }
-        let posed = self.character(
-            names::ASTRONAUT,
-            root,
-            &layers,
-            flash,
-            Some(outline::PLAYER),
-        );
+        let posed = self.suit(class, root, &layers, flash, Some(outline::PLAYER));
         if let Some(weapon) = weapon {
             let info = weapon.info();
             let k = info.model_scale;
@@ -55,6 +50,23 @@ impl Painter<'_, '_> {
             1.15,
             10.0,
         );
+    }
+}
+
+impl Painter<'_, '_> {
+    /// The astronaut in a class's colours: the suit takes a share of the
+    /// class colour and the visor and lamps glow in it.
+    pub(super) fn suit(
+        &mut self,
+        class: ClassId,
+        root: Mat4,
+        layers: &[Layer],
+        flash: f32,
+        outline: Option<u8>,
+    ) -> Posed {
+        let c = class.info().color;
+        let tint = mix3([1.0; 3], c, 0.45);
+        self.character_tinted(names::ASTRONAUT, root, layers, flash, outline, tint, c)
     }
 }
 
@@ -88,7 +100,7 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         }
         // Exploders flash faster the closer they get.
         if info.behavior == EnemyBehavior::Exploder {
-            let danger = (1.0 - (e.pos.distance(run.player.pos) / 5.0)).clamp(0.0, 1.0);
+            let danger = (1.0 - (e.pos.distance(run.player().pos) / 5.0)).clamp(0.0, 1.0);
             glow += danger * 0.4 * ((p.time * 14.0).sin() * 0.5 + 0.5);
         }
         let style = if info.behavior == EnemyBehavior::Exploder {

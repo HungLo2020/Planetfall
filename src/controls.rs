@@ -16,6 +16,7 @@ const PLAYER: PlayerId = PlayerId::new(0);
 
 #[derive(Default, Clone, Copy)]
 struct Latched {
+    ability: bool,
     interact: bool,
     dash: bool,
     extract: bool,
@@ -111,10 +112,12 @@ impl Controls {
         let dash = keyboard.action("dash").pressed || pad("dash");
         let extract = keyboard.action("extract").pressed || pad("extract");
         let build = keyboard.action("build").pressed || pad("build");
+        let ability = keyboard.action("ability").pressed || pad("ability");
         self.latched.interact |= interact;
         self.latched.dash |= dash;
         self.latched.extract |= extract;
         self.latched.build |= build;
+        self.latched.ability |= ability;
     }
 
     pub fn pause_pressed(&self, keyboard: &FrameInput) -> bool {
@@ -142,6 +145,7 @@ impl Controls {
             dash: latched.dash,
             call_extraction: latched.extract,
             build: latched.build,
+            ability: latched.ability,
             command: self.command.take(),
         }
     }

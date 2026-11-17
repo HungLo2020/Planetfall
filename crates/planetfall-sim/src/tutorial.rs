@@ -1,7 +1,7 @@
 //! First-launch tutorial: walks the player from the barebones ship through
 //! their first FTL jump, drop, extraction and ship upgrade.
 //!
-//! Prompt text uses `{move}`, `{interact}`, `{dash}` and `{extract}`
+//! Prompt text uses `{move}`, `{interact}`, `{dash}`, `{extract}` and `{ability}`
 //! placeholders that the presentation layer replaces with device labels.
 
 use crate::math::V2;
@@ -99,7 +99,7 @@ impl Tutorial {
             ),
             TutorialStep::Collect => (
                 "SHIP AI // FIELD UPGRADES",
-                "Fallen hostiles drop green XP shards. Collect them to level up and pick a field upgrade.".into(),
+                "Fallen hostiles drop green XP shards. Collect them to level up and pick a field upgrade. Press {ability} for your class ability when they close in.".into(),
             ),
             TutorialStep::Cache => (
                 "SHIP AI // WEAPON CACHE",
@@ -127,7 +127,7 @@ impl Tutorial {
             ),
             TutorialStep::Done => (
                 "SHIP AI // YOU'RE ON YOUR OWN",
-                "That's the job: drop, mine, survive, extract, build. Upgrade the Reactor to reach more dangerous worlds. Good hunting, Commander.".into(),
+                "That's the job: drop, mine, survive, extract, build. Visit the Locker Room to suit up as another class, and upgrade the Reactor to reach more dangerous worlds. Good hunting, Commander.".into(),
             ),
         };
         Some(text)

@@ -144,6 +144,12 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
                     6.0,
                 );
             }
+            StationKind::Locker => {
+                p.model(names::LOCKER, root * t(0.0, 0.0, -0.2));
+                // Lit in the active class's colour.
+                let color = game.profile.class.info().color;
+                p.point([station.pos[0] + 0.6, 2.2, station.pos[1]], color, 0.9, 5.0);
+            }
             StationKind::DropPod => {
                 p.model(names::POD_CRADLE, root);
                 let ready = game.profile.orbiting.is_some();
@@ -224,7 +230,16 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
     );
     let pl = &ship.player;
     if !matches!(game.phase, Phase::Descent { .. }) {
-        p.astronaut(pl.pos, 0.0, pl.yaw, pl.walk, pl.moving, 0.0, None);
+        p.astronaut(
+            game.profile.class,
+            pl.pos,
+            0.0,
+            pl.yaw,
+            pl.walk,
+            pl.moving,
+            0.0,
+            None,
+        );
     }
     ship_markers(p, game);
     space_backdrop(p, game.profile.orbiting, V2::new(7.5 * TILE, 8.5 * TILE));

@@ -4,7 +4,6 @@
 use super::{Blast, BlastKind, Extraction, Run, RunOutcome, RunState};
 use crate::content::{content, seconds};
 use crate::events::GameEvent;
-use crate::input::GameInput;
 
 /// Ticks from calling the pod to touchdown.
 pub fn extraction_inbound() -> u32 {
@@ -22,8 +21,8 @@ pub fn extraction_radius() -> f32 {
 }
 
 impl Run {
-    pub(super) fn update_extraction(&mut self, input: &GameInput, events: &mut Vec<GameEvent>) {
-        if input.call_extraction && matches!(self.extraction, Extraction::Idle) {
+    pub(super) fn update_extraction(&mut self, call: bool, events: &mut Vec<GameEvent>) {
+        if call && matches!(self.extraction, Extraction::Idle) {
             if self.objective_done {
                 self.extraction = Extraction::Inbound {
                     ticks: extraction_inbound(),
@@ -57,10 +56,20 @@ impl Run {
                 };
             }
             Extraction::Waiting { pos, hold } => {
-                let inside = self.player.pos.distance(pos) < extraction_radius();
+                // Every living player must be in the zone; the fastest
+                // holder's extraction-speed bonus applies.
+                let alive = self.players.iter().filter(|p| p.alive());
+                let inside = alive
+                    .clone()
+                    .all(|p| p.pos.distance(pos) < extraction_radius());
+                let speed = alive.map(|p| p.extraction_speed).fold(0.0, f32::max);
                 let hold = if inside {
-                    hold + 1
+                    self.hold_carry += 1.0 + speed;
+                    let step = self.hold_carry.floor();
+                    self.hold_carry -= step;
+                    hold + step as u32
                 } else {
+                    self.hold_carry = 0.0;
                     hold.saturating_sub(2)
                 };
                 if hold >= extraction_hold() {

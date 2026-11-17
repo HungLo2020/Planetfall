@@ -1,6 +1,6 @@
 //! Device-independent player intent for one simulation tick.
 
-use crate::content::{PlanetId, UpgradeId};
+use crate::content::{ClassId, PlanetId, UpgradeId, WeaponId};
 use crate::math::V2;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,11 @@ pub enum Command {
     Close,
     /// Give up on the current drop. Carried materials are lost.
     Abandon,
+    /// Locker room: switch the active class.
+    SelectClass(ClassId),
+    /// Locker room: the active class's starting weapon (its signature or an
+    /// unlocked familiar weapon).
+    SetStartWeapon(WeaponId),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -33,5 +38,7 @@ pub struct GameInput {
     pub call_extraction: bool,
     /// Edge-triggered: toggle ship build mode.
     pub build: bool,
+    /// Edge-triggered: use the class ability.
+    pub ability: bool,
     pub command: Option<Command>,
 }

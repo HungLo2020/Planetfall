@@ -74,7 +74,7 @@ pub fn build(cx: &HudContext) -> Layer {
                 ),
                 TextStyle::Body,
             );
-            let p = &run.player;
+            let p = &run.player();
             b.label(
                 status,
                 format!("HULL {:.0} / {:.0}", p.health.max(0.0), p.max_health),
@@ -88,13 +88,37 @@ pub fn build(cx: &HudContext) -> Layer {
             );
             b.progress(status, "", p.xp as f32, p.xp_needed() as f32);
             let mut weapons = String::new();
-            for wpn in &run.weapons {
+            for wpn in &p.weapons {
                 if !weapons.is_empty() {
                     weapons.push_str("  ·  ");
                 }
                 weapons.push_str(&format!("{} {}", wpn.kind.name(), roman(wpn.level)));
             }
-            b.label(status, weapons, TextStyle::Small);
+            b.paragraph(status, &weapons, TextStyle::Small);
+            // Class ability: ready prompt or recharge bar.
+            let ability = &p.class.info().ability;
+            let line = if p.ability.cooldown == 0 {
+                text(&format!(
+                    "{}  ·  {} READY  {{ability}}",
+                    p.class.name().to_uppercase(),
+                    ability.name.to_uppercase()
+                ))
+            } else {
+                format!(
+                    "{}  ·  {}  {}s",
+                    p.class.name().to_uppercase(),
+                    ability.name.to_uppercase(),
+                    p.ability.cooldown.div_ceil(60)
+                )
+            };
+            b.label(status, line, TextStyle::Small);
+            let total = p.ability.cooldown_total.max(1);
+            b.progress(
+                status,
+                "",
+                (total - p.ability.cooldown.min(total)) as f32,
+                total as f32,
+            );
 
             let cargo = b.card(root, pinned(Anchor::TopRight, 340.0), 3.0, 10.0);
             b.label(cargo, "CARGO (lost if you fall)", TextStyle::Small);

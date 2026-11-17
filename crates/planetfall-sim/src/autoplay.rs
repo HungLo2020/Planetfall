@@ -1,7 +1,7 @@
 //! A simple autopilot that plays the whole loop. Used for headless runs,
 //! soak tests and CI, so every feature is drivable without a window.
 
-use crate::content::{Material, PlanetId, ShipBlock, UpgradeId};
+use crate::content::{ClassId, Material, PlanetId, ShipBlock, UpgradeId};
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
 use crate::math::V2;
@@ -51,6 +51,19 @@ impl Autopilot {
                     }
                 }
                 Terminal::Fabricator => affordable(game).map_or(Command::Close, Command::Purchase),
+                Terminal::Locker => {
+                    let want = wanted_class(game);
+                    let profile = &game.profile;
+                    let options = profile.start_options(want);
+                    if profile.class != want {
+                        Command::SelectClass(want)
+                    } else if options.len() > 1 && profile.start_weapon(want) == want.signature() {
+                        // Exercise the starting-weapon choice once unlocked.
+                        Command::SetStartWeapon(options[1])
+                    } else {
+                        Command::Close
+                    }
+                }
                 Terminal::Debrief(_) | Terminal::Module(_) => Command::Close,
             };
             return GameInput {
@@ -69,6 +82,8 @@ impl Autopilot {
             StationKind::NavConsole
         } else if affordable(game).is_some() {
             StationKind::Fabricator
+        } else if game.profile.class != wanted_class(game) {
+            StationKind::Locker
         } else {
             StationKind::DropPod
         };
@@ -155,7 +170,7 @@ impl Autopilot {
                 ..GameInput::default()
             };
         }
-        let player = run.player.pos;
+        let player = run.player().pos;
         let goal: Option<V2> = if run.objective_done {
             Some(run.landing)
         } else if let Some(cache) = run
@@ -179,15 +194,33 @@ impl Autopilot {
                 movement += away * 0.6 / d;
             }
         }
+        // Use the class ability when the horde closes in.
+        let crowd = run
+            .enemies
+            .iter()
+            .filter(|e| e.pos.distance(player) < 6.0)
+            .count();
+        let ability = run.player().ability.cooldown == 0 && crowd >= 3 && pulse;
         GameInput {
             movement: movement.clamp_length_max(1.0),
             call_extraction: run.objective_done
                 && matches!(run.extraction, Extraction::Idle)
                 && pulse,
-            dash: run.player.hurt_ticks > 0 && pulse,
+            dash: run.player().hurt_ticks > 0 && pulse,
+            ability,
             ..GameInput::default()
         }
     }
+}
+
+/// The class the autopilot plays: the starter through the tutorial, then a
+/// different class after each extraction so every class gets exercised.
+fn wanted_class(game: &Game) -> ClassId {
+    if !game.profile.tutorial_complete {
+        return ClassId::starter();
+    }
+    let classes: Vec<ClassId> = ClassId::all().collect();
+    classes[game.profile.stats.extractions as usize % classes.len()]
 }
 
 fn affordable(game: &Game) -> Option<UpgradeId> {

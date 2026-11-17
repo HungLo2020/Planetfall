@@ -1,0 +1,117 @@
+# Crew classes, switched in the ship's locker room. Each class keeps its own
+# level, unlocks and loadout per save.
+#
+# signature: the default starting weapon; familiar: weapons this class is
+#   offered more often, which can also be chosen as the starting weapon once
+#   unlocked (by class level in `unlocks`, or found on a dive).
+# ability: the active (one button, cooldown). kind is a code archetype:
+#   "bore" (tunnel through rock ahead, damaging anything in it: damage,
+#           range = length in metres, width),
+#   "barrier" (a wall of shock posts ahead: count posts, duration, damage
+#           per second to enemies touching them),
+#   "blink" (teleport up to range metres, damaging enemies on the way),
+#   "turret" (deploy a turret firing `weapon` for duration seconds).
+#   tiers[n] applies from class level ability_levels[n].
+# passive: stat effects (see perks.toml for effect names); each tier adds
+#   per_tier. Tiers apply from class level passive_levels[n].
+# color: suit accent (linear RGB).
+
+[[class]]
+id = "striker"
+name = "Striker"
+role = "Tempo and mobility"
+description = "Fast, aggressive and best against big targets."
+starter = true
+signature = "pulse-blaster"
+familiar = ["scattergun", "arc-caster"]
+color = [0.95, 0.42, 0.2]
+ability = { kind = "blink", name = "Blink", description = "Teleport ahead through enemies, hurting everything you pass.", tiers = [
+  { cooldown = 7.0, damage = 30.0, range = 6.0 },
+  { cooldown = 6.0, damage = 45.0, range = 7.0 },
+  { cooldown = 5.0, damage = 65.0, range = 8.0 },
+] }
+ability_levels = [1, 4, 8]
+passive = { name = "Hunter", description = "Bonus damage to heavy enemies and a faster dash.", effects = [
+  { effect = "heavy_damage", amount = 0.25, per_tier = 0.15 },
+  { effect = "dash_cooldown", amount = 0.75, per_tier = -0.1 },
+  { effect = "move_speed", amount = 1.06, per_tier = 0.02 },
+] }
+passive_levels = [1, 6, 10]
+unlocks = [
+  { level = 2, weapon = "scattergun" },
+  { level = 5, weapon = "arc-caster" },
+]
+
+[[class]]
+id = "prospector"
+name = "Prospector"
+role = "Greed and tunnelling"
+description = "Mines faster, finds more ore and bores through rock. Fragile."
+signature = "seam-cutter"
+familiar = ["scattergun", "plasma-mortar"]
+color = [0.95, 0.75, 0.2]
+ability = { kind = "bore", name = "Bore", description = "Drill a straight tunnel ahead, shredding anything in it.", tiers = [
+  { cooldown = 14.0, damage = 40.0, range = 7.0, width = 1.2 },
+  { cooldown = 12.0, damage = 60.0, range = 9.0, width = 1.4 },
+  { cooldown = 10.0, damage = 90.0, range = 11.0, width = 1.6 },
+] }
+ability_levels = [1, 4, 8]
+passive = { name = "Deep Seams", description = "Faster mining and extra ore from every vein.", effects = [
+  { effect = "mining", amount = 0.5, per_tier = 0.25 },
+  { effect = "ore_bonus", amount = 0.25, per_tier = 0.15 },
+  { effect = "max_health", amount = -15.0, per_tier = 5.0 },
+] }
+passive_levels = [1, 6, 10]
+unlocks = [
+  { level = 2, weapon = "plasma-mortar" },
+  { level = 5, weapon = "scattergun" },
+]
+
+[[class]]
+id = "warden"
+name = "Warden"
+role = "Control and holding ground"
+description = "Tough, walls off the horde and holds the extraction zone."
+signature = "scattergun"
+familiar = ["arc-caster", "orbit-drones"]
+color = [0.3, 0.6, 1.0]
+ability = { kind = "barrier", name = "Barrier", description = "Raise a wall of shock posts ahead that the horde cannot pass.", tiers = [
+  { cooldown = 16.0, damage = 8.0, duration = 8.0, count = 5 },
+  { cooldown = 14.0, damage = 12.0, duration = 10.0, count = 6 },
+  { cooldown = 12.0, damage = 18.0, duration = 12.0, count = 7 },
+] }
+ability_levels = [1, 4, 8]
+passive = { name = "Hold the Line", description = "More health and a faster extraction hold.", effects = [
+  { effect = "max_health", amount = 25.0, per_tier = 15.0 },
+  { effect = "extraction_speed", amount = 0.3, per_tier = 0.15 },
+] }
+passive_levels = [1, 6, 10]
+unlocks = [
+  { level = 2, weapon = "orbit-drones" },
+  { level = 5, weapon = "arc-caster" },
+]
+
+[[class]]
+id = "engineer"
+name = "Engineer"
+role = "Drones, turrets and repairs"
+description = "Builds turrets, repairs over time and recharges abilities faster."
+signature = "orbit-drones"
+familiar = ["plasma-mortar", "pulse-blaster"]
+color = [0.35, 0.9, 0.45]
+ability = { kind = "turret", name = "Sentry Turret", description = "Deploy a turret that fires at the nearest hostile.", tiers = [
+  { cooldown = 18.0, damage = 10.0, duration = 14.0, range = 11.0, weapon = "pulse-blaster" },
+  { cooldown = 16.0, damage = 14.0, duration = 18.0, range = 12.0, weapon = "pulse-blaster" },
+  { cooldown = 14.0, damage = 20.0, duration = 22.0, range = 13.0, weapon = "pulse-blaster" },
+] }
+ability_levels = [1, 4, 8]
+passive = { name = "Field Repairs", description = "Regenerate health and recharge the ability faster.", effects = [
+  { effect = "regeneration", amount = 0.6, per_tier = 0.4 },
+  { effect = "ability_cooldown", amount = 0.9, per_tier = -0.05 },
+  { effect = "pickup_range", amount = 1.0, per_tier = 0.5 },
+] }
+passive_levels = [1, 6, 10]
+unlocks = [
+  { level = 2, weapon = "pulse-blaster" },
+  { level = 5, weapon = "plasma-mortar" },
+]

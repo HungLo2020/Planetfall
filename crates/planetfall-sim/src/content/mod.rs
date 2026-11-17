@@ -1,4 +1,5 @@
-//! Game content: planets, weapons, enemies, perks, ship modules and tuning,
+//! Game content: planets, weapons, enemies, perks, ship modules, crew
+//! classes and tuning,
 //! loaded from `assets/data/*.toml` (see [`defs`]).
 //!
 //! The simulation never reads files. The app reads the data directory and
@@ -7,13 +8,14 @@
 //! Content is immutable once installed, so determinism is unaffected.
 //!
 //! Content is referenced by small `Copy` handles ([`PlanetId`],
-//! [`WeaponId`], [`EnemyId`], [`PerkId`], [`UpgradeId`]) that index the
+//! [`WeaponId`], [`EnemyId`], [`PerkId`], [`UpgradeId`], [`ClassId`]) that index the
 //! tables and serialize as their string `id`, so saves survive reordering.
 
 pub mod defs;
 
 pub use defs::{
-    Axis, BlockCosts, Drop, EnemyBehavior, EnemyDef, Explosion, Lunge, OreChances, Palette,
+    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, Drop,
+    EnemyBehavior, EnemyDef, Explosion, Lunge, OreChances, Palette, PassiveDef, PassiveEffect,
     PerkDef, PerkEffect, PlanetDef, Spawn, Spin, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior,
     WeaponDef, WeaponStats,
 };
@@ -178,6 +180,7 @@ pub struct Content {
     pub enemies: Vec<EnemyDef>,
     pub perks: Vec<PerkDef>,
     pub upgrades: Vec<UpgradeDef>,
+    pub classes: Vec<ClassDef>,
     pub tuning: Tuning,
 }
 
@@ -190,6 +193,7 @@ pub struct ContentFiles<'a> {
     pub perks: &'a str,
     pub upgrades: &'a str,
     pub tuning: &'a str,
+    pub classes: &'a str,
 }
 
 impl ContentFiles<'static> {
@@ -201,21 +205,23 @@ impl ContentFiles<'static> {
         perks: include_str!("../../../../assets/data/perks.toml"),
         upgrades: include_str!("../../../../assets/data/upgrades.toml"),
         tuning: include_str!("../../../../assets/data/tuning.toml"),
+        classes: include_str!("../../../../assets/data/classes.toml"),
     };
 }
 
 /// File names in the data directory, in [`ContentFiles`] order.
-pub const FILE_NAMES: [&str; 6] = [
+pub const FILE_NAMES: [&str; 7] = [
     "planets.toml",
     "weapons.toml",
     "enemies.toml",
     "perks.toml",
     "upgrades.toml",
     "tuning.toml",
+    "classes.toml",
 ];
 
 /// Table names: the top-level key of each record file (`[[weapon]]`).
-const TABLES: [&str; 5] = ["planet", "weapon", "enemy", "perk", "upgrade"];
+const TABLES: [&str; 6] = ["planet", "weapon", "enemy", "perk", "upgrade", "class"];
 
 impl Content {
     /// Parse and validate the data files. Record tables go through Quasar's
@@ -230,13 +236,15 @@ impl Content {
             .register::<WeaponDef>("weapon")
             .register::<EnemyDef>("enemy")
             .register::<PerkDef>("perk")
-            .register::<UpgradeDef>("upgrade");
+            .register::<UpgradeDef>("upgrade")
+            .register::<ClassDef>("class");
         let sources = [
             files.planets,
             files.weapons,
             files.enemies,
             files.perks,
             files.upgrades,
+            files.classes,
         ];
         let tables: Vec<(&str, &str, ContentFormat)> = TABLES
             .iter()
@@ -259,6 +267,7 @@ impl Content {
             enemies: records(&snapshot, "enemy"),
             perks: records(&snapshot, "perk"),
             upgrades: records(&snapshot, "upgrade"),
+            classes: records(&snapshot, "class"),
             tuning,
         };
         content.validate()?;
@@ -280,14 +289,15 @@ impl Content {
             self.enemies.is_empty(),
             self.perks.is_empty(),
             self.upgrades.is_empty(),
+            self.classes.is_empty(),
         ]) {
             if empty {
                 errors.push(format!("{table}: no records"));
             }
         }
         let levels = usize::from(self.tuning.weapons.max_level);
-        if !self.weapons.iter().any(|w| w.starter) {
-            errors.push("weapon: no weapon is marked starter".into());
+        if self.classes.iter().filter(|c| c.starter).count() != 1 {
+            errors.push("class: exactly one class must be marked starter".into());
         }
         for w in &self.weapons {
             if w.levels.len() != levels {
@@ -393,7 +403,64 @@ impl ContentRecord for PerkDef {
     }
     fn validate(&self, v: &mut Validator) {
         v.non_empty("title", &self.title)
-            .finite("amount", f64::from(self.amount));
+            .finite("amount", f64::from(self.amount))
+            .optional_reference("class", "class", self.class.as_deref());
+    }
+}
+
+impl ContentRecord for ClassDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .reference("signature", "weapon", &self.signature)
+            .check(
+                !self.ability.tiers.is_empty()
+                    && self.ability.tiers.len() == self.ability_levels.len(),
+                "ability_levels",
+                "needs one level per ability tier",
+            )
+            .check(
+                !self.passive_levels.is_empty(),
+                "passive_levels",
+                "needs at least one level",
+            )
+            .check(
+                self.ability_levels.first() == Some(&1) && self.passive_levels.first() == Some(&1),
+                "ability_levels",
+                "the first tiers apply from class level 1",
+            );
+        for weapon in &self.familiar {
+            v.reference("familiar", "weapon", weapon);
+        }
+        for (i, unlock) in self.unlocks.iter().enumerate() {
+            v.reference(&format!("unlocks[{i}].weapon"), "weapon", &unlock.weapon)
+                .check(
+                    self.familiar.contains(&unlock.weapon),
+                    &format!("unlocks[{i}].weapon"),
+                    "unlocks must be familiar weapons",
+                );
+        }
+        for (i, tier) in self.ability.tiers.iter().enumerate() {
+            v.check(
+                tier.cooldown > 0.0,
+                &format!("ability.tiers[{i}].cooldown"),
+                "must be positive",
+            )
+            .optional_reference(
+                &format!("ability.tiers[{i}].weapon"),
+                "weapon",
+                tier.weapon.as_deref(),
+            );
+            if self.ability.kind == AbilityKind::Turret {
+                v.check(
+                    tier.weapon.is_some() && tier.duration > 0.0,
+                    &format!("ability.tiers[{i}]"),
+                    "turrets need a weapon and a duration",
+                );
+            }
+        }
     }
 }
 
@@ -504,6 +571,12 @@ content_id!(
     upgrades,
     UpgradeDef
 );
+content_id!(
+    /// A crew class in `classes.toml`.
+    ClassId,
+    classes,
+    ClassDef
+);
 
 impl PlanetId {
     pub fn name(self) -> &'static str {
@@ -527,12 +600,81 @@ impl WeaponId {
         let levels = &self.info().levels;
         levels[usize::from(level.max(1) - 1).min(levels.len() - 1)]
     }
+}
 
+impl ClassId {
+    pub fn name(self) -> &'static str {
+        &self.info().name
+    }
+
+    /// The class new commanders start as.
     pub fn starter() -> Self {
         Self::all()
-            .find(|w| w.info().starter)
-            .expect("validated: a starter weapon exists")
+            .find(|c| c.info().starter)
+            .expect("validated: a starter class exists")
     }
+
+    pub fn signature(self) -> WeaponId {
+        WeaponId::from_key(&self.info().signature).expect("validated reference")
+    }
+
+    pub fn familiar(self) -> impl Iterator<Item = WeaponId> {
+        self.info()
+            .familiar
+            .iter()
+            .filter_map(|k| WeaponId::from_key(k))
+    }
+
+    pub fn is_familiar(self, weapon: WeaponId) -> bool {
+        weapon == self.signature() || self.familiar().any(|w| w == weapon)
+    }
+
+    /// Ability tier (1-based) at a class level.
+    pub fn ability_tier(self, level: u32) -> u8 {
+        tier_at(&self.info().ability_levels, level)
+    }
+
+    /// Passive tier (1-based) at a class level.
+    pub fn passive_tier(self, level: u32) -> u8 {
+        tier_at(&self.info().passive_levels, level)
+    }
+
+    /// Ability numbers at a tier (clamped to the defined tiers).
+    pub fn ability(self, tier: u8) -> &'static AbilityTier {
+        let tiers = &self.info().ability.tiers;
+        &tiers[usize::from(tier.max(1) - 1).min(tiers.len() - 1)]
+    }
+
+    /// Familiar weapons unlocked as starting weapons by class level.
+    pub fn level_unlocks(self, level: u32) -> impl Iterator<Item = WeaponId> {
+        self.info()
+            .unlocks
+            .iter()
+            .filter(move |u| u.level <= level)
+            .filter_map(|u| WeaponId::from_key(&u.weapon))
+    }
+}
+
+fn tier_at(levels: &[u32], level: u32) -> u8 {
+    levels.iter().filter(|&&l| l <= level).count().max(1) as u8
+}
+
+/// Class XP needed to go from class `level` to `level + 1`.
+pub fn class_xp_to_next(level: u32) -> u32 {
+    let t = &content().tuning.class;
+    (t.xp_base * t.xp_growth.powi(level.saturating_sub(1) as i32)).round() as u32
+}
+
+/// Class level reached with `xp` in total, and the XP into that level.
+pub fn class_level(xp: u32) -> (u32, u32) {
+    let max = content().tuning.class.max_level;
+    let mut level = 1;
+    let mut rest = xp;
+    while level < max && rest >= class_xp_to_next(level) {
+        rest -= class_xp_to_next(level);
+        level += 1;
+    }
+    (level, rest)
 }
 
 impl UpgradeId {
@@ -599,10 +741,30 @@ mod tests {
     fn builtin_content_is_valid_and_complete() {
         let c = Content::builtin();
         assert_eq!(c.planets.len(), 3);
-        assert_eq!(c.weapons.len(), 5);
+        assert_eq!(c.weapons.len(), 6);
         assert_eq!(c.enemies.len(), 4);
         assert!(!c.perks.is_empty());
         assert_eq!(c.upgrades.len(), 5);
+        assert_eq!(c.classes.len(), 4);
+    }
+
+    #[test]
+    fn classes_level_up_and_unlock_tiers() {
+        let striker = ClassId::from_key("striker").unwrap();
+        assert_eq!(ClassId::starter(), striker);
+        assert_eq!(class_level(0), (1, 0));
+        let first = class_xp_to_next(1);
+        assert_eq!(class_level(first), (2, 0));
+        assert!(class_xp_to_next(5) > class_xp_to_next(1));
+        assert_eq!(striker.ability_tier(1), 1);
+        assert_eq!(striker.ability_tier(4), 2);
+        assert_eq!(striker.ability_tier(20), 3);
+        assert!(striker.ability(3).damage > striker.ability(1).damage);
+        assert!(striker.is_familiar(striker.signature()));
+        assert_eq!(striker.level_unlocks(1).count(), 0);
+        assert!(striker.level_unlocks(5).count() >= 2);
+        // Huge XP stops at the level cap.
+        assert_eq!(class_level(u32::MAX).0, content().tuning.class.max_level);
     }
 
     #[test]
@@ -618,8 +780,8 @@ mod tests {
     #[test]
     fn bad_data_is_reported() {
         let mut files = ContentFiles::BUILTIN;
-        let broken = files.weapons.replace("starter = true", "");
-        files.weapons = &broken;
+        let broken = files.classes.replace("starter = true", "");
+        files.classes = &broken;
         let error = Content::from_toml(files).unwrap_err();
         assert!(error.contains("starter"), "{error}");
         // Problems name the record and field; every record is checked.
@@ -637,6 +799,18 @@ mod tests {
         files.planets = &dangling;
         let error = Content::from_toml(files).unwrap_err();
         assert!(error.contains("unknown enemy id `hsk`"), "{error}");
+        // Classes must name real, familiar weapons.
+        let bad = ContentFiles::BUILTIN.classes.replace(
+            "weapon = \"plasma-mortar\" },\n  { level = 5, weapon = \"scattergun\" }",
+            "weapon = \"laser-sword\" },\n  { level = 5, weapon = \"scattergun\" }",
+        );
+        files = ContentFiles::BUILTIN;
+        files.classes = &bad;
+        let error = Content::from_toml(files).unwrap_err();
+        assert!(
+            error.contains("class[prospector].unlocks[0].weapon"),
+            "{error}"
+        );
         let typo = ContentFiles::BUILTIN
             .enemies
             .replace("health = 26.0", "helth = 26.0");

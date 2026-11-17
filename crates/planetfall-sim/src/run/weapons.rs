@@ -1,11 +1,14 @@
 //! Weapons: targeting, firing by behaviour archetype, projectiles and
-//! orbiting drones. Numbers come from `weapons.toml`.
+//! orbiting drones, for every player. Numbers come from `weapons.toml`.
 
 use super::{Beam, Blast, BlastKind, Projectile, ProjectileKind, Run};
 use crate::content::{DT, WeaponBehavior, WeaponId, WeaponStats, seconds};
 use crate::events::GameEvent;
 use crate::math::{self, FloatExt, V2};
 use quasar_spatial::Aabb;
+
+/// Enemies with at least this base health count as heavy.
+pub const HEAVY_HEALTH: f32 = 100.0;
 
 impl Run {
     pub(super) fn rebuild_index(&mut self) {
@@ -44,20 +47,34 @@ impl Run {
     }
 
     pub(super) fn fire_weapons(&mut self, events: &mut Vec<GameEvent>) {
-        for slot in 0..self.weapons.len() {
-            let w = self.weapons[slot];
-            self.weapons[slot].since_fired = w.since_fired.saturating_add(1);
+        for player in 0..self.players.len() {
+            if self.players[player].alive() {
+                self.fire_player_weapons(player, events);
+            }
+        }
+    }
+
+    fn fire_player_weapons(&mut self, player: usize, events: &mut Vec<GameEvent>) {
+        for slot in 0..self.players[player].weapons.len() {
+            let p = &self.players[player];
+            let w = p.weapons[slot];
+            let (origin, multiplier, heavy, cooldown_multiplier) = (
+                p.pos,
+                p.damage_multiplier,
+                p.heavy_damage,
+                p.cooldown_multiplier,
+            );
+            self.players[player].weapons[slot].since_fired = w.since_fired.saturating_add(1);
             let info = w.kind.info();
             if info.behavior == WeaponBehavior::Orbit {
                 continue;
             }
             let stats = w.kind.stats(w.level);
             let cooldown = (w.cooldown - DT).max(0.0);
-            self.weapons[slot].cooldown = cooldown;
+            self.players[player].weapons[slot].cooldown = cooldown;
             if cooldown > 0.0 {
                 continue;
             }
-            let origin = self.player.pos;
             let Some(target) = self.nearest_enemy(origin, stats.range) else {
                 continue;
             };
@@ -66,45 +83,10 @@ impl Run {
                 continue;
             }
             let dir = (target_pos - origin).normalize_or_zero();
-            let damage = stats.damage * self.player.damage_multiplier;
-            match info.behavior {
-                WeaponBehavior::Bolt => {
-                    for i in 0..stats.count {
-                        let spread = (i as f32 - (stats.count as f32 - 1.0) * 0.5) * 0.08;
-                        let aim = math::rotate(dir, spread);
-                        self.spawn_projectile(
-                            ProjectileKind::Bolt,
-                            w.kind,
-                            origin,
-                            aim,
-                            &stats,
-                            damage,
-                        );
-                    }
-                }
-                WeaponBehavior::Scatter => {
-                    for i in 0..stats.count {
-                        let t = i as f32 / (stats.count - 1).max(1) as f32 - 0.5;
-                        let spread = t * 0.75 + self.rng.range_f32(-0.04..0.04);
-                        let aim = math::rotate(dir, spread);
-                        self.spawn_projectile(
-                            ProjectileKind::Pellet,
-                            w.kind,
-                            origin,
-                            aim,
-                            &stats,
-                            damage,
-                        );
-                    }
-                }
-                WeaponBehavior::Arc => {
-                    self.fire_arc(w.kind, origin, target, &stats, damage, events)
-                }
-                WeaponBehavior::Mortar => self.fire_mortar(w.kind, origin, target, &stats, damage),
-                WeaponBehavior::Orbit => unreachable!("orbit weapons are handled by update_drones"),
-            }
-            let slot = &mut self.weapons[slot];
-            slot.cooldown = stats.cooldown * self.player.cooldown_multiplier;
+            let damage = stats.damage * multiplier;
+            self.fire(w.kind, &stats, origin, dir, target, damage, heavy, events);
+            let slot = &mut self.players[player].weapons[slot];
+            slot.cooldown = stats.cooldown * cooldown_multiplier;
             slot.since_fired = 0;
             slot.aim = math::yaw_of(dir);
             events.push(GameEvent::Fired {
@@ -114,6 +96,69 @@ impl Run {
         }
     }
 
+    /// One shot of `weapon` from `origin` at enemy `target` (players and
+    /// turrets share this).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a shot is fully described by these values"
+    )]
+    pub(super) fn fire(
+        &mut self,
+        weapon: WeaponId,
+        stats: &WeaponStats,
+        origin: V2,
+        dir: V2,
+        target: usize,
+        damage: f32,
+        heavy: f32,
+        events: &mut Vec<GameEvent>,
+    ) {
+        match weapon.info().behavior {
+            WeaponBehavior::Bolt => {
+                for i in 0..stats.count {
+                    let spread = (i as f32 - (stats.count as f32 - 1.0) * 0.5) * 0.08;
+                    let aim = math::rotate(dir, spread);
+                    self.spawn_projectile(
+                        ProjectileKind::Bolt,
+                        weapon,
+                        origin,
+                        aim,
+                        stats,
+                        damage,
+                        heavy,
+                    );
+                }
+            }
+            WeaponBehavior::Scatter => {
+                for i in 0..stats.count {
+                    let t = i as f32 / (stats.count - 1).max(1) as f32 - 0.5;
+                    let spread = t * 0.75 + self.rng.range_f32(-0.04..0.04);
+                    let aim = math::rotate(dir, spread);
+                    self.spawn_projectile(
+                        ProjectileKind::Pellet,
+                        weapon,
+                        origin,
+                        aim,
+                        stats,
+                        damage,
+                        heavy,
+                    );
+                }
+            }
+            WeaponBehavior::Arc => {
+                self.fire_arc(weapon, origin, target, stats, damage, heavy, events)
+            }
+            WeaponBehavior::Mortar => {
+                self.fire_mortar(weapon, origin, target, stats, damage, heavy)
+            }
+            WeaponBehavior::Orbit => {}
+        }
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a shot is fully described by these values"
+    )]
     fn fire_arc(
         &mut self,
         weapon: WeaponId,
@@ -121,12 +166,13 @@ impl Run {
         target: usize,
         stats: &WeaponStats,
         damage: f32,
+        heavy: f32,
         events: &mut Vec<GameEvent>,
     ) {
         let mut points = vec![origin];
         let mut hit = vec![target];
         let mut last = target;
-        self.damage_enemy(target, damage, events);
+        self.damage_enemy(target, damage, heavy, events);
         points.push(self.enemies[target].pos);
         for _ in 1..stats.count {
             let from = self.enemies[last].pos;
@@ -141,7 +187,7 @@ impl Run {
                         .total_cmp(&self.enemies[b].pos.distance_squared(from))
                 });
             let Some(next) = next else { break };
-            self.damage_enemy(next, damage * 0.85, events);
+            self.damage_enemy(next, damage * 0.85, heavy, events);
             points.push(self.enemies[next].pos);
             hit.push(next);
             last = next;
@@ -160,6 +206,7 @@ impl Run {
         target: usize,
         stats: &WeaponStats,
         damage: f32,
+        heavy: f32,
     ) {
         for _ in 0..stats.count {
             let candidates = self.enemies_near(origin, stats.range);
@@ -181,6 +228,7 @@ impl Run {
                 height: 1.2,
                 vel: (to - origin) / stats.speed,
                 damage,
+                heavy,
                 radius: stats.radius,
                 age: 0,
                 ttl: total,
@@ -190,6 +238,10 @@ impl Run {
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a shot is fully described by these values"
+    )]
     fn spawn_projectile(
         &mut self,
         kind: ProjectileKind,
@@ -198,6 +250,7 @@ impl Run {
         dir: V2,
         stats: &WeaponStats,
         damage: f32,
+        heavy: f32,
     ) {
         self.projectiles.push(Projectile {
             kind,
@@ -206,6 +259,7 @@ impl Run {
             height: 1.1,
             vel: dir * stats.speed,
             damage,
+            heavy,
             radius: stats.radius,
             age: 0,
             ttl: (stats.range / stats.speed * 60.0) as u32 + 2,
@@ -234,7 +288,7 @@ impl Run {
                         total: 22,
                     });
                     for i in self.enemies_near(to, p.radius) {
-                        self.damage_enemy(i, p.damage, events);
+                        self.damage_enemy(i, p.damage, p.heavy, events);
                     }
                     events.push(GameEvent::Explosion {
                         at: to,
@@ -263,7 +317,7 @@ impl Run {
                             continue;
                         }
                         p.hit.push(e.id);
-                        self.damage_enemy(i, p.damage, events);
+                        self.damage_enemy(i, p.damage, p.heavy, events);
                         if p.pierce == 0 {
                             return false;
                         }
@@ -277,37 +331,49 @@ impl Run {
         self.projectiles = projectiles;
     }
 
-    /// The equipped orbit weapon, if any.
-    fn orbit_weapon(&self) -> Option<(WeaponId, u8)> {
-        self.weapons
+    /// A player's equipped orbit weapon, if any.
+    fn orbit_weapon(&self, player: usize) -> Option<(WeaponId, u8)> {
+        self.players[player]
+            .weapons
             .iter()
             .find(|w| w.kind.info().behavior == WeaponBehavior::Orbit)
             .map(|w| (w.kind, w.level))
     }
 
-    /// World positions of the orbit drones, if equipped.
-    pub fn drone_positions(&self) -> Vec<V2> {
-        let Some((kind, level)) = self.orbit_weapon() else {
+    /// World positions of a player's orbit drones, if equipped.
+    pub fn drone_positions(&self, player: usize) -> Vec<V2> {
+        let Some((kind, level)) = self.orbit_weapon(player) else {
             return Vec::new();
         };
+        let p = &self.players[player];
         let stats = kind.stats(level);
         (0..stats.count)
             .map(|i| {
-                let a = self.drone_angle + i as f32 * std::f32::consts::TAU / stats.count as f32;
-                self.player.pos + V2::new(a.sin(), a.cos()) * stats.range
+                let a = p.drone_angle + i as f32 * std::f32::consts::TAU / stats.count as f32;
+                p.pos + V2::new(a.sin(), a.cos()) * stats.range
             })
             .collect()
     }
 
     pub(super) fn update_drones(&mut self, events: &mut Vec<GameEvent>) {
-        let Some((kind, level)) = self.orbit_weapon() else {
+        for player in 0..self.players.len() {
+            if self.players[player].alive() {
+                self.update_player_drones(player, events);
+            }
+        }
+    }
+
+    fn update_player_drones(&mut self, player: usize, events: &mut Vec<GameEvent>) {
+        let Some((kind, level)) = self.orbit_weapon(player) else {
             return;
         };
         let stats = kind.stats(level);
-        self.drone_angle = (self.drone_angle + stats.speed * DT) % std::f32::consts::TAU;
-        let damage = stats.damage * self.player.damage_multiplier;
+        let p = &mut self.players[player];
+        p.drone_angle = (p.drone_angle + stats.speed * DT) % std::f32::consts::TAU;
+        let damage = stats.damage * p.damage_multiplier;
+        let (heavy, cooldown) = (p.heavy_damage, p.cooldown_multiplier);
         let mut struck = false;
-        for drone in self.drone_positions() {
+        for drone in self.drone_positions(player) {
             for i in self.enemies_near(drone, stats.radius + 1.0) {
                 let e = self.enemies[i];
                 if e.drone_cooldown > 0
@@ -315,29 +381,47 @@ impl Run {
                 {
                     continue;
                 }
-                self.enemies[i].drone_cooldown =
-                    seconds(stats.cooldown * self.player.cooldown_multiplier);
-                self.damage_enemy(i, damage, events);
+                self.enemies[i].drone_cooldown = seconds(stats.cooldown * cooldown);
+                self.damage_enemy(i, damage, heavy, events);
                 struck = true;
             }
         }
-        if struck && let Some(w) = self.weapons.iter_mut().find(|w| w.kind == kind) {
+        let pos = self.players[player].pos;
+        if struck
+            && let Some(w) = self.players[player]
+                .weapons
+                .iter_mut()
+                .find(|w| w.kind == kind)
+        {
             if w.since_fired > 20 {
                 events.push(GameEvent::Fired {
                     weapon: kind,
-                    at: self.player.pos,
+                    at: pos,
                 });
             }
             w.since_fired = 0;
         }
     }
 
-    pub(super) fn damage_enemy(&mut self, i: usize, amount: f32, events: &mut Vec<GameEvent>) {
+    /// Damage enemy `i`; `heavy` is the attacker's bonus against heavy
+    /// enemies (100+ base health).
+    pub(super) fn damage_enemy(
+        &mut self,
+        i: usize,
+        amount: f32,
+        heavy: f32,
+        events: &mut Vec<GameEvent>,
+    ) {
         let e = &mut self.enemies[i];
         if e.health <= 0.0 {
             return;
         }
-        e.health -= amount;
+        let bonus = if e.kind.info().health >= HEAVY_HEALTH {
+            1.0 + heavy
+        } else {
+            1.0
+        };
+        e.health -= amount * bonus;
         e.hit_ticks = 6;
         // Deaths are resolved in `remove_dead`.
         if e.health > 0.0 {

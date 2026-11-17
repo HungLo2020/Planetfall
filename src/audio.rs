@@ -4,6 +4,7 @@
 
 use crate::storage::Preferences;
 use planetfall_sim::Phase;
+use planetfall_sim::content::AbilityKind;
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::math::V2;
 use quasar_audio::{
@@ -207,6 +208,19 @@ impl Audio {
                 GameEvent::PodLanded { at } => self.play("pod_impact", 0.9, Some(at), 0),
                 // Wall hits are visual only (sparks); the shot already sounded.
                 GameEvent::Impact { .. } => {}
+                GameEvent::AbilityUsed { kind, from, .. } => {
+                    let clip = match kind {
+                        AbilityKind::Bore => "ability_bore",
+                        AbilityKind::Blink => "ability_blink",
+                        AbilityKind::Barrier => "ability_barrier",
+                        AbilityKind::Turret => "ability_turret",
+                    };
+                    self.play(clip, 0.8, Some(from), 0);
+                }
+                GameEvent::AbilityNotReady => self.play("ui_deny", 0.35, None, 10),
+                GameEvent::PlayerDown { .. } => self.play("player_die", 0.7, None, 0),
+                GameEvent::ClassChanged { .. } => self.play("class_select", 0.6, None, 0),
+                GameEvent::ClassLevelUp { .. } => self.play("level_up", 0.8, None, 0),
                 GameEvent::Liftoff => self.play("liftoff", 0.9, None, 0),
                 GameEvent::TerminalOpened => self.play("console", 0.5, None, 4),
                 GameEvent::TerminalClosed => self.play("ui_move", 0.5, None, 2),

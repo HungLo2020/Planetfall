@@ -1,7 +1,9 @@
 //! The full game loop as one state machine:
 //! ship → nav console → FTL → drop pod → surface run → extraction → debrief → upgrades.
 
-use crate::content::{Material, Materials, PlanetId, ShipBlock, UpgradeId, WeaponId};
+use crate::content::{
+    ClassId, Material, Materials, PlanetId, ShipBlock, UpgradeId, WeaponId, content,
+};
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
 use crate::math::V2;
@@ -47,6 +49,11 @@ pub struct RunSummary {
     pub level: u32,
     pub seconds: u32,
     pub weapons: Vec<(WeaponId, u8)>,
+    /// The class that dropped, the class XP it earned and its level before
+    /// and after.
+    pub class: ClassId,
+    pub class_xp: u32,
+    pub class_levels: (u32, u32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +62,7 @@ pub enum Terminal {
     Fabricator,
     Debrief(RunSummary),
     Module(UpgradeId),
+    Locker,
 }
 
 /// A short status message, e.g. why an action was refused.
@@ -192,6 +200,25 @@ impl Game {
                 }
                 (Terminal::Navigation, Command::TravelTo(planet)) => self.travel(planet),
                 (Terminal::Fabricator, Command::Purchase(upgrade)) => self.purchase(upgrade),
+                (Terminal::Locker, Command::SelectClass(class)) => {
+                    if self.profile.class != class {
+                        self.profile.class = class;
+                        self.events.push(GameEvent::ClassChanged { class });
+                        self.events.push(GameEvent::ProfileChanged);
+                    }
+                }
+                (Terminal::Locker, Command::SetStartWeapon(weapon)) => {
+                    if self.profile.set_start_weapon(weapon) {
+                        self.events.push(GameEvent::ProfileChanged);
+                    } else {
+                        self.events.push(GameEvent::Denied);
+                        self.notify(format!(
+                            "The {} has not unlocked the {} yet.",
+                            self.profile.class.name(),
+                            weapon.name()
+                        ));
+                    }
+                }
                 _ => {}
             }
             return;
@@ -218,6 +245,7 @@ impl Game {
         match station.kind {
             StationKind::NavConsole => self.open(Terminal::Navigation),
             StationKind::Fabricator => self.open(Terminal::Fabricator),
+            StationKind::Locker => self.open(Terminal::Locker),
             StationKind::Module(u) => self.open(Terminal::Module(u)),
             StationKind::DropPod => match self.profile.orbiting {
                 Some(planet) => self.deploy(planet),
@@ -314,6 +342,7 @@ impl Game {
             planet,
             seed: self.rng.next_u64(),
             tutorial,
+            players: vec![self.profile.loadout()],
             max_health: self.profile.max_health(),
             damage_multiplier: self.profile.damage_multiplier(),
             mining_multiplier: self.profile.mining_multiplier(),
@@ -372,9 +401,30 @@ impl Game {
         };
         let outcome = run.outcome().unwrap_or(RunOutcome::Abandoned);
         let extracted = outcome == RunOutcome::Extracted;
+        let player = run.player();
+        // Class XP from everything collected; a failed drop keeps a share.
+        let share = if extracted {
+            1.0
+        } else {
+            content().tuning.class.failed_share
+        };
+        let class = player.class;
+        let bonus = if extracted {
+            content().tuning.class.extraction_bonus
+        } else {
+            0
+        };
+        let class_xp = (player.xp_total as f32 * share).round() as u32 + bonus;
+        let class_levels = self.profile.award_class_xp(class, class_xp);
+        if class_levels.1 > class_levels.0 {
+            self.events.push(GameEvent::ClassLevelUp {
+                class,
+                level: class_levels.1,
+            });
+        }
         let stats = &mut self.profile.stats;
         stats.kills += run.kills;
-        stats.best_level = stats.best_level.max(run.player.level);
+        stats.best_level = stats.best_level.max(player.level);
         let (banked, lost) = if extracted {
             stats.extractions += 1;
             stats.materials_banked += run.carried.total();
@@ -398,9 +448,17 @@ impl Game {
             lost,
             salvage,
             kills: run.kills,
-            level: run.player.level,
+            level: run.player().level,
             seconds: run.ticks / 60,
-            weapons: run.weapons.iter().map(|w| (w.kind, w.level)).collect(),
+            weapons: run
+                .player()
+                .weapons
+                .iter()
+                .map(|w| (w.kind, w.level))
+                .collect(),
+            class,
+            class_xp,
+            class_levels,
         };
         self.phase = Phase::Ship;
         self.ship.place_at_drop_bay();
@@ -475,7 +533,7 @@ impl Game {
             {
                 Some(TutorialStep::Collect)
             }
-            TutorialStep::Collect if self.run.as_ref().is_some_and(|r| r.player.level > 1) => {
+            TutorialStep::Collect if self.run.as_ref().is_some_and(|r| r.player().level > 1) => {
                 Some(TutorialStep::Cache)
             }
             TutorialStep::Cache if self.run.as_ref().is_some_and(|r| r.caches_opened > 0) => {
@@ -612,7 +670,7 @@ impl Game {
 
 /// Nearest exposed ore of a material, for markers and the autopilot.
 pub fn nearest_ore(run: &Run, material: Material) -> Option<V2> {
-    let player = run.player.pos;
+    let player = run.player().pos;
     run.terrain
         .tiles()
         .filter(|(_, t)| matches!(t, Tile::Ore { material: m, .. } if *m == material))

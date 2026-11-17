@@ -1,7 +1,7 @@
 //! The player's ship: a `quasar-voxel` block hull that grows as modules are
 //! constructed and as the player builds. Walk between stations; the nav
-//! console plots FTL jumps, the fabricator builds modules, and the drop bay
-//! launches the pod. In build mode the player places and removes deck, hull,
+//! console plots FTL jumps, the fabricator builds modules, the locker room
+//! switches crew class and loadout, and the drop bay launches the pod. In build mode the player places and removes deck, hull,
 //! window and lamp blocks, paid from (and refunded to) the hold.
 
 use crate::content::{DT, Materials, ShipBlock, UpgradeId};
@@ -68,6 +68,8 @@ impl Room {
 pub enum StationKind {
     NavConsole,
     Fabricator,
+    /// Class, starting weapon and (later) equipment.
+    Locker,
     DropPod,
     /// Decorative module equipment; interacting explains the module.
     Module(UpgradeId),
@@ -78,6 +80,7 @@ impl StationKind {
         match self {
             Self::NavConsole => "Navigation Console",
             Self::Fabricator => "Fabricator",
+            Self::Locker => "Locker Room",
             Self::DropPod => "Drop Pod",
             Self::Module(u) => u.name(),
         }
@@ -228,6 +231,11 @@ impl ShipLayout {
                 yaw: -std::f32::consts::FRAC_PI_2,
             },
             Station {
+                kind: StationKind::Locker,
+                pos: t(6.55, 8.6),
+                yaw: std::f32::consts::FRAC_PI_2,
+            },
+            Station {
                 kind: StationKind::DropPod,
                 pos: t(7.5, 13.5),
                 yaw: std::f32::consts::PI,
@@ -303,7 +311,7 @@ impl ShipLayout {
             let r = match s.kind {
                 StationKind::DropPod => 1.3,
                 StationKind::NavConsole => 0.9,
-                StationKind::Fabricator => 0.8,
+                StationKind::Fabricator | StationKind::Locker => 0.8,
                 StationKind::Module(_) => 0.9,
             };
             p.distance(s.pos) < r + PLAYER_RADIUS
@@ -642,6 +650,7 @@ mod tests {
         let ship = Ship::new(&Profile::default());
         assert_eq!(ship.layout.rooms.len(), 3);
         assert!(ship.layout.station(StationKind::NavConsole).is_some());
+        assert!(ship.layout.station(StationKind::Locker).is_some());
         assert!(ship.layout.station(StationKind::DropPod).is_some());
         assert!(ship.layout.walkable(ship.player.pos));
     }

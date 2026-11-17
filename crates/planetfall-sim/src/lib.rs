@@ -193,12 +193,12 @@ mod tests {
         }
         let run = game.run.as_mut().unwrap();
         run.carried.ferrite = 50;
-        run.player.health = 0.1;
-        run.player.invulnerable_ticks = 0;
+        run.player_mut().health = 0.1;
+        run.player_mut().invulnerable_ticks = 0;
         // Let the horde finish the job.
         for _ in 0..60 * 120 {
             if let Some(run) = &mut game.run {
-                run.player.health = run.player.health.min(0.1);
+                run.player_mut().health = run.player().health.min(0.1);
             }
             game.update(&GameInput::default());
             if matches!(game.terminal, Some(Terminal::Debrief(_))) {

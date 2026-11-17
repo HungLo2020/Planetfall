@@ -112,12 +112,24 @@ impl Run {
         }
     }
 
-    /// An open cell 17–26 m from the player that the horde can path from.
+    /// An open cell 17–26 m from a living player that the horde can path
+    /// from.
     fn find_spawn_point(&mut self) -> Option<V2> {
+        let alive: Vec<V2> = self
+            .players
+            .iter()
+            .filter(|p| p.alive())
+            .map(|p| p.pos)
+            .collect();
+        let around = match alive.len() {
+            0 => return None,
+            1 => alive[0],
+            n => alive[self.rng.range_usize(0..n)],
+        };
         for _ in 0..40 {
             let angle = self.rng.range_f32(0.0..std::f32::consts::TAU);
             let dist = self.rng.range_f32(17.0..26.0);
-            let p = self.player.pos + V2::new(angle.sin(), angle.cos()) * dist;
+            let p = around + V2::new(angle.sin(), angle.cos()) * dist;
             let (x, y) = Terrain::tile_of(p);
             if self.terrain.tile(x, y).solid() {
                 continue;

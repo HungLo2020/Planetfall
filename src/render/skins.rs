@@ -142,9 +142,13 @@ pub struct SkinRequest {
     pub root: Mat4,
     /// Added red-white emission (hit flash).
     pub flash: f32,
-    /// Outline style (see `effects::OUTLINE_STYLES`) to keep the character
+    /// Outline style (see `effects::outline`) to keep the character
     /// readable behind walls.
     pub outline: Option<u8>,
+    /// Multiplies the lit body colour.
+    pub tint: [f32; 3],
+    /// Colour of the unlit glow parts (visor, lamps).
+    pub glow: [f32; 3],
 }
 
 /// One frame's posed characters.
@@ -252,8 +256,13 @@ impl Skins {
                     let lit = &mut draw.material.lit;
                     let glow = lit.shading == ShadingModel::Unlit;
                     if glow {
-                        lit.base.tint = [GLOW, GLOW, GLOW, 1.0];
+                        let g = request.glow;
+                        lit.base.tint = [GLOW * g[0], GLOW * g[1], GLOW * g[2], 1.0];
                         draw.material.receives_shadows = false;
+                    } else {
+                        for (c, k) in request.tint.iter().enumerate() {
+                            lit.base.tint[c] *= k;
+                        }
                     }
                     if request.flash > 0.0 {
                         let f = request.flash;

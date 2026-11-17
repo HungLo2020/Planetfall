@@ -288,6 +288,22 @@ def build(rng: random.Random) -> dict[str, tuple[list[float], float, bool]]:
 
     add("music_surface", music(124, 8, [40, -1, 40, 43, 40, -1, 47, 45, 38, -1, 38, 41, 38, -1, 45, 43], [[52, 55, 59], [50, 53, 57], [48, 52, 55], [50, 54, 57]], True), 0.45, False)
     add("music_ship", music(76, 4, [-1] * 16, [[57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 66], [52, 55, 59, 62]], False), 0.4, False)
+
+    # --- class abilities (own RNG so earlier sounds stay byte-identical) -----
+    ab = random.Random(0x41424C54)
+    n = int(0.7 * RATE)
+    grind = lowpass(noise(0.7, ab), [900 + 2600 * math.sin(math.pi * i / n) for i in range(n)])
+    add("ability_bore", drive(mix(shaped(grind, env(n, 0.01, 0.22)), shaped(sweep(0.7, 70, 140, "saw"), gain(env(n, 0.01, 0.25), 0.6))), 1.8), 0.75)
+    n = int(0.35 * RATE)
+    whoosh = lowpass(noise(0.35, ab), [6000 - 5000 * (i / n) for i in range(n)])
+    add("ability_blink", mix(shaped(whoosh, env(n, 0.005, 0.1)), shaped(sweep(0.35, 2400, 300, "triangle"), gain(env(n, 0.002, 0.08), 0.5))), 0.6)
+    n = int(0.6 * RATE)
+    buzz = [v if ab.random() < 0.5 else 0.0 for v in highpass(noise(0.6, ab), 1500)]
+    add("ability_barrier", mix(shaped(sweep(0.6, 90, 180, "square"), env(n, 0.03, 0.2)), shaped(buzz, gain(env(n, 0.01, 0.15), 0.5))), 0.55)
+    n = int(0.55 * RATE)
+    clunk = mix(shaped(lowpass(noise(0.55, ab), 1800), env(n, 0.001, 0.04)), tone(260, 0.55, 0.001, 0.08, "square"))
+    add("ability_turret", mix(clunk, offset(mix(tone(1320, 0.08, 0.001, 0.03, "square"), offset(tone(1760, 0.1, 0.001, 0.04, "square"), 0.07)), 0.3)), 0.5)
+    add("class_select", mix(tone(note(76), 0.3, 0.003, 0.12, "triangle"), offset(tone(note(83), 0.3, 0.003, 0.12, "triangle"), 0.07), offset(tone(note(88), 0.4, 0.003, 0.16, "triangle"), 0.14)), 0.4)
     return s
 
 

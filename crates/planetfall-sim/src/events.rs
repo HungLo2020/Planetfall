@@ -1,7 +1,9 @@
 //! Per-tick facts the presentation layer reacts to (sounds, effects, saves).
 //! The simulation never depends on whether anyone listens.
 
-use crate::content::{EnemyId, Material, PlanetId, ShipBlock, UpgradeId, WeaponId};
+use crate::content::{
+    AbilityKind, ClassId, EnemyId, Material, PlanetId, ShipBlock, UpgradeId, WeaponId,
+};
 use crate::math::V2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,8 +31,22 @@ pub enum GameEvent {
     PlayerHurt {
         amount: f32,
     },
+    /// Everyone is down: the drop is lost.
     PlayerDied,
+    /// One player went down (others may fight on in co-op).
+    PlayerDown {
+        player: usize,
+    },
     Dashed,
+    /// A class ability fired from `from` towards `to`.
+    AbilityUsed {
+        player: usize,
+        kind: AbilityKind,
+        from: V2,
+        to: V2,
+    },
+    /// The ability was pressed while recharging.
+    AbilityNotReady,
     // Mining and loot.
     /// A drill bite on the block face (`material` is `None` for plain rock).
     MineHit {
@@ -97,4 +113,13 @@ pub enum GameEvent {
         block: ShipBlock,
     },
     BlockRemoved,
+    /// The locker room switched the active class.
+    ClassChanged {
+        class: ClassId,
+    },
+    /// A class gained a level at the debrief.
+    ClassLevelUp {
+        class: ClassId,
+        level: u32,
+    },
 }

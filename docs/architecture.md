@@ -34,14 +34,14 @@ headless crates (`quasar-config` parses the content TOML from strings).
 | Module | Responsibility |
 |---|---|
 | `game` | Top-level state machine: `Ship → Ftl → Ship (orbit) → Descent → Surface → Ascent/Lost → Ship (debrief)`; terminals; build mode; tutorial driver; banking cargo; `quasar_sim::Simulation` impl |
-| `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations, module assembly, free-form building rules |
-| `run` | One drop (no cosmetic state: particles are presentation), split by system: `player` (movement, dash, mining), `weapons`, `enemies`, `spawner` (weighted spawn tables), `loot` (pickups, caches, perks), `extraction`; `tests` |
+| `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations (nav console, fabricator, locker room, drop pod, modules), module assembly, free-form building rules |
+| `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, turrets), `weapons`, `enemies`, `spawner` (weighted spawn tables), `loot` (pickups, caches, perks, familiar weighting), `extraction`; `tests` |
 | `terrain` | Cave generation into a voxel volume, mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one `TILE` per voxel; ground at `y = -1`, walls at `y = 0`) |
-| `profile` | Persistent progress (including ship edits), purchase rules, module bonuses and versioned migration |
+| `profile` | Persistent progress (ship edits, the active class and a `ClassRecord` per class: class XP, starting weapon, found weapons), purchase rules, module bonuses and versioned migration |
 | `save` | `SaveGame`: a profile plus the resumable `Session` (tick, RNG, tutorial, ship position, a suspended drop) and slot metadata |
 | `tutorial` | Step definitions and prompt text |
-| `content` | The content registry: definitions parsed and validated from `assets/data/*.toml`, string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`) |
+| `content` | The content registry: definitions parsed and validated from `assets/data/*.toml`, string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`, `ClassId`), class levels |
 | `autoplay` | An autopilot that plays the entire loop, including building (headless runs, soak tests, CI) |
 | `math` | Ground-plane conventions (`V2` = glam `Vec2`, +Z-facing yaw) over `quasar-math` |
 | `events` | `GameEvent`s emitted per tick for sound, effects and saving |
@@ -90,7 +90,8 @@ CLI and a missing data folder use.
 
 Behaviour stays in code as small archetype enums: `WeaponBehavior` (bolt,
 scatter, arc, mortar, orbit), `EnemyBehavior` (walker, lunger, exploder),
-`PerkEffect` and `UpgradeEffect`. A new weapon that fits an archetype is a
+`AbilityKind` (bore, barrier, blink, turret), `PerkEffect` (shared by perks
+and class passives) and `UpgradeEffect`. A new weapon that fits an archetype is a
 TOML entry; a new kind of behaviour is a new variant plus its system code.
 
 IDs are `u16` indices but serialize as their string keys, so saves survive

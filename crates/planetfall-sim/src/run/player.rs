@@ -1,4 +1,4 @@
-//! The player: movement, dash, damage taken and auto-mining.
+//! Players: movement, dash, damage taken and auto-mining.
 
 use super::{Mining, PickupKind, Run};
 use crate::content::{DT, Material, content};
@@ -8,17 +8,27 @@ use crate::math;
 use crate::terrain::{Terrain, Tile};
 
 impl Run {
-    pub(super) fn update_player(&mut self, input: &GameInput, events: &mut Vec<GameEvent>) {
+    pub(super) fn update_player(
+        &mut self,
+        i: usize,
+        input: &GameInput,
+        events: &mut Vec<GameEvent>,
+    ) {
         let tuning = &content().tuning.player;
-        let p = &mut self.player;
+        let p = &mut self.players[i];
+        if p.down {
+            return;
+        }
         let movement = input.movement.clamp_length_max(1.0);
         let moving = movement.length() > 0.15;
         p.dash_cooldown = p.dash_cooldown.saturating_sub(1);
         p.invulnerable_ticks = p.invulnerable_ticks.saturating_sub(1);
         p.hurt_ticks = p.hurt_ticks.saturating_sub(1);
+        p.ability.cooldown = p.ability.cooldown.saturating_sub(1);
         if input.dash && p.dash_cooldown == 0 && p.dash_ticks == 0 {
             p.dash_ticks = tuning.dash_ticks;
-            p.dash_cooldown = tuning.dash_cooldown_ticks;
+            p.dash_cooldown =
+                (tuning.dash_cooldown_ticks as f32 * p.dash_cooldown_multiplier).round() as u32;
             p.dash_dir = if moving {
                 movement.normalize_or_zero()
             } else {
@@ -35,6 +45,7 @@ impl Run {
         };
         let target = p.pos + velocity * DT;
         let (resolved, hit) = self.terrain.resolve_circle(target, tuning.radius);
+        let p = &mut self.players[i];
         p.pos = resolved;
         p.moving = moving;
         if moving {
@@ -59,11 +70,11 @@ impl Run {
             p.mining = None;
             return;
         };
-        self.mine(x, y, tuning.mining_rate, events);
+        self.mine(i, x, y, tuning.mining_rate, events);
     }
 
-    fn mine(&mut self, x: i32, y: i32, rate: f32, events: &mut Vec<GameEvent>) {
-        let p = &mut self.player;
+    fn mine(&mut self, i: usize, x: i32, y: i32, rate: f32, events: &mut Vec<GameEvent>) {
+        let p = &mut self.players[i];
         let tile = self.terrain.tile(x, y);
         let amount = rate * p.mining_multiplier * DT;
         let at = Terrain::center_of(x, y);
@@ -78,26 +89,8 @@ impl Run {
         }
         match self.terrain.mine(x, y, amount) {
             Some(broken) => {
-                self.player.mining = None;
-                self.blocks_mined += 1;
-                let material = match broken.was {
-                    Tile::Ore { material, .. } => Some(material),
-                    _ => None,
-                };
-                events.push(GameEvent::BlockBroken { at, material });
-                let drops: &[(Material, u32)] = match material {
-                    Some(Material::Ferrite) => &[(Material::Ferrite, 2), (Material::Ferrite, 2)],
-                    Some(Material::Lumite) => &[(Material::Lumite, 1), (Material::Lumite, 1)],
-                    Some(Material::Voidstone) => &[(Material::Voidstone, 1)],
-                    None => &[],
-                };
-                for &(m, amount) in drops {
-                    self.drop_pickup(PickupKind::Material(m, amount), at);
-                }
-                let rock_ferrite = f64::from(content().tuning.player.rock_ferrite_chance);
-                if material.is_none() && self.rng.chance(rock_ferrite) {
-                    self.drop_pickup(PickupKind::Material(Material::Ferrite, 1), at);
-                }
+                self.players[i].mining = None;
+                self.block_broken(i, at, broken.was, events);
             }
             None => {
                 let max = tile.max_hp();
@@ -105,7 +98,7 @@ impl Run {
                     Tile::Rock { hp } | Tile::Ore { hp, .. } => hp,
                     _ => 0.0,
                 };
-                self.player.mining = Some(Mining {
+                self.players[i].mining = Some(Mining {
                     tile: (x, y),
                     progress: if max > 0.0 {
                         1.0 - remaining / max
@@ -117,13 +110,50 @@ impl Run {
         }
     }
 
-    pub(super) fn hurt_player(&mut self, amount: f32, events: &mut Vec<GameEvent>) {
-        if self.invulnerable || self.player.invulnerable_ticks > 0 || amount <= 0.0 {
+    /// A block player `i` broke (by drilling or an ability): drops and events.
+    pub(super) fn block_broken(
+        &mut self,
+        i: usize,
+        at: math::V2,
+        was: Tile,
+        events: &mut Vec<GameEvent>,
+    ) {
+        self.blocks_mined += 1;
+        let material = match was {
+            Tile::Ore { material, .. } => Some(material),
+            _ => None,
+        };
+        events.push(GameEvent::BlockBroken { at, material });
+        let drops: &[(Material, u32)] = match material {
+            Some(Material::Ferrite) => &[(Material::Ferrite, 2), (Material::Ferrite, 2)],
+            Some(Material::Lumite) => &[(Material::Lumite, 1), (Material::Lumite, 1)],
+            Some(Material::Voidstone) => &[(Material::Voidstone, 1)],
+            None => &[],
+        };
+        for &(m, amount) in drops {
+            self.drop_pickup(PickupKind::Material(m, amount), at);
+        }
+        let bonus = self.players[i].ore_bonus;
+        if let Some(m) = material
+            && bonus > 0.0
+            && self.rng.chance(f64::from(bonus.min(1.0)))
+        {
+            self.drop_pickup(PickupKind::Material(m, 1), at);
+        }
+        let rock_ferrite = f64::from(content().tuning.player.rock_ferrite_chance);
+        if material.is_none() && self.rng.chance(rock_ferrite) {
+            self.drop_pickup(PickupKind::Material(Material::Ferrite, 1), at);
+        }
+    }
+
+    pub(super) fn hurt_player(&mut self, i: usize, amount: f32, events: &mut Vec<GameEvent>) {
+        let p = &mut self.players[i];
+        if self.invulnerable || p.down || p.invulnerable_ticks > 0 || amount <= 0.0 {
             return;
         }
-        self.player.health -= amount;
-        self.player.hurt_ticks = 18;
-        self.player.invulnerable_ticks = 30;
+        p.health -= amount;
+        p.hurt_ticks = 18;
+        p.invulnerable_ticks = 30;
         events.push(GameEvent::PlayerHurt { amount });
     }
 }

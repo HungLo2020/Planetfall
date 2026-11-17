@@ -5,7 +5,7 @@
 //! data. See the comments at the top of each data file.
 
 use super::{Material, Materials};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Visual palette for a planet surface (linear RGB).
@@ -96,9 +96,6 @@ pub struct WeaponDef {
     pub name: String,
     pub description: String,
     pub behavior: WeaponBehavior,
-    /// Every drop starts with the starter weapon.
-    #[serde(default)]
-    pub starter: bool,
     /// Fires without line of sight (lobbed).
     #[serde(default)]
     pub ignores_walls: bool,
@@ -191,6 +188,9 @@ pub struct EnemyDef {
     pub drops: Vec<Drop>,
 }
 
+/// A stat a perk or class passive changes. Multiplicative effects
+/// (`move_speed`, `fire_rate`, `dash_cooldown`, `ability_cooldown`) scale by
+/// `amount`; the rest add it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PerkEffect {
@@ -201,6 +201,14 @@ pub enum PerkEffect {
     PickupRange,
     Mining,
     Regeneration,
+    /// Chance of an extra ore drop per broken vein.
+    OreBonus,
+    /// Fraction faster the extraction zone fills.
+    ExtractionSpeed,
+    DashCooldown,
+    /// Bonus damage against heavy enemies (100+ base health).
+    HeavyDamage,
+    AbilityCooldown,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -215,6 +223,107 @@ pub struct PerkDef {
     /// Cap on the stacked effect (only meaningful for additive effects).
     #[serde(default)]
     pub max: Option<f32>,
+    /// Only offered to this class (by id).
+    #[serde(default)]
+    pub class: Option<String>,
+    /// Class level needed before a class perk is offered.
+    #[serde(default)]
+    pub class_level: u32,
+}
+
+/// The behaviour archetype of a class's active ability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AbilityKind {
+    /// Tunnel through rock ahead, damaging enemies in the bore.
+    Bore,
+    /// A wall of shock posts ahead that blocks the horde.
+    Barrier,
+    /// Teleport ahead, damaging enemies along the path.
+    Blink,
+    /// A turret that fires a weapon at the nearest enemy.
+    Turret,
+}
+
+/// Ability numbers at one tier. Which fields matter depends on the kind.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AbilityTier {
+    pub cooldown: f32,
+    #[serde(default)]
+    pub damage: f32,
+    #[serde(default)]
+    pub range: f32,
+    #[serde(default)]
+    pub width: f32,
+    #[serde(default)]
+    pub duration: f32,
+    #[serde(default)]
+    pub count: u32,
+    /// Turrets fire this weapon (id).
+    #[serde(default)]
+    pub weapon: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AbilityDef {
+    pub kind: AbilityKind,
+    pub name: String,
+    pub description: String,
+    pub tiers: Vec<AbilityTier>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PassiveEffect {
+    pub effect: PerkEffect,
+    pub amount: f32,
+    /// Added per tier above the first.
+    #[serde(default)]
+    pub per_tier: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PassiveDef {
+    pub name: String,
+    pub description: String,
+    pub effects: Vec<PassiveEffect>,
+}
+
+/// A weapon the class can start with from a class level.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClassUnlock {
+    pub level: u32,
+    pub weapon: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClassDef {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub description: String,
+    /// New commanders start as this class.
+    #[serde(default)]
+    pub starter: bool,
+    /// Default starting weapon (id).
+    pub signature: String,
+    /// Weapons offered more often (ids).
+    #[serde(default)]
+    pub familiar: Vec<String>,
+    pub color: [f32; 3],
+    pub ability: AbilityDef,
+    /// Class level at which each ability tier applies.
+    pub ability_levels: Vec<u32>,
+    pub passive: PassiveDef,
+    /// Class level at which each passive tier applies.
+    pub passive_levels: Vec<u32>,
+    #[serde(default)]
+    pub unlocks: Vec<ClassUnlock>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -282,6 +391,7 @@ pub struct Tuning {
     pub weapons: WeaponTuning,
     pub xp: XpTuning,
     pub horde: HordeTuning,
+    pub class: ClassTuning,
     pub extraction: ExtractionTuning,
     pub tutorial: TutorialTuning,
     pub blocks: BlockCosts,
@@ -310,6 +420,7 @@ pub struct WeaponTuning {
     pub cache_overflow_damage: f32,
     pub new_weapon_weight: u32,
     pub level_up_weight: u32,
+    pub familiar_weight: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -332,6 +443,16 @@ pub struct HordeTuning {
     pub late_minutes: f32,
     pub health_ramp_per_minute: f32,
     pub damage_ramp_per_minute: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClassTuning {
+    pub failed_share: f32,
+    pub extraction_bonus: u32,
+    pub xp_base: f32,
+    pub xp_growth: f32,
+    pub max_level: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
