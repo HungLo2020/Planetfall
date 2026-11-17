@@ -7,7 +7,7 @@
 #           that slows weapons and blocks abilities: `pulse`), "burrower"
 #           (tunnels through rock unseen and surfaces near you: `burrow`),
 #           "flyer" (flies straight over rock).
-# tint: linear RGB over the model (role variants share rigs for now).
+# tint: optional linear RGB over the model.
 # special (bosses): brood (calls enemies), lava_trail (burning ground),
 #                   frost_nova (slows nearby players), volley (fan of spit).
 # spawn: weight relative to other enemies, group size range, the threat
@@ -93,8 +93,7 @@ speed = 2.4
 damage = 6.0
 radius = 0.45
 xp = 3
-model = "husk"
-tint = [0.75, 1.15, 0.45]
+model = "spitter"
 blood = [0.55, 0.8, 0.2]
 death_sound = "enemy_die"
 ranged = { range = 9.0, keep = 6.0, cooldown = 2.4, speed = 8.0, damage = 7.0 }
@@ -109,8 +108,7 @@ speed = 2.2
 damage = 8.0
 radius = 0.5
 xp = 6
-model = "husk"
-tint = [0.7, 0.55, 1.4]
+model = "disruptor"
 blood = [0.5, 0.4, 0.9]
 death_sound = "enemy_die"
 pulse = { radius = 6.0, cooldown = 6.0, jam = 3.0 }
@@ -126,9 +124,8 @@ speed = 3.2
 damage = 14.0
 radius = 0.6
 xp = 6
-model = "skitter"
-scale = 1.5
-tint = [0.9, 0.7, 0.45]
+model = "burrower"
+scale = 1.3
 blood = [0.6, 0.45, 0.25]
 death_sound = "skitter_die"
 burrow = { surface_range = 3.5, surfaced = 6.0 }
@@ -144,9 +141,8 @@ speed = 4.4
 damage = 4.0
 radius = 0.35
 xp = 1
-model = "skitter"
-scale = 0.65
-tint = [1.2, 1.1, 0.6]
+model = "gnat"
+scale = 1.0
 blood = [0.8, 0.75, 0.3]
 death_sound = "skitter_die"
 spawn = { weight = 0.08, count = [3, 6], threat = 0.5, tutorial = false }
@@ -158,13 +154,13 @@ id = "matriarch"
 name = "Hive Matriarch"
 behavior = "walker"
 boss = true
-scale = 1.9
+scale = 2.7
 health = 1800.0
 speed = 2.0
 damage = 26.0
 radius = 1.0
 xp = 60
-model = "brute"
+model = "matriarch"
 blood = [0.5, 0.3, 0.65]
 death_sound = "enemy_die"
 alert_sound = "brute_roar"
@@ -184,8 +180,7 @@ speed = 1.9
 damage = 30.0
 radius = 1.05
 xp = 70
-model = "brute"
-tint = [1.5, 0.55, 0.35]
+model = "magma-tyrant"
 blood = [1.0, 0.45, 0.1]
 death_sound = "enemy_die"
 alert_sound = "brute_roar"
@@ -205,8 +200,7 @@ speed = 1.6
 damage = 32.0
 radius = 1.1
 xp = 80
-model = "brute"
-tint = [0.7, 0.95, 1.5]
+model = "glacier-colossus"
 blood = [0.6, 0.85, 1.0]
 death_sound = "enemy_die"
 alert_sound = "brute_roar"
@@ -226,8 +220,7 @@ speed = 1.5
 damage = 28.0
 radius = 1.2
 xp = 80
-model = "bloater"
-tint = [0.45, 1.0, 0.85]
+model = "bog-leviathan"
 blood = [0.3, 0.75, 0.6]
 death_sound = "enemy_die"
 alert_sound = "brute_roar"
@@ -248,8 +241,7 @@ speed = 2.6
 damage = 34.0
 radius = 1.15
 xp = 90
-model = "skitter"
-tint = [0.55, 0.45, 0.7]
+model = "deep-wyrm"
 blood = [0.45, 0.3, 0.6]
 death_sound = "skitter_die"
 alert_sound = "brute_roar"

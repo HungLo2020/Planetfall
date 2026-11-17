@@ -95,7 +95,10 @@ Rebind keys and buttons under Settings → Controls.
 - **Data-driven content**: weapons, enemies, planets, perks, ship modules and
   tuning are TOML files in `assets/data/` (see [Gameplay](docs/gameplay.md#tuning-and-adding-content)).
 - **Presentation**: original low-poly GLB models (plus CC0 Kenney props) with
-  GPU-skinned crowds and authored clips, voxel terrain and hull with fog on
+  GPU-skinned crowds and authored clips, a suit per class and a silhouette
+  per enemy role and boss, per-planet weather (spores, ash, snow, fireflies,
+  dust), embers over lava, splashes, frost and drips on frozen and wet
+  enemies, element combo bursts, voxel terrain and hull with fog on
   blocks and meshes alike, directional shadows over meshes and voxels,
   clustered point lights, GPU particles (blood, rock dust, ore glints,
   explosions), scorch and blood decals, outlines on characters hidden behind

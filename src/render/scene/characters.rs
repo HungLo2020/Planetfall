@@ -66,7 +66,8 @@ impl Painter<'_, '_> {
     ) -> Posed {
         let c = class.info().color;
         let tint = mix3([1.0; 3], c, 0.45);
-        self.character_tinted(names::ASTRONAUT, root, layers, flash, outline, tint, c)
+        let model = &class.info().model;
+        self.character_tinted(model, root, layers, flash, outline, tint, c)
     }
 }
 
@@ -169,6 +170,16 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
             None => {}
         }
         p.character_tinted(&info.model, root, &layers, glow, Some(style), tint, eyes);
+        // Frozen solid: a translucent shell of ice.
+        if e.frozen > 0 {
+            let r = info.radius * k * 1.5;
+            let h = 1.9 * k * info.scale.max(0.6) / info.scale.max(0.01);
+            p.ghost(
+                at(e.pos, h * 0.45) * Mat4::rotation_y(e.id as f32) * s(r, h * 0.55, r),
+                [0.6, 0.85, 1.0],
+                0.35,
+            );
+        }
     }
     for c in &run.corpses {
         let info = c.kind.info();

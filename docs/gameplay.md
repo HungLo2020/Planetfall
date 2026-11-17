@@ -310,7 +310,8 @@ into three smaller copies) or **Regenerating** (heals unless burning).
 Matriarch calls skitters, the Magma Tyrant leaves burning ground, the
 Glacier Colossus slows everything near it with frost novas, the Bog
 Leviathan spits fans of acid, and the Deep Wyrm burrows and calls burrowers.
-New role enemies share the existing rigs (tinted) until the art pass.
+Each role and boss has its own model on a shared rig (see
+[Assets](assets.md)).
 
 Enemies follow a flow field toward the player, separate from each other and
 climb out of the ground when they spawn. Weapons and enemies check line of

@@ -1,6 +1,7 @@
 # Crew classes, switched in the ship's locker room. Each class keeps its own
 # level, unlocks and loadout per save.
 #
+# model: the class's suit (a skinned model on the astronaut rig).
 # signature: the default starting weapon; familiar: weapons this class is
 #   offered more often, which can also be chosen as the starting weapon once
 #   unlocked (by class level in `unlocks`, or found on a dive).
@@ -18,6 +19,7 @@
 
 [[class]]
 id = "striker"
+model = "suit-striker"
 name = "Striker"
 role = "Tempo and mobility"
 description = "Fast, aggressive and best against big targets."
@@ -44,6 +46,7 @@ unlocks = [
 
 [[class]]
 id = "prospector"
+model = "suit-prospector"
 name = "Prospector"
 role = "Greed and tunnelling"
 description = "Mines faster, finds more ore and bores through rock. Fragile."
@@ -69,6 +72,7 @@ unlocks = [
 
 [[class]]
 id = "warden"
+model = "suit-warden"
 name = "Warden"
 role = "Control and holding ground"
 description = "Tough, walls off the horde and holds the extraction zone."
@@ -93,6 +97,7 @@ unlocks = [
 
 [[class]]
 id = "engineer"
+model = "suit-engineer"
 name = "Engineer"
 role = "Drones, turrets and repairs"
 description = "Builds turrets, repairs over time and recharges abilities faster."

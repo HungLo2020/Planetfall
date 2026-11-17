@@ -582,12 +582,133 @@ impl Effects {
                     color_end: [c[0] * 0.3, c[1] * 0.3, c[2] * 0.3, 0.0],
                 })?;
             }
+            // Frozen enemies shed frost, wet ones drip.
+            for (n, e) in run
+                .enemies
+                .iter()
+                .filter(|e| (e.frozen > 0 || e.wet > 0) && !e.burrowed)
+                .take(40)
+                .enumerate()
+            {
+                if !(self.counter as usize + n).is_multiple_of(6) {
+                    continue;
+                }
+                let (start, end, down) = if e.frozen > 0 {
+                    ([1.4, 1.8, 2.4, 1.0], [0.6, 0.8, 1.0, 0.0], false)
+                } else {
+                    ([0.3, 0.55, 0.9, 0.9], [0.2, 0.35, 0.6, 0.0], true)
+                };
+                glow.emit(&ParticleBurst {
+                    position: [e.pos[0], 1.1, e.pos[1]],
+                    position_jitter: 0.35,
+                    count: 2,
+                    direction: [0.0, if down { -1.0 } else { 1.0 }, 0.0],
+                    spread: 0.4,
+                    speed: [0.4, 1.2],
+                    life: [0.3, 0.6],
+                    size: [0.08, 0.02],
+                    color_start: start,
+                    color_end: end,
+                })?;
+            }
+            self.ambient(run, &mut glow, &mut dust)?;
         }
         for burst in &glow.bursts {
             self.glow.emit(burst)?;
         }
         for burst in &dust.bursts {
             self.dust.emit(burst)?;
+        }
+        Ok(())
+    }
+
+    /// Planet weather around the player (spores, ash, snow, mist, dust),
+    /// embers over nearby lava and splashes when wading.
+    fn ambient(
+        &mut self,
+        run: &planetfall_sim::run::Run,
+        glow: &mut Bursts,
+        dust: &mut Bursts,
+    ) -> GraphicsResult<()> {
+        use planetfall_sim::terrain::{Ground, Terrain};
+        let p = run.player().pos;
+        let key = run.planet.key();
+        if self.counter.is_multiple_of(3) {
+            let h = |k: u32| {
+                let mut x = self.counter.wrapping_mul(0x9e37_79b9) ^ k.wrapping_mul(0x85eb_ca77);
+                x ^= x >> 15;
+                x = x.wrapping_mul(0x2c1b_3c6d);
+                x ^= x >> 12;
+                (x & 0xffff) as f32 / 65535.0
+            };
+            let at = [p[0] + (h(1) - 0.5) * 30.0, 0.0, p[1] + (h(2) - 0.5) * 22.0];
+            let weather = match key {
+                // Drifting spores.
+                "verdant" => Some(([0.7, 1.0, 0.35, 0.8], [0.3, 0.5, 0.1, 0.0], 0.5, 3.0, 1.0)),
+                // Falling ash and the odd ember.
+                "cinder" => Some(([1.6, 0.7, 0.25, 0.9], [0.3, 0.1, 0.05, 0.0], 5.0, 4.0, -1.0)),
+                // Snow.
+                "hollow" => Some(([1.2, 1.3, 1.5, 0.9], [0.8, 0.9, 1.0, 0.0], 6.0, 5.0, -1.0)),
+                // Fireflies over the marsh.
+                "tidewell" => Some(([1.2, 1.6, 0.6, 1.0], [0.4, 0.6, 0.2, 0.0], 1.2, 2.5, 1.0)),
+                // Fine dust in thin air.
+                "kharon" => Some(([0.7, 0.6, 0.9, 0.6], [0.3, 0.25, 0.4, 0.0], 3.0, 4.0, -1.0)),
+                _ => None,
+            };
+            if let Some((start, end, height, life, dir)) = weather {
+                glow.emit(&ParticleBurst {
+                    position: [at[0], height, at[2]],
+                    position_jitter: 4.0,
+                    count: 3,
+                    direction: [0.15, dir, 0.1],
+                    spread: 0.6,
+                    speed: [0.3, 0.9],
+                    life: [life * 0.6, life],
+                    size: [0.05, 0.03],
+                    color_start: start,
+                    color_end: end,
+                })?;
+            }
+        }
+        // Embers rising from lava near the player.
+        if self.counter.is_multiple_of(2) {
+            let (tx, ty) = Terrain::tile_of(p);
+            let n = self.counter as i32;
+            let (x, y) = (tx - 7 + (n * 7) % 15, ty - 6 + (n * 5) % 13);
+            if run.terrain.ground(x, y) == Ground::Lava
+                && run.terrain.tile(x, y) == planetfall_sim::terrain::Tile::Floor
+            {
+                let c = Terrain::center_of(x, y);
+                glow.emit(&ParticleBurst {
+                    position: [c[0], 0.1, c[1]],
+                    position_jitter: 0.8,
+                    count: 3,
+                    direction: [0.0, 1.0, 0.0],
+                    spread: 0.3,
+                    speed: [0.8, 2.2],
+                    life: [0.6, 1.4],
+                    size: [0.09, 0.02],
+                    color_start: [2.8, 1.1, 0.3, 1.0],
+                    color_end: [0.8, 0.15, 0.03, 0.0],
+                })?;
+            }
+        }
+        // Splashes while wading.
+        let pl = run.player();
+        if pl.moving && self.counter.is_multiple_of(5) && run.terrain.ground_at(p) == Ground::Water
+        {
+            dust.emit(&ParticleBurst {
+                position: [p[0], 0.15, p[1]],
+                position_jitter: 0.3,
+                count: 6,
+                direction: [0.0, 1.0, 0.0],
+                spread: 0.9,
+                speed: [1.0, 2.4],
+                life: [0.3, 0.6],
+                size: [0.12, 0.05],
+                color_start: [0.55, 0.75, 0.95, 0.7],
+                color_end: [0.7, 0.85, 1.0, 0.0],
+            })?;
         }
         Ok(())
     }

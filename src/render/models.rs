@@ -119,6 +119,7 @@ pub fn required() -> Vec<String> {
     names.extend(EnemyId::all().map(|e| e.info().model.clone()));
     names.extend(WeaponId::all().map(|w| w.info().model.clone()));
     names.extend(UpgradeId::all().map(|u| u.info().station.clone()));
+    names.extend(planetfall_sim::content::ClassId::all().map(|c| c.info().model.clone()));
     names
 }
 
@@ -136,6 +137,7 @@ pub fn character_names() -> Vec<String> {
     use planetfall_sim::content::EnemyId;
     let mut names = vec![names::ASTRONAUT.to_owned()];
     names.extend(EnemyId::all().map(|e| e.info().model.clone()));
+    names.extend(planetfall_sim::content::ClassId::all().map(|c| c.info().model.clone()));
     names.sort();
     names.dedup();
     names

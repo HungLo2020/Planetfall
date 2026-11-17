@@ -65,6 +65,16 @@ MATERIALS: dict[str, tuple[tuple[float, float, float, float], float, float, tupl
     "ice": ((0.72, 0.86, 0.96, 1), 0.1, 0.12, (0.04, 0.08, 0.12)),
     "obsidian": ((0.07, 0.06, 0.07, 1), 0.3, 0.15, (0, 0, 0)),
     "stalk": ((0.62, 0.58, 0.46, 1), 0.0, 0.8, (0, 0, 0)),
+    "magma_skin": ((0.22, 0.09, 0.07, 1), 0.1, 0.7, (0, 0, 0)),
+    "frost_skin": ((0.62, 0.74, 0.86, 1), 0.1, 0.4, (0, 0, 0)),
+    "frost_dark": ((0.3, 0.38, 0.5, 1), 0.2, 0.5, (0, 0, 0)),
+    "bog_skin": ((0.24, 0.42, 0.36, 1), 0.0, 0.7, (0, 0, 0)),
+    "bog_dark": ((0.12, 0.24, 0.2, 1), 0.0, 0.8, (0, 0, 0)),
+    "wyrm_skin": ((0.26, 0.2, 0.32, 1), 0.3, 0.35, (0, 0, 0)),
+    "dirt": ((0.42, 0.3, 0.2, 1), 0.0, 0.9, (0, 0, 0)),
+    "amber": ((0.75, 0.55, 0.18, 1), 0.2, 0.35, (0, 0, 0)),
+    "spore_skin": ((0.4, 0.5, 0.2, 1), 0.0, 0.8, (0, 0, 0)),
+    "void_skin": ((0.18, 0.16, 0.26, 1), 0.2, 0.5, (0, 0, 0)),
 }
 
 
@@ -290,9 +300,10 @@ def write_glb(path: Path, parts: list[Part]) -> None:
 # Skinned characters: palette texture, joints, clips
 # ---------------------------------------------------------------------------
 
-PALETTE_SIZE = 8
-PALETTE = sorted(MATERIALS)  # lit colour at index i, glow colour at 32 + i
-assert len(PALETTE) <= 32
+PALETTE_SIZE = 16
+GLOW_OFFSET = PALETTE_SIZE * PALETTE_SIZE // 2
+PALETTE = sorted(MATERIALS)  # lit colour at index i, glow colour at GLOW_OFFSET + i
+assert len(PALETTE) <= GLOW_OFFSET
 
 
 def srgb_byte(v: float) -> int:
@@ -313,7 +324,7 @@ def palette_png() -> bytes:
         texels[i] = tuple(srgb_byte(c) for c in rgba[:3]) + (255,)
         glow = emissive if any(emissive) else rgba[:3]
         peak = max(glow) or 1.0
-        texels[32 + i] = tuple(srgb_byte(c / peak) for c in glow) + (255,)
+        texels[GLOW_OFFSET + i] = tuple(srgb_byte(c / peak) for c in glow) + (255,)
     rows = b"".join(
         b"\x00" + bytes(c for x in range(PALETTE_SIZE) for c in texels[y * PALETTE_SIZE + x])
         for y in range(PALETTE_SIZE)
@@ -402,7 +413,7 @@ def write_skinned_glb(path: Path, parts: list[Part], parents: dict[str, str | No
     for part in parts:
         for material in sorted(part.tris):
             glow = any(MATERIALS[material][3]) and material.startswith(("glow", "visor", "screen"))
-            slot = PALETTE.index(material) + (32 if glow else 0)
+            slot = PALETTE.index(material) + (GLOW_OFFSET if glow else 0)
             for tri in part.tris[material]:
                 groups["glow" if glow else "body"].append((tri, joint_index[part.name], slot))
     primitives = []
@@ -647,6 +658,230 @@ def bloater() -> list[Part]:
     return parts
 
 
+def part_named(parts: list[Part], name: str) -> Part:
+    return next(p for p in parts if p.name == name)
+
+
+def recolor(parts: list[Part], swaps: dict[str, str]) -> list[Part]:
+    """Swap materials on every part (variants of a shared body)."""
+    for part in parts:
+        for old, new in swaps.items():
+            if old in part.tris:
+                part.tris.setdefault(new, []).extend(part.tris.pop(old))
+    return parts
+
+
+# --- Class suits: the astronaut rig with each class's silhouette ------------
+
+def suit_striker() -> list[Part]:
+    """Light and fast: a swept helmet fin, twin shoulder thrusters, knee guards."""
+    parts = astronaut()
+    head = part_named(parts, "head")
+    head.box("suit_dark", (0, 1.88, -0.05), (0.06, 0.12, 0.42), rot=(-0.25, 0, 0))
+    head.box("glow_orange", (0, 1.68, 0.215), (0.3, 0.03, 0.02))
+    torso = part_named(parts, "torso")
+    for side in (-1, 1):
+        torso.prism("hull_dark", (side * 0.2, 1.3, -0.42), 0.08, 0.36, sides=8, rot=(0.5, 0, 0))
+        torso.prism("glow_orange", (side * 0.2, 1.13, -0.52), 0.06, 0.04, sides=8, rot=(0.5, 0, 0))
+    for side, name in ((-1, "leg_l"), (1, "leg_r")):
+        leg = part_named(parts, name)
+        leg.box("suit_dark", (side * 0.14, 0.5, 0.15), (0.2, 0.16, 0.06))
+    return parts
+
+
+def suit_prospector() -> list[Part]:
+    """A miner: headlamp, a drill-and-ore backpack, heavy boots."""
+    parts = astronaut()
+    head = part_named(parts, "head")
+    head.box("suit_dark", (0, 1.86, 0.12), (0.18, 0.1, 0.14))
+    head.box("glow_yellow", (0, 1.86, 0.2), (0.12, 0.07, 0.02))
+    torso = part_named(parts, "torso")
+    torso.box("hull_dark", (0, 1.08, -0.42), (0.5, 0.62, 0.26))
+    torso.prism("accent", (0.0, 1.42, -0.5), 0.09, 0.3, sides=8, top_radius=0.0)
+    torso.box("lumite", (-0.14, 0.9, -0.56), (0.12, 0.12, 0.06))
+    torso.box("ferrite", (0.12, 0.92, -0.56), (0.14, 0.1, 0.06))
+    for side, name in ((-1, "leg_l"), (1, "leg_r")):
+        leg = part_named(parts, name)
+        leg.box("hull_dark", (side * 0.14, 0.1, 0.05), (0.3, 0.2, 0.4))
+    return parts
+
+
+def suit_warden() -> list[Part]:
+    """Armoured: big pauldrons, a chest plate and a forearm shield."""
+    parts = astronaut()
+    torso = part_named(parts, "torso")
+    torso.box("armor", (0, 1.12, 0.19), (0.52, 0.42, 0.06))
+    torso.box("glow_blue", (0, 1.15, 0.225), (0.14, 0.14, 0.02))
+    for side in (-1, 1):
+        torso.box("armor", (side * 0.38, 1.4, 0), (0.3, 0.14, 0.4), rot=(0, 0, side * -0.25))
+    head = part_named(parts, "head")
+    head.box("armor", (0, 1.86, 0), (0.48, 0.08, 0.48))
+    shield = part_named(parts, "arm_l")
+    shield.box("armor", (-0.5, 0.98, 0.06), (0.06, 0.5, 0.4))
+    shield.box("glow_blue", (-0.535, 0.98, 0.06), (0.02, 0.36, 0.06))
+    for side, name in ((-1, "leg_l"), (1, "leg_r")):
+        leg = part_named(parts, name)
+        leg.box("armor", (side * 0.14, 0.42, 0.15), (0.24, 0.3, 0.06))
+    return parts
+
+
+def suit_engineer() -> list[Part]:
+    """A tinkerer: tool pack with an antenna dish, goggles, a tool arm."""
+    parts = astronaut()
+    head = part_named(parts, "head")
+    head.box("glow_green", (0, 1.7, 0.225), (0.34, 0.08, 0.02))
+    torso = part_named(parts, "torso")
+    torso.box("hull", (0, 1.05, -0.42), (0.4, 0.5, 0.24))
+    torso.prism("hull_dark", (0.16, 1.55, -0.42), 0.02, 0.5, sides=6)
+    torso.prism("hull", (0.16, 1.82, -0.42), 0.14, 0.04, sides=10, rot=(0.6, 0, 0), top_radius=0.06)
+    torso.box("accent", (0, 0.82, 0.19), (0.5, 0.06, 0.04))
+    for x in (-0.18, 0.0, 0.18):
+        torso.box("hull_dark", (x, 0.8, 0.21), (0.07, 0.1, 0.04))
+    tool = part_named(parts, "arm_r")
+    tool.box("hull_dark", (0.37, 0.72, 0.1), (0.12, 0.12, 0.22))
+    tool.prism("glow_green", (0.37, 0.72, 0.24), 0.03, 0.06, sides=6, rot=(math.pi / 2, 0, 0))
+    return parts
+
+
+# --- Enemy roles ---------------------------------------------------------------
+
+def spitter() -> list[Part]:
+    """Hunched, with a bloated acid throat and a sac on its back."""
+    parts = husk()
+    head = part_named(parts, "head")
+    head.sphere("bloat", (0, 1.62, 0.22), 0.24, subdivisions=1)
+    for x in (-0.1, 0.1):
+        head.sphere("glow_green", (x, 1.6, 0.44), 0.05, subdivisions=0)
+    torso = part_named(parts, "torso")
+    torso.sphere("bloat", (0, 1.25, -0.28), 0.3, subdivisions=1)
+    torso.sphere("glow_green", (0.12, 1.38, -0.5), 0.08, subdivisions=0)
+    torso.sphere("glow_green", (-0.12, 1.15, -0.52), 0.07, subdivisions=0)
+    return parts
+
+
+def disruptor() -> list[Part]:
+    """Tall and thin, a crown of antennae and a pulsing violet core."""
+    parts = husk()
+    torso = part_named(parts, "torso")
+    torso.sphere("glow_purple", (0, 1.2, 0.16), 0.13, subdivisions=1)
+    torso.box("chitin", (0, 1.2, 0), (0.42, 0.5, 0.3))
+    head = part_named(parts, "head")
+    for i in range(5):
+        a = (i - 2) * 0.35
+        head.prism("chitin_light", (math.sin(a) * 0.18, 2.12, -0.05), 0.025, 0.5, sides=5, rot=(0, 0, -a), top_radius=0.0)
+        head.box("glow_purple", (math.sin(a) * 0.3, 2.36, -0.05), (0.05, 0.05, 0.05))
+    for side, name in ((-1, "arm_l"), (1, "arm_r")):
+        arm = part_named(parts, name)
+        arm.box("chitin", (side * 0.38, 0.7, 0), (0.12, 0.3, 0.12))
+    return parts
+
+
+def burrower() -> list[Part]:
+    """An armoured digger: plated back, a drill snout and big front claws."""
+    parts = skitter()
+    body = part_named(parts, "body")
+    for z in (0.05, -0.25, -0.55):
+        body.box("armor", (0, 0.68, z), (0.66, 0.1, 0.26))
+    head = part_named(parts, "head")
+    head.prism("armor", (0, 0.45, 0.72), 0.16, 0.34, sides=6, rot=(math.pi / 2, 0, 0), top_radius=0.0)
+    for side in (-1, 1):
+        claw = part_named(parts, f"leg_{'l' if side < 0 else 'r'}0")
+        claw.box("armor", (side * 0.75, 0.35, 0.35), (0.16, 0.16, 0.42), rot=(0.3, 0, 0))
+    return parts
+
+
+def gnat() -> list[Part]:
+    """A flyer: a small body on two pairs of gauzy wings."""
+    body = Part("body", (0, 0.45, 0))
+    body.box("chitin", (0, 0.45, -0.05), (0.26, 0.22, 0.5))
+    body.box("glow_yellow", (0, 0.4, -0.32), (0.14, 0.1, 0.1))
+    head = Part("head", (0, 0.45, 0.25))
+    head.box("chitin_light", (0, 0.47, 0.3), (0.22, 0.2, 0.18))
+    head.box("glow_red", (-0.07, 0.5, 0.395), (0.05, 0.05, 0.02))
+    head.box("glow_red", (0.07, 0.5, 0.395), (0.05, 0.05, 0.02))
+    parts = [body, head]
+    for i, z in enumerate((0.1, -0.1, -0.3)):
+        for side in (-1, 1):
+            wing = Part(f"leg_{'l' if side < 0 else 'r'}{i}", (side * 0.12, 0.55, z))
+            if i < 2:
+                wing.box("ice", (side * 0.45, 0.58, z), (0.7, 0.02, 0.24), rot=(0, 0, side * 0.15))
+            parts.append(wing)
+    return parts
+
+
+# --- Bosses -------------------------------------------------------------------
+
+def matriarch() -> list[Part]:
+    """The hive queen: a skitter body under a vast glowing egg sac and crown."""
+    parts = skitter()
+    body = part_named(parts, "body")
+    body.sphere("chitin", (0, 0.75, -0.75), 0.55, subdivisions=1)
+    for x, y, z in ((0.25, 0.95, -0.95), (-0.3, 0.85, -0.85), (0.0, 1.15, -0.7), (0.3, 0.7, -0.5), (-0.2, 1.05, -1.1)):
+        body.sphere("glow_purple", (x, y, z), 0.12, subdivisions=0)
+    head = part_named(parts, "head")
+    for i in range(5):
+        a = (i - 2) * 0.4
+        head.prism("chitin_light", (math.sin(a) * 0.16, 0.72, 0.4), 0.03, 0.3, sides=5, rot=(-0.3, 0, -a), top_radius=0.0)
+    return parts
+
+
+def magma_tyrant() -> list[Part]:
+    """A brute cracked with molten seams, horns and burning shoulders."""
+    parts = brute()
+    torso = part_named(parts, "torso")
+    for y in (1.35, 1.6, 1.9):
+        torso.box("glow_orange", (0, y, 0.315), (1.0, 0.04, 0.02))
+    for side in (-1, 1):
+        torso.crystal("obsidian", (side * 0.62, 2.35, 0), 0.12, 0.5, sides=5, rot=(0, 0, side * -0.3))
+        torso.crystal("glow_orange", (side * 0.62, 2.3, 0.1), 0.06, 0.3, sides=4, rot=(0, 0, side * -0.3))
+    head = part_named(parts, "head")
+    for side in (-1, 1):
+        head.prism("obsidian", (side * 0.32, 2.8, 0.15), 0.08, 0.5, sides=5, rot=(0.4, 0, side * -0.6), top_radius=0.0)
+    return parts
+
+
+def glacier_colossus() -> list[Part]:
+    """A brute grown over with ice: spikes on the shoulders and back."""
+    parts = brute()
+    torso = part_named(parts, "torso")
+    for x, y, z, h, rx, rz in ((-0.6, 2.35, 0.0, 0.7, 0.0, 0.4), (0.6, 2.35, 0.0, 0.7, 0.0, -0.4), (-0.3, 2.1, -0.35, 0.6, -0.5, 0.2), (0.3, 2.15, -0.35, 0.6, -0.5, -0.2), (0.0, 1.9, -0.4, 0.5, -0.7, 0.0)):
+        torso.prism("ice", (x, y, z), 0.12, h, sides=6, rot=(rx, 0, rz), top_radius=0.0)
+    torso.box("glow_blue", (0, 1.62, 0.37), (0.2, 0.2, 0.02))
+    for side, name in ((-1, "arm_l"), (1, "arm_r")):
+        arm = part_named(parts, name)
+        arm.crystal("ice", (side * 0.8, 0.85, 0.1), 0.16, 0.45, sides=5)
+    return parts
+
+
+def bog_leviathan() -> list[Part]:
+    """A swollen marsh beast: a frilled crest, a gaping maw and moss."""
+    parts = bloater()
+    body = part_named(parts, "body")
+    for i in range(7):
+        a = (i - 3) * 0.32
+        body.box("bloat_dark", (math.sin(a) * 0.5, 1.55 + math.cos(a) * 0.15, -0.1), (0.08, 0.5, 0.36), rot=(0, 0, -a))
+    body.box("rubber", (0, 0.85, 0.66), (0.5, 0.2, 0.1))
+    for x in (-0.18, -0.06, 0.06, 0.18):
+        body.prism("white", (x, 0.92, 0.7), 0.025, 0.1, sides=4, top_radius=0.0)
+    body.sphere("husk_skin", (0.4, 1.4, -0.35), 0.18, subdivisions=0)
+    body.sphere("husk_skin", (-0.45, 1.2, -0.4), 0.15, subdivisions=0)
+    return parts
+
+
+def deep_wyrm() -> list[Part]:
+    """A segmented worm with mandibles, rearing on short legs."""
+    parts = skitter()
+    body = part_named(parts, "body")
+    for i, z in enumerate((-0.9, -1.25, -1.6, -1.95)):
+        r = 0.34 - i * 0.05
+        body.box("chitin", (0, 0.42 - i * 0.04, z), (r * 2, r * 1.5, 0.32))
+        body.box("glow_purple", (0, 0.42 + r * 0.75 - i * 0.04, z), (r, 0.03, 0.1))
+    head = part_named(parts, "head")
+    for side in (-1, 1):
+        head.prism("armor", (side * 0.2, 0.4, 0.75), 0.05, 0.4, sides=5, rot=(math.pi / 2, side * 0.4, 0), top_radius=0.0)
+    return parts
+
+
 # ---------------------------------------------------------------------------
 # Character rigs and clips. Walk clips span one gait loop in walk units (the
 # distance accumulator the simulation advances), idle clips are in seconds.
@@ -770,6 +1005,19 @@ SKINNED = {
     "brute": (brute, HUMANOID, shambler_clips),
     "skitter": (skitter, SKITTER, skitter_clips),
     "bloater": (bloater, BLOATER, bloater_clips),
+    "suit-striker": (suit_striker, HUMANOID, astronaut_clips),
+    "suit-prospector": (suit_prospector, HUMANOID, astronaut_clips),
+    "suit-warden": (suit_warden, HUMANOID, astronaut_clips),
+    "suit-engineer": (suit_engineer, HUMANOID, astronaut_clips),
+    "spitter": (lambda: recolor(spitter(), {"husk_suit": "spore_skin"}), HUMANOID, shambler_clips),
+    "disruptor": (lambda: recolor(disruptor(), {"husk_skin": "void_skin", "husk_suit": "wyrm_skin", "husk_pants": "rubber"}), HUMANOID, shambler_clips),
+    "burrower": (lambda: recolor(burrower(), {"chitin": "dirt", "chitin_light": "amber"}), SKITTER, skitter_clips),
+    "gnat": (lambda: recolor(gnat(), {"chitin": "amber"}), SKITTER, skitter_clips),
+    "matriarch": (matriarch, SKITTER, skitter_clips),
+    "magma-tyrant": (lambda: recolor(magma_tyrant(), {"brute_skin": "magma_skin", "husk_pants": "obsidian"}), HUMANOID, shambler_clips),
+    "glacier-colossus": (lambda: recolor(glacier_colossus(), {"brute_skin": "frost_skin", "husk_pants": "frost_dark"}), HUMANOID, shambler_clips),
+    "bog-leviathan": (lambda: recolor(bog_leviathan(), {"bloat": "bog_skin", "bloat_dark": "bog_dark"}), BLOATER, bloater_clips),
+    "deep-wyrm": (lambda: recolor(deep_wyrm(), {"chitin": "wyrm_skin", "chitin_light": "void_skin"}), SKITTER, skitter_clips),
 }
 
 

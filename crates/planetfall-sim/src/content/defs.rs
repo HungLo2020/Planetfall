@@ -657,6 +657,10 @@ pub struct GearDef {
     pub min_hazard: u8,
 }
 
+fn astronaut() -> String {
+    "astronaut".into()
+}
+
 fn first_hazard() -> u8 {
     1
 }
@@ -892,6 +896,9 @@ pub struct ClassUnlock {
 pub struct ClassDef {
     pub id: String,
     pub name: String,
+    /// The suit model (skinned, on the astronaut rig).
+    #[serde(default = "astronaut")]
+    pub model: String,
     pub role: String,
     pub description: String,
     /// New commanders start as this class.
