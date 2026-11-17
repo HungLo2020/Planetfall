@@ -6,7 +6,7 @@ use super::*;
 // FTL travel
 // ---------------------------------------------------------------------------
 
-pub fn ftl<'a>(p: &mut Painter<'a, '_>, ticks: u32, to: PlanetId) -> SceneOutput<'a> {
+pub fn ftl<'a>(p: &mut Painter<'a, '_>, ticks: u32, to: Option<PlanetId>) -> SceneOutput<'a> {
     let progress = 1.0 - ticks as f32 / FTL_TICKS as f32;
     let warp = if progress < 0.25 {
         progress / 0.25 * 0.3
@@ -37,13 +37,25 @@ pub fn ftl<'a>(p: &mut Painter<'a, '_>, ticks: u32, to: PlanetId) -> SceneOutput
     }
     if progress > 0.8 {
         let a = ((progress - 0.8) / 0.2).clamp(0.0, 1.0);
-        let tint = to.info().palette.planet;
-        p.model_tinted(
-            names::PLANET,
-            t(20.0, -18.0, 140.0 - a * 60.0) * s(40.0, 40.0, 40.0),
-            tint,
-            math_scale3(tint, 0.1),
-        );
+        match to {
+            Some(planet) => {
+                let tint = planet.info().palette.planet;
+                p.model_tinted(
+                    names::PLANET,
+                    t(20.0, -18.0, 140.0 - a * 60.0) * s(40.0, 40.0, 40.0),
+                    tint,
+                    math_scale3(tint, 0.1),
+                );
+            }
+            // The trade station swings into view.
+            None => p.model(
+                names::TRADE_STATION,
+                t(14.0, -8.0, 90.0 - a * 40.0)
+                    * Mat4::rotation_y(p.time * 0.15)
+                    * Mat4::rotation_x(0.5)
+                    * s(16.0, 16.0, 16.0),
+            ),
+        }
     }
     SceneOutput {
         draws: std::mem::take(&mut p.draws),

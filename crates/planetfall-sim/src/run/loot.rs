@@ -7,12 +7,42 @@
 //!   weapon mods and ability mods (`mods.toml`) and field or class perks
 //!   (`perks.toml`). Luck and planet hazard push the odds toward rarer
 //!   offers; elements need rare and behaviour changes legendary.
-//! - A supply cache offers three upgrades at rare or better.
+//! - A supply cache offers three upgrades at rare or better, and holds a
+//!   find: gear at uncommon or better, or a familiar weapon blueprint.
+//! - Elites sometimes drop gear; bosses and hunted elites always do.
+//! - Finds go to the stash when the drop ends, whatever the outcome.
 
 use super::{OfferSource, Pickup, PickupKind, Player, Run, RunState, WeaponSlot};
-use crate::content::{DT, ModId, ModTarget, Offer, PerkId, Rarity, Upgrade, WeaponId, content};
+use crate::content::{
+    ClassId, DT, ModId, ModTarget, Offer, PerkId, Rarity, Upgrade, WeaponId, content,
+};
 use crate::events::GameEvent;
+use crate::gear::{self, Gear};
 use crate::math::{FloatExt, V2};
+use serde::{Deserialize, Serialize};
+
+/// Something found on a dive that survives death.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Find {
+    Gear(Gear),
+    /// A familiar weapon blueprint: a starting-weapon option for the class.
+    Weapon {
+        class: ClassId,
+        weapon: WeaponId,
+    },
+}
+
+impl Find {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Gear(g) => format!("{} {}", g.rarity.name(), g.name()),
+            Self::Weapon { weapon, .. } => format!("{} blueprint", weapon.name()),
+        }
+    }
+}
+
+/// Ticks a find stays on the HUD.
+const FIND_BANNER: u32 = 240;
 
 /// Offers per choice.
 const CHOICES: usize = 3;
@@ -80,6 +110,10 @@ impl Run {
             match p.kind {
                 PickupKind::Xp(amount) => {
                     let player = &mut self.players[owner];
+                    // Gear XP bonus, carrying the fraction to the next shard.
+                    let exact = amount as f32 * (1.0 + player.xp_gain) + player.xp_fraction;
+                    let amount = exact.floor() as u32;
+                    player.xp_fraction = exact - amount as f32;
                     player.xp += amount;
                     player.xp_total += amount;
                     while player.xp >= player.xp_needed() {
@@ -117,6 +151,45 @@ impl Run {
             .map(|(c, _)| *c)
     }
 
+    /// Equipment for `player` at the drop's hazard, at least `min` rare.
+    pub(super) fn find_gear(&mut self, player: usize, min: Rarity, events: &mut Vec<GameEvent>) {
+        let luck = self.players[player].luck;
+        let item = gear::roll(&mut self.rng, self.mission.hazard, min, luck);
+        events.push(GameEvent::GearFound {
+            rarity: item.rarity,
+            slot: item.slot(),
+        });
+        self.finds.push(Find::Gear(item));
+        self.find_banner = FIND_BANNER;
+    }
+
+    /// A cache's find: sometimes a weapon blueprint the class still lacks,
+    /// otherwise gear.
+    fn cache_find(&mut self, player: usize, events: &mut Vec<GameEvent>) {
+        let t = &content().tuning.equipment;
+        let p = &self.players[player];
+        let class = p.class;
+        let left: Vec<WeaponId> = p
+            .blueprints
+            .iter()
+            .copied()
+            .filter(|w| {
+                !self
+                    .finds
+                    .iter()
+                    .any(|f| matches!(f, Find::Weapon { weapon, .. } if weapon == w))
+            })
+            .collect();
+        if !left.is_empty() && !self.tutorial && self.rng.chance(f64::from(t.weapon_find)) {
+            let weapon = left[self.rng.range_usize(0..left.len())];
+            self.finds.push(Find::Weapon { class, weapon });
+            self.find_banner = FIND_BANNER;
+            events.push(GameEvent::BlueprintFound { weapon });
+        } else {
+            self.find_gear(player, t.cache_min, events);
+        }
+    }
+
     /// Walking into a supply cache queues a rare-or-better upgrade choice.
     pub(super) fn update_caches(&mut self, events: &mut Vec<GameEvent>) {
         let tuning = &content().tuning;
@@ -138,6 +211,7 @@ impl Run {
             self.players[player].pending_caches += 1;
             self.drop_pickup(PickupKind::Xp(tuning.xp.cache_xp), c.pos);
             events.push(GameEvent::CacheOpened { at: c.pos });
+            self.cache_find(player, events);
         }
     }
 

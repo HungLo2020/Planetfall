@@ -2,8 +2,8 @@
 //! soak tests and CI, so every feature is drivable without a window.
 
 use crate::content::{
-    AbilityKind, ClassId, Material, ModStat, ObjectiveKind, Offer, PerkEffect, PlanetId, ShipBlock,
-    Upgrade, UpgradeId, WeaponBehavior,
+    AbilityKind, ClassId, GearSlot, Material, ModStat, ObjectiveKind, Offer, PerkEffect, PlanetId,
+    Rarity, ShipBlock, Upgrade, UpgradeId, WeaponBehavior,
 };
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
@@ -35,6 +35,7 @@ impl Autopilot {
     fn ship(&self, game: &Game, pulse: bool) -> GameInput {
         if let Some(terminal) = &game.terminal {
             let command = match terminal {
+                Terminal::Navigation if wants_trade(game) => Command::Dock,
                 Terminal::Navigation => {
                     let target = PlanetId::all()
                         .collect::<Vec<_>>()
@@ -60,6 +61,8 @@ impl Autopilot {
                     let options = profile.start_options(want);
                     if profile.class != want {
                         Command::SelectClass(want)
+                    } else if let Some(id) = gear_upgrade(game) {
+                        Command::Equip(id)
                     } else if let Some(alt) = options
                         .iter()
                         .copied()
@@ -88,15 +91,20 @@ impl Autopilot {
                 Terminal::MissionBoard => {
                     let stats = &game.profile.stats;
                     let struggling = stats.deaths * 2 > stats.extractions;
+                    // Geared up and rarely dying: push one level harder.
+                    let comfortable = stats.deaths * 5 < stats.extractions
+                        && game.profile.equipped(game.profile.class).len() >= 3;
+                    let cap = if comfortable { 3 } else { 2 };
                     Command::Deploy {
                         contract: stats.drops as usize % game.profile.board.len().max(1),
                         hazard: if struggling {
                             1
                         } else {
-                            game.profile.hazard_unlocked.min(2)
+                            game.profile.hazard_unlocked.min(cap)
                         },
                     }
                 }
+                Terminal::Trade => trade_action(game).unwrap_or(Command::Close),
                 Terminal::Debrief(_) | Terminal::Module(_) => Command::Close,
             };
             return GameInput {
@@ -107,15 +115,19 @@ impl Autopilot {
         if let Some(input) = self.build(game, pulse) {
             return input;
         }
-        let goal = if game.profile.orbiting.is_none()
+        let goal = if game.profile.docked && trade_action(game).is_some() {
+            StationKind::DropPod
+        } else if wants_trade(game)
+            || game.profile.orbiting.is_none()
             || game.profile.orbiting.is_some_and(|o| {
                 PlanetId::all()
                     .any(|p| game.profile.unlocked(p) && p.info().nav_level > o.info().nav_level)
-            }) {
+            })
+        {
             StationKind::NavConsole
         } else if affordable(game).is_some() {
             StationKind::Fabricator
-        } else if game.profile.class != wanted_class(game) {
+        } else if game.profile.class != wanted_class(game) || gear_upgrade(game).is_some() {
             StationKind::Locker
         } else {
             StationKind::DropPod
@@ -333,6 +345,67 @@ impl Autopilot {
             ..GameInput::default()
         }
     }
+}
+
+/// Spare (unworn) items kept per slot when trading.
+const SPARES: usize = 2;
+
+/// Worth a trip to the station: more spare gear than a visit leaves behind
+/// (so the ship never shuttles back and forth).
+fn wants_trade(game: &Game) -> bool {
+    let p = &game.profile;
+    !p.docked
+        && p.tutorial_complete
+        && p.stash.iter().filter(|g| p.wearer(g.id).is_none()).count() > SPARES * 4 + 2
+}
+
+/// A better unworn item for one of the active class's slots.
+fn gear_upgrade(game: &Game) -> Option<u32> {
+    let p = &game.profile;
+    let worn = p.equipped(p.class);
+    GearSlot::ALL.iter().find_map(|&slot| {
+        let current = worn
+            .iter()
+            .find(|g| g.slot() == slot)
+            .map_or(0.0, |g| g.score());
+        p.stash
+            .iter()
+            .filter(|g| g.slot() == slot && p.wearer(g.id).is_none() && g.score() > current)
+            .max_by(|a, b| a.score().total_cmp(&b.score()))
+            .map(|g| g.id)
+    })
+}
+
+/// One station trade: sell spares (keeping the two best unworn per slot),
+/// fuse spare commons, then buy an upgrade for the active class.
+fn trade_action(game: &Game) -> Option<Command> {
+    let p = &game.profile;
+    let t = &crate::content::content().tuning.trade;
+    for slot in GearSlot::ALL {
+        let mut spare: Vec<&crate::gear::Gear> = p
+            .stash
+            .iter()
+            .filter(|g| g.slot() == slot && p.wearer(g.id).is_none())
+            .collect();
+        spare.sort_by(|a, b| b.score().total_cmp(&a.score()));
+        if let Some(g) = spare.get(SPARES) {
+            return Some(Command::Sell(g.id));
+        }
+    }
+    if p.fusible(Rarity::Common).len() >= t.fuse && p.credits >= t.fuse_cost[0] {
+        return Some(Command::Fuse(Rarity::Common));
+    }
+    let worn = p.equipped(p.class);
+    p.market
+        .iter()
+        .position(|g| {
+            let current = worn
+                .iter()
+                .find(|w| w.slot() == g.slot())
+                .map_or(0.0, |w| w.score());
+            g.price() <= p.credits && g.score() > current
+        })
+        .map(Command::Buy)
 }
 
 /// The nearest lumite at least `clear` metres from `avoid`.

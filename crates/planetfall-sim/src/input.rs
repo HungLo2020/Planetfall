@@ -1,6 +1,6 @@
 //! Device-independent player intent for one simulation tick.
 
-use crate::content::{ClassId, PlanetId, UpgradeId, WeaponId};
+use crate::content::{ClassId, GearSlot, Material, PlanetId, Rarity, UpgradeId, WeaponId};
 use crate::math::V2;
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub enum Command {
     /// Navigation console: FTL to a planet.
     TravelTo(PlanetId),
+    /// Navigation console: FTL to the trade station and dock.
+    Dock,
     /// Fabricator: build or upgrade a ship module.
     Purchase(UpgradeId),
     /// Level-up screen: pick one of the offered perks.
@@ -24,6 +26,20 @@ pub enum Command {
     /// Locker room: the active class's starting weapon (its signature or an
     /// unlocked familiar weapon).
     SetStartWeapon(WeaponId),
+    /// Locker room: wear a stash item on the active class.
+    Equip(u32),
+    /// Locker room: take off the active class's item in a slot.
+    Unequip(GearSlot),
+    /// Trade station: sell a stash item for credits.
+    Sell(u32),
+    /// Trade station: buy an item off the shelf.
+    Buy(usize),
+    /// Trade station: reroll an item's affixes.
+    Reroll(u32),
+    /// Trade station: fuse unworn items of a rarity into one of the next.
+    Fuse(Rarity),
+    /// Trade station: trade one lot of a material for credits (or back).
+    TradeMaterial { material: Material, buy: bool },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

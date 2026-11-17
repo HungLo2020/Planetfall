@@ -139,3 +139,42 @@ deck = { ferrite = 2, lumite = 0, voidstone = 0 }
 hull = { ferrite = 2, lumite = 0, voidstone = 0 }
 window = { ferrite = 1, lumite = 1, voidstone = 0 }
 lamp = { ferrite = 1, lumite = 1, voidstone = 0 }
+
+[equipment]
+# Affixes rolled at common, uncommon, rare and legendary.
+affixes = [1, 2, 3, 4]
+# Stat scale per rarity (the implicit stat and every affix).
+scale = [1.0, 1.25, 1.55, 2.0]
+# Extra stat scale per hazard level above 1.
+hazard_scale = 0.08
+# Supply caches always hold gear at least this rare (or a weapon blueprint).
+cache_min = "uncommon"
+# Chance a cache holds a familiar weapon blueprint for the class instead,
+# while one is still to be found.
+weapon_find = 0.35
+# Chance an elite drops gear when it dies.
+elite_drop = 0.08
+# Bosses and hunted elites always drop gear this rare or better.
+boss_min = "rare"
+# Stash capacity; finds beyond it are salvaged for their credit value.
+stash_size = 24
+
+[trade]
+# Credits for selling an item by rarity, plus per affix.
+sell = [8, 20, 45, 100]
+sell_per_affix = 4
+# The station sells at this multiple of the sell price.
+markup = 2.5
+# Items on the station's shelf at each visit.
+stock = 4
+# Credits to reroll an item's affixes, by rarity.
+reroll = [12, 30, 70, 150]
+# Fuse this many unequipped items of one rarity into one of the next.
+fuse = 3
+fuse_cost = [10, 30, 80, 0]
+# Materials change hands in lots of this size; credits per lot by material
+# (ferrite, lumite, voidstone).
+lot = 10
+material_sell = [4, 10, 30]
+material_buy = [10, 25, 75]
+

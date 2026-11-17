@@ -4,10 +4,13 @@
 //! level-up, debrief).
 //! Keyboard, mouse and gamepad all navigate through `quasar-ui` focus.
 
+use super::rarity_color;
 use super::{Builder, Layer, format_cost, format_materials, hud::roman};
 use crate::bindings::{self, Prompts};
 use crate::storage::{SlotState, SlotSummary};
-use planetfall_sim::content::{ClassId, PlanetId, Rarity, UpgradeId, class_xp_to_next, content};
+use planetfall_sim::content::{
+    ClassId, GearSlot, Material, PlanetId, Rarity, UpgradeId, class_xp_to_next, content,
+};
 use planetfall_sim::mission::{MAX_HAZARD, hazard_name};
 use planetfall_sim::run::OfferSource;
 use planetfall_sim::run::RunOutcome;
@@ -73,6 +76,8 @@ pub enum MenuAction {
     },
     /// Mission board: choose the hazard level (handled by the menu).
     SetHazard(u8),
+    /// Switch a terminal's tab, open gear slot or page (handled by the menu).
+    SetView(View),
     /// The controls screen changed the bindings: install and save them.
     ApplyBindings(Bindings),
     Back,
@@ -85,6 +90,27 @@ pub enum MenuAction {
     Quit,
     Game(Command),
 }
+
+/// Terminal view state kept by the menu: the tab, the gear slot opened in
+/// the locker and the page of a long list.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct View {
+    pub tab: u8,
+    pub slot: Option<GearSlot>,
+    pub page: usize,
+}
+
+/// Which terminal a [`View`] belongs to.
+fn view_key(terminal: &Option<Terminal>) -> &'static str {
+    match terminal {
+        Some(Terminal::Locker) => "locker",
+        Some(Terminal::Trade) => "trade",
+        _ => "",
+    }
+}
+
+/// Rows per page in stash and shop lists.
+const PAGE: usize = 7;
 
 /// App facts the menus show beyond the game itself.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -121,6 +147,9 @@ pub struct Menu {
     controls_reset: u64,
     /// Hazard level picked on the mission board (0: not opened yet).
     hazard: u8,
+    view: View,
+    /// The terminal the view belongs to (reset when another opens).
+    view_terminal: String,
 }
 
 /// A settings control.
@@ -149,6 +178,8 @@ impl Menu {
             controls: None,
             controls_reset: u64::MAX,
             hazard: 0,
+            view: View::default(),
+            view_terminal: String::new(),
         }
     }
 
@@ -180,6 +211,13 @@ impl Menu {
 
     /// Move the built layer out (for one-shot offscreen renders).
     #[cfg_attr(feature = "desktop", allow(dead_code))]
+    /// Open a terminal on a given tab (screenshots).
+    pub fn set_view(&mut self, view: View, terminal: &Option<Terminal>) {
+        self.view = view;
+        self.view_terminal = view_key(terminal).to_owned();
+        self.signature.clear();
+    }
+
     pub fn take_layer(&mut self) -> Option<Layer> {
         self.layer.take()
     }
@@ -297,6 +335,11 @@ impl Menu {
                             self.signature.clear();
                             return MenuAction::None;
                         }
+                        if let MenuAction::SetView(v) = a {
+                            self.view = *v;
+                            self.signature.clear();
+                            return MenuAction::None;
+                        }
                         return a.clone();
                     }
                 }
@@ -402,11 +445,26 @@ impl Menu {
                     b.paragraph(slot, &offer.description(), TextStyle::Small);
                 }
             }
-            Content::Terminal => match &game.terminal {
+            Content::Terminal => {
+                // A different terminal starts on its first tab.
+                let key = view_key(&game.terminal);
+                if self.view_terminal != key {
+                    self.view_terminal = key.to_owned();
+                    self.view = View::default();
+                }
+                self.terminal(b, game);
+            }
+        }
+    }
+
+    fn terminal(&mut self, b: &mut Builder, game: &Game) {
+        {
+            match &game.terminal {
                 Some(Terminal::Navigation) => self.navigation(b, game),
                 Some(Terminal::Fabricator) => self.fabricator(b, game),
                 Some(Terminal::Locker) => self.locker(b, game),
                 Some(Terminal::MissionBoard) => self.mission_board(b, game),
+                Some(Terminal::Trade) => self.trade(b, game),
                 Some(Terminal::Debrief(summary)) => {
                     let card = Self::card(b, 560.0);
                     let (title, tone) = match summary.outcome {
@@ -503,6 +561,23 @@ impl Menu {
                         )
                     };
                     b.label(card, class_line, TextStyle::Body);
+                    if !summary.finds.is_empty() {
+                        b.paragraph(
+                            card,
+                            &format!("Finds (kept): {}", summary.finds.join(", ")),
+                            TextStyle::Small,
+                        );
+                    }
+                    if summary.salvaged > 0 {
+                        b.label(
+                            card,
+                            format!(
+                                "Stash full: finds salvaged for {} credits",
+                                summary.salvaged
+                            ),
+                            TextStyle::Small,
+                        );
+                    }
                     if summary.outcome == RunOutcome::Extracted {
                         b.label(
                             card,
@@ -553,7 +628,7 @@ impl Menu {
                     self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
                 }
                 None => {}
-            },
+            }
         }
     }
 
@@ -595,6 +670,23 @@ impl Menu {
                 b.label(card, info.description.clone(), TextStyle::Small);
             }
         }
+        let docked = game.profile.docked;
+        self.button(
+            b,
+            card,
+            if docked {
+                "KESTREL EXCHANGE  —  DOCKED".to_owned()
+            } else {
+                "JUMP TO KESTREL EXCHANGE  —  trade station".to_owned()
+            },
+            MenuAction::Game(Command::Dock),
+            !docked,
+        );
+        b.label(
+            card,
+            "Sell finds for credits, buy gear, rework items and trade materials.",
+            TextStyle::Small,
+        );
         self.cancel = MenuAction::Game(Command::Close);
         self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
     }
@@ -735,9 +827,24 @@ impl Menu {
         b.label(card, "LOCKER ROOM", TextStyle::Heading);
         b.label(
             card,
-            "Suit up as any class. Each keeps its own level and loadout.",
+            "Suit up as any class. Each keeps its own level, loadout and gear.",
             TextStyle::Small,
         );
+        let worn = profile.equipped(profile.class).len();
+        self.tabs(
+            b,
+            card,
+            &[
+                "CREW".to_owned(),
+                format!("GEAR ({worn}/4)  ·  STASH {}", profile.stash.len()),
+            ],
+        );
+        if self.view.tab == 1 {
+            self.gear(b, card, game);
+            self.cancel = MenuAction::Game(Command::Close);
+            self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
+            return;
+        }
         for class in ClassId::all() {
             let (level, into) = profile.class_level(class);
             let info = class.info();
@@ -831,6 +938,375 @@ impl Menu {
                 MenuAction::Game(Command::SetStartWeapon(weapon)),
                 unlocked && weapon != current,
             );
+        }
+        self.cancel = MenuAction::Game(Command::Close);
+        self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
+    }
+
+    /// A row of tab buttons; the current tab is marked and disabled.
+    fn tabs(&mut self, b: &mut Builder, card: NodeId, labels: &[String]) {
+        let row =
+            b.ui.add_child(
+                card,
+                Widget::Panel {
+                    layout: quasar_ui::PanelLayout::Stack {
+                        direction: quasar_ui::StackDirection::Horizontal,
+                        gap: 4.0,
+                    },
+                    padding: quasar_ui::Edges::ZERO,
+                    clip: false,
+                    scrollable: false,
+                },
+                LayoutItem::size(Length::Fill, Length::Auto),
+            )
+            .expect("valid parent");
+        for (i, label) in labels.iter().enumerate() {
+            let current = usize::from(self.view.tab) == i;
+            let text = if current {
+                format!("▶ {label}")
+            } else {
+                label.clone()
+            };
+            let id = self.action(MenuAction::SetView(View {
+                tab: i as u8,
+                ..View::default()
+            }));
+            b.ui.add_child(
+                row,
+                Widget::Button {
+                    text: UiText::literal(text),
+                    action: Some(ActionId::new(id)),
+                },
+                LayoutItem::size(Length::Fill, Length::fixed(34.0)),
+            )
+            .expect("valid parent");
+        }
+    }
+
+    /// Previous/next page buttons for a list of `len` rows.
+    fn pager(&mut self, b: &mut Builder, card: NodeId, len: usize) {
+        let pages = len.div_ceil(PAGE).max(1);
+        if pages <= 1 {
+            return;
+        }
+        let page = self.view.page.min(pages - 1);
+        let prev = View {
+            page: page.saturating_sub(1),
+            ..self.view
+        };
+        let next = View {
+            page: (page + 1).min(pages - 1),
+            ..self.view
+        };
+        self.button(
+            b,
+            card,
+            format!("◀ PREVIOUS  ·  page {} of {pages}", page + 1),
+            MenuAction::SetView(prev),
+            page > 0,
+        );
+        self.button(
+            b,
+            card,
+            "NEXT ▶",
+            MenuAction::SetView(next),
+            page + 1 < pages,
+        );
+    }
+
+    /// The rows of the current page.
+    fn page<'a, T>(&self, items: &'a [T]) -> &'a [T] {
+        let pages = items.len().div_ceil(PAGE).max(1);
+        let start = self.view.page.min(pages - 1) * PAGE;
+        &items[start.min(items.len())..(start + PAGE).min(items.len())]
+    }
+
+    /// Locker GEAR tab: the active class's four slots; opening a slot lists
+    /// the stash items that fit it.
+    fn gear(&mut self, b: &mut Builder, card: NodeId, game: &Game) {
+        let profile = &game.profile;
+        let class = profile.class;
+        let worn = profile.equipped(class);
+        let stats: Vec<String> = worn
+            .iter()
+            .flat_map(|g| g.stats())
+            .map(|(e, a)| e.describe(a))
+            .collect();
+        b.paragraph(
+            card,
+            &format!(
+                "{} wears: {}",
+                class.name(),
+                if stats.is_empty() {
+                    "nothing yet. Gear drops from caches, elites and bosses.".to_owned()
+                } else {
+                    stats.join(", ")
+                }
+            ),
+            TextStyle::Small,
+        );
+        for slot in GearSlot::ALL {
+            let current = worn.iter().find(|g| g.slot() == slot);
+            let open = self.view.slot == Some(slot);
+            let label = match current {
+                Some(g) => format!(
+                    "{}{}: [{}] {}",
+                    if open { "▼ " } else { "" },
+                    slot.name().to_uppercase(),
+                    g.rarity.name().to_uppercase(),
+                    g.name()
+                ),
+                None => format!(
+                    "{}{}: empty",
+                    if open { "▼ " } else { "" },
+                    slot.name().to_uppercase()
+                ),
+            };
+            let toggle = View {
+                slot: (!open).then_some(slot),
+                ..self.view
+            };
+            let row = b.panel(card, LayoutItem::size(Length::Fill, Length::Auto), 2.0, 4.0);
+            if let Some(g) = current {
+                let _ = b.ui.set_style(
+                    row,
+                    Some(NodeStyle {
+                        background: None,
+                        border: Some(Border {
+                            width: 1.5,
+                            color: rarity_color(g.rarity),
+                        }),
+                        radius: 3.0,
+                    }),
+                );
+            }
+            self.button(b, row, label, MenuAction::SetView(toggle), true);
+            if let Some(g) = current {
+                b.paragraph(row, &g.summary(), TextStyle::Small);
+            }
+            if !open {
+                continue;
+            }
+            if current.is_some() {
+                self.button(
+                    b,
+                    row,
+                    "TAKE OFF",
+                    MenuAction::Game(Command::Unequip(slot)),
+                    true,
+                );
+            }
+            let base = current.map_or(0.0, |g| g.score());
+            let mut options: Vec<_> = profile
+                .stash
+                .iter()
+                .filter(|g| g.slot() == slot && Some(g.id) != current.map(|c| c.id))
+                .collect();
+            options.sort_by(|a, b| b.score().total_cmp(&a.score()));
+            if options.is_empty() {
+                b.label(row, "Nothing in the stash for this slot.", TextStyle::Small);
+            }
+            for g in options.into_iter().take(PAGE) {
+                let compare = if g.score() > base + 0.05 {
+                    "▲"
+                } else if g.score() < base - 0.05 {
+                    "▼"
+                } else {
+                    "="
+                };
+                let worn_by = profile
+                    .wearer(g.id)
+                    .map_or(String::new(), |c| format!("  (worn by {})", c.name()));
+                self.button(
+                    b,
+                    row,
+                    format!(
+                        "{compare} EQUIP [{}] {}{worn_by}",
+                        g.rarity.name().to_uppercase(),
+                        g.name()
+                    ),
+                    MenuAction::Game(Command::Equip(g.id)),
+                    true,
+                );
+                b.paragraph(row, &g.summary(), TextStyle::Small);
+            }
+        }
+    }
+
+    /// The trade station: sell, buy, rework and trade materials.
+    fn trade(&mut self, b: &mut Builder, game: &Game) {
+        let profile = &game.profile;
+        let t = &content().tuning.trade;
+        let card = Self::card(b, 760.0);
+        b.label(card, "KESTREL EXCHANGE", TextStyle::Heading);
+        b.label(
+            card,
+            format!(
+                "Credits {}   ·   Stash {}/{}   ·   Hold: {}",
+                profile.credits,
+                profile.stash.len(),
+                content().tuning.equipment.stash_size,
+                format_materials(&profile.materials)
+            ),
+            TextStyle::Body,
+        );
+        self.tabs(
+            b,
+            card,
+            &[
+                "SELL".to_owned(),
+                "BUY".to_owned(),
+                "WORKSHOP".to_owned(),
+                "MATERIALS".to_owned(),
+            ],
+        );
+        let item_row = |menu: &mut Self,
+                        b: &mut Builder,
+                        g: &planetfall_sim::gear::Gear,
+                        text: String,
+                        action: Command,
+                        enabled: bool| {
+            let row = b.panel(card, LayoutItem::size(Length::Fill, Length::Auto), 2.0, 4.0);
+            let _ = b.ui.set_style(
+                row,
+                Some(NodeStyle {
+                    background: None,
+                    border: Some(Border {
+                        width: 1.5,
+                        color: rarity_color(g.rarity),
+                    }),
+                    radius: 3.0,
+                }),
+            );
+            menu.button(b, row, text, MenuAction::Game(action), enabled);
+            b.paragraph(row, &g.summary(), TextStyle::Small);
+        };
+        match self.view.tab {
+            0 => {
+                b.label(card, "Worn items cannot be sold.", TextStyle::Small);
+                let mut items: Vec<_> = profile.stash.iter().collect();
+                items.sort_by_key(|g| profile.wearer(g.id).is_some());
+                if items.is_empty() {
+                    b.label(card, "The stash is empty.", TextStyle::Small);
+                }
+                for g in self.page(&items).to_vec() {
+                    let worn = profile.wearer(g.id);
+                    let text = match worn {
+                        Some(c) => format!(
+                            "[{}] {}  —  worn by {}",
+                            g.rarity.name().to_uppercase(),
+                            g.name(),
+                            c.name()
+                        ),
+                        None => format!(
+                            "SELL [{}] {}  —  +{} cr",
+                            g.rarity.name().to_uppercase(),
+                            g.name(),
+                            g.sell_value()
+                        ),
+                    };
+                    item_row(self, b, g, text, Command::Sell(g.id), worn.is_none());
+                }
+                self.pager(b, card, items.len());
+            }
+            1 => {
+                if profile.market.is_empty() {
+                    b.label(card, "Sold out until the next visit.", TextStyle::Small);
+                }
+                for (i, g) in profile.market.iter().enumerate() {
+                    let text = format!(
+                        "BUY [{}] {} ({})  —  {} cr",
+                        g.rarity.name().to_uppercase(),
+                        g.name(),
+                        g.slot().name(),
+                        g.price()
+                    );
+                    item_row(
+                        self,
+                        b,
+                        g,
+                        text,
+                        Command::Buy(i),
+                        g.price() <= profile.credits,
+                    );
+                }
+            }
+            2 => {
+                for rarity in [Rarity::Common, Rarity::Uncommon, Rarity::Rare] {
+                    let have = profile.fusible(rarity).len();
+                    let next = Rarity::ALL[rarity.index() + 1];
+                    let cost = t.fuse_cost[rarity.index()];
+                    self.button(
+                        b,
+                        card,
+                        format!(
+                            "FUSE {} {} → 1 {}  (unworn: {have})  —  {cost} cr",
+                            t.fuse,
+                            rarity.name().to_uppercase(),
+                            next.name().to_uppercase()
+                        ),
+                        MenuAction::Game(Command::Fuse(rarity)),
+                        have >= t.fuse && profile.credits >= cost,
+                    );
+                }
+                b.label(
+                    card,
+                    "Fusing uses the weakest unworn items. Rerolling keeps the base and rarity.",
+                    TextStyle::Small,
+                );
+                let items: Vec<_> = profile.stash.iter().collect();
+                for g in self.page(&items).to_vec() {
+                    let cost = t.reroll[g.rarity.index()];
+                    let text = format!(
+                        "REROLL [{}] {}  —  {cost} cr",
+                        g.rarity.name().to_uppercase(),
+                        g.name()
+                    );
+                    item_row(
+                        self,
+                        b,
+                        g,
+                        text,
+                        Command::Reroll(g.id),
+                        profile.credits >= cost,
+                    );
+                }
+                self.pager(b, card, items.len());
+            }
+            _ => {
+                for (i, material) in Material::ALL.into_iter().enumerate() {
+                    self.button(
+                        b,
+                        card,
+                        format!(
+                            "SELL {} {}  —  +{} cr",
+                            t.lot,
+                            material.name(),
+                            t.material_sell[i]
+                        ),
+                        MenuAction::Game(Command::TradeMaterial {
+                            material,
+                            buy: false,
+                        }),
+                        profile.materials.get(material) >= t.lot,
+                    );
+                    self.button(
+                        b,
+                        card,
+                        format!(
+                            "BUY {} {}  —  {} cr",
+                            t.lot,
+                            material.name(),
+                            t.material_buy[i]
+                        ),
+                        MenuAction::Game(Command::TradeMaterial {
+                            material,
+                            buy: true,
+                        }),
+                        profile.credits >= t.material_buy[i],
+                    );
+                }
+            }
         }
         self.cancel = MenuAction::Game(Command::Close);
         self.button(b, card, "CLOSE", MenuAction::Game(Command::Close), true);
@@ -1185,6 +1661,17 @@ fn signature(content: Content, game: &Game, prompts: &Prompts, context: &MenuCon
                 game.profile.class,
                 game.profile.classes
             ));
+            s.push_str(&format!(
+                "|{:?}|{:?}|{}|{}",
+                game.profile
+                    .stash
+                    .iter()
+                    .map(|g| (g.id, &g.affixes))
+                    .collect::<Vec<_>>(),
+                game.profile.market.len(),
+                game.profile.credits,
+                game.profile.docked
+            ));
         }
         Content::LevelUp => {
             s.push_str(&format!(
@@ -1197,16 +1684,6 @@ fn signature(content: Content, game: &Game, prompts: &Prompts, context: &MenuCon
         Content::Screen(_) => s.push_str(&format!("|{context:?}")),
     }
     s
-}
-
-/// Border colour of an upgrade by rarity.
-fn rarity_color(rarity: Rarity) -> Color {
-    match rarity {
-        Rarity::Common => Color::rgba(140, 150, 160, 200),
-        Rarity::Uncommon => Color::rgba(90, 215, 100, 230),
-        Rarity::Rare => Color::rgba(80, 150, 255, 240),
-        Rarity::Legendary => Color::rgba(255, 165, 40, 255),
-    }
 }
 
 /// "1h 05m" / "12m".

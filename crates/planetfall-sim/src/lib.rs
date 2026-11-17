@@ -12,6 +12,7 @@ pub mod cavegen;
 pub mod content;
 pub mod events;
 pub mod game;
+pub mod gear;
 pub mod input;
 pub mod math;
 pub mod mission;
@@ -172,6 +173,62 @@ mod tests {
     }
 
     #[test]
+    fn docking_opens_the_market() {
+        let mut profile = Profile {
+            tutorial_complete: true,
+            orbiting: Some(content::PlanetId::first()),
+            ..Profile::default()
+        };
+        let mut rng = quasar_core::Rng::seed_from_u64(2);
+        let item = profile
+            .add_gear(crate::gear::roll(&mut rng, 1, content::Rarity::Rare, 0.0))
+            .unwrap();
+        let mut game = Game::new(profile, 5);
+        game.terminal = Some(Terminal::Navigation);
+        let send = |game: &mut Game, command: Command| {
+            game.update(&GameInput {
+                command: Some(command),
+                ..GameInput::default()
+            });
+        };
+        send(&mut game, Command::Dock);
+        assert!(matches!(game.phase, Phase::Ftl { to: None, .. }));
+        while game.phase != Phase::Ship {
+            game.update(&GameInput::default());
+        }
+        assert!(game.profile.docked);
+        assert_eq!(game.profile.orbiting, None);
+        assert_eq!(
+            game.profile.market.len(),
+            content::content().tuning.trade.stock
+        );
+        let pod = game
+            .ship
+            .layout
+            .station(ship::StationKind::DropPod)
+            .unwrap()
+            .pos;
+        game.ship.player.pos = V2::new(pod[0], pod[1] - 2.6);
+        game.update(&GameInput {
+            interact: true,
+            ..GameInput::default()
+        });
+        assert_eq!(game.terminal, Some(Terminal::Trade));
+        send(&mut game, Command::Sell(item));
+        assert!(game.profile.stash.is_empty());
+        assert!(game.profile.credits > 0);
+        assert!(game.events.contains(&GameEvent::Traded));
+        // Leaving for a planet undocks.
+        game.terminal = Some(Terminal::Navigation);
+        send(&mut game, Command::TravelTo(content::PlanetId::first()));
+        while game.phase != Phase::Ship {
+            game.update(&GameInput::default());
+        }
+        assert!(!game.profile.docked);
+        assert_eq!(game.profile.orbiting, Some(content::PlanetId::first()));
+    }
+
+    #[test]
     fn death_loses_carried_materials() {
         let profile = Profile {
             tutorial_complete: true,
@@ -203,6 +260,17 @@ mod tests {
         }
         let run = game.run.as_mut().unwrap();
         run.carried.ferrite = 50;
+        // Finds survive death.
+        let class = run.player().class;
+        let weapon = class.familiar().next().unwrap();
+        let mut rng = quasar_core::Rng::seed_from_u64(1);
+        run.finds.push(crate::run::Find::Gear(crate::gear::roll(
+            &mut rng,
+            1,
+            content::Rarity::Rare,
+            0.0,
+        )));
+        run.finds.push(crate::run::Find::Weapon { class, weapon });
         run.player_mut().health = 0.1;
         run.player_mut().invulnerable_ticks = 0;
         // Let the horde finish the job.
@@ -219,7 +287,11 @@ mod tests {
             panic!("no debrief, phase {:?}", game.phase);
         };
         assert_eq!(summary.lost.ferrite, 50);
+        assert_eq!(summary.finds.len(), 2);
         assert_eq!(game.profile.materials.ferrite, 0);
+        assert_eq!(game.profile.stash.len(), 1);
+        assert!(game.profile.stash[0].rarity >= content::Rarity::Rare);
+        assert!(game.profile.start_options(class).contains(&weapon));
         assert_eq!(game.profile.stats.deaths, 1);
         assert_eq!(game.tutorial_step(), None::<TutorialStep>);
     }

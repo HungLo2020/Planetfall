@@ -42,15 +42,20 @@ use quasar_spatial::{GridConfig, SpatialGrid};
 use serde::{Deserialize, Serialize};
 
 pub use extraction::{extraction_hold, extraction_inbound, extraction_radius};
+pub use loot::Find;
 pub use mission::{MissionState, Progress, Relay, Rig, Survivor};
 
 /// What one player brings to a drop: their class, its tiers and the weapon
 /// they start with.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Loadout {
     pub class: ClassId,
     pub class_level: u32,
     pub start_weapon: WeaponId,
+    /// Stats from equipped gear.
+    pub gear: Vec<(PerkEffect, f32)>,
+    /// Familiar weapons the class has not found yet (blueprint finds).
+    pub blueprints: Vec<WeaponId>,
 }
 
 impl Loadout {
@@ -60,6 +65,8 @@ impl Loadout {
             class,
             class_level: 1,
             start_weapon: class.signature(),
+            gear: Vec::new(),
+            blueprints: class.familiar().collect(),
         }
     }
 }
@@ -206,6 +213,18 @@ pub struct Player {
     pub heavy_damage: f32,
     pub ability_cooldown_multiplier: f32,
     pub luck: f32,
+    /// Fraction of incoming damage ignored (gear; capped in `hurt_player`).
+    #[serde(default)]
+    pub armor: f32,
+    /// Extra XP per shard (gear).
+    #[serde(default)]
+    pub xp_gain: f32,
+    /// Fractional XP carried between shards.
+    #[serde(default)]
+    pub xp_fraction: f32,
+    /// Familiar weapon blueprints this player can still find.
+    #[serde(default)]
+    pub blueprints: Vec<WeaponId>,
     pub mining: Option<Mining>,
     mine_sound: u32,
     pub weapons: Vec<WeaponSlot>,
@@ -250,6 +269,10 @@ impl Player {
             heavy_damage: 0.0,
             ability_cooldown_multiplier: 1.0,
             luck: 0.0,
+            armor: 0.0,
+            xp_gain: 0.0,
+            xp_fraction: 0.0,
+            blueprints: loadout.blueprints.clone(),
             mining: None,
             mine_sound: 0,
             weapons: vec![WeaponSlot::new(loadout.start_weapon, 0.5)],
@@ -268,6 +291,9 @@ impl Player {
         for effect in &class.info().passive.effects {
             let amount = effect.amount + effect.per_tier * f32::from(tier - 1);
             player.apply(effect.effect, amount);
+        }
+        for &(effect, amount) in &loadout.gear {
+            player.apply(effect, amount);
         }
         // Mutators that change the player.
         let contract = &config.contract;
@@ -309,6 +335,8 @@ impl Player {
             PerkEffect::HeavyDamage => self.heavy_damage += a,
             PerkEffect::AbilityCooldown => self.ability_cooldown_multiplier *= a,
             PerkEffect::Luck => self.luck += a,
+            PerkEffect::Armor => self.armor += a,
+            PerkEffect::XpGain => self.xp_gain += a,
         }
     }
 
@@ -328,6 +356,8 @@ impl Player {
             PerkEffect::HeavyDamage => self.heavy_damage,
             PerkEffect::AbilityCooldown => self.ability_cooldown_multiplier,
             PerkEffect::Luck => self.luck,
+            PerkEffect::Armor => self.armor,
+            PerkEffect::XpGain => self.xp_gain,
         }
     }
 
@@ -711,6 +741,12 @@ pub struct Run {
     /// Test/autoplay switch: ignore incoming damage.
     pub invulnerable: bool,
     pub caches_opened: u32,
+    /// Equipment and weapon blueprints found this drop (kept even on death).
+    #[serde(default)]
+    pub finds: Vec<Find>,
+    /// Ticks left showing the latest find on the HUD.
+    #[serde(default)]
+    pub find_banner: u32,
     pub blocks_mined: u32,
     hazard: f32,
     /// Rises all drop long; see [`Run::threat_level`].
@@ -748,12 +784,12 @@ impl Run {
                 .players
                 .iter()
                 .enumerate()
-                .map(|(n, &loadout)| {
+                .map(|(n, loadout)| {
                     let offset = V2::new(
                         n as f32 * 1.2 - 0.6 * (config.players.len() - 1) as f32,
                         2.2,
                     );
-                    Player::new(loadout, &config, layout.landing + offset)
+                    Player::new(loadout.clone(), &config, layout.landing + offset)
                 })
                 .collect(),
             deployables: Vec::new(),
@@ -782,6 +818,8 @@ impl Run {
             spawning_enabled: !config.tutorial,
             invulnerable: false,
             caches_opened: 0,
+            finds: Vec::new(),
+            find_banner: 0,
             blocks_mined: 0,
             hazard: info.hazard,
             threat: 0.0,
@@ -893,6 +931,7 @@ impl Run {
             RunState::Active => {}
         }
         self.ticks += 1;
+        self.find_banner = self.find_banner.saturating_sub(1);
         for i in 0..self.players.len() {
             self.update_player(i, input(i), events);
         }

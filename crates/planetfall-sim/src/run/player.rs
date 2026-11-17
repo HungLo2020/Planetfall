@@ -180,6 +180,7 @@ impl Run {
                 .has_mutator(MutatorEffect::GlassCannon)
                 .unwrap_or(1.0);
         let p = &mut self.players[i];
+        let amount = amount * (1.0 - p.armor.clamp(0.0, 0.6));
         if self.invulnerable || p.down || p.invulnerable_ticks > 0 || amount <= 0.0 {
             return;
         }

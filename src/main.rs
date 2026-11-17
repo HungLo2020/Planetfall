@@ -94,6 +94,8 @@ fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
         objectives: &texts[8],
         sites: &texts[9],
         mutators: &texts[10],
+        gear: &texts[11],
+        affixes: &texts[12],
     })
     .map_err(|e| format!("content data in {}: {e}", dir.display()))?;
     content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())
@@ -129,6 +131,22 @@ impl History {
     }
 }
 
+/// The open menu, for headless summaries and traces.
+fn menu_name(game: &Game) -> &'static str {
+    let run = game.run.as_ref();
+    match (&game.terminal, run.and_then(|r| r.level_up_choices())) {
+        (_, Some(_)) => "level-up",
+        (Some(planetfall_sim::Terminal::Navigation), _) => "navigation",
+        (Some(planetfall_sim::Terminal::Fabricator), _) => "fabricator",
+        (Some(planetfall_sim::Terminal::Debrief(_)), _) => "debrief",
+        (Some(planetfall_sim::Terminal::Module(_)), _) => "module",
+        (Some(planetfall_sim::Terminal::Locker), _) => "locker",
+        (Some(planetfall_sim::Terminal::MissionBoard), _) => "mission-board",
+        (Some(planetfall_sim::Terminal::Trade), _) => "trade",
+        (None, None) => "none",
+    }
+}
+
 /// Run the simulation without a window, optionally under the autopilot.
 fn headless(
     settings: &Settings,
@@ -138,6 +156,7 @@ fn headless(
     let mut game = Game::new(profile, settings.seed);
     let mut pilot = Autopilot::new();
     let mut history = History::default();
+    let mut last_trace = String::new();
     for _ in 0..settings.ticks {
         let input = if settings.autoplay {
             pilot.input(&game)
@@ -146,23 +165,38 @@ fn headless(
         };
         game.update(&input);
         history.record(&game);
+        if settings.trace {
+            let run = game.run.as_ref();
+            let state = format!(
+                "phase={:?} menu={} build={:?} surge={} tutorial={:?}",
+                game.phase,
+                menu_name(&game),
+                game.ship.build,
+                run.map_or("-", |r| if r.surge.warning > 0 {
+                    "warning"
+                } else if r.surge.active > 0 {
+                    "active"
+                } else {
+                    "-"
+                }),
+                game.tutorial_step(),
+            );
+            // Count-down phases change every tick; compare their kind only.
+            let key = state.split(" {").next().unwrap_or(&state).to_owned()
+                + &state[state.find(" menu=").unwrap_or(0)..];
+            if key != last_trace {
+                println!("trace tick={} {state}", game.tick);
+                last_trace = key;
+            }
+        }
     }
     let history = history.events();
     let run = game.run.as_ref();
     println!(
-        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} avg_drop={:.1}min best_threat={} threat={} surge={} hazard={} hash={:016x}",
+        "planetfall ticks={} phase={:?} menu={} tutorial={:?} drops={} extractions={} deaths={} kills={} materials={:?} modules={} run_level={} class={} classes={} build={:?} avg_drop={:.1}min best_threat={} threat={} surge={} hazard={} stash={} worn={} credits={} docked={} found_weapons={} hash={:016x}",
         game.tick,
         game.phase,
-        match (&game.terminal, run.and_then(|r| r.level_up_choices())) {
-            (_, Some(_)) => "level-up",
-            (Some(planetfall_sim::Terminal::Navigation), _) => "navigation",
-            (Some(planetfall_sim::Terminal::Fabricator), _) => "fabricator",
-            (Some(planetfall_sim::Terminal::Debrief(_)), _) => "debrief",
-            (Some(planetfall_sim::Terminal::Module(_)), _) => "module",
-            (Some(planetfall_sim::Terminal::Locker), _) => "locker",
-            (Some(planetfall_sim::Terminal::MissionBoard), _) => "mission-board",
-            (None, None) => "none",
-        },
+        menu_name(&game),
         game.tutorial_step(),
         game.profile.stats.drops,
         game.profile.stats.extractions,
@@ -193,11 +227,51 @@ fn headless(
             "-"
         }),
         game.profile.hazard_unlocked,
+        game.profile.stash.len(),
+        planetfall_sim::content::ClassId::all()
+            .map(|c| game.profile.equipped(c).len())
+            .sum::<usize>(),
+        game.profile.credits,
+        game.profile.docked,
+        planetfall_sim::content::ClassId::all()
+            .map(|c| game.profile.class_record(c).found_weapons.len())
+            .sum::<usize>(),
         game.state_hash().value(),
     );
     if let Some(path) = &settings.screenshot {
         #[cfg(feature = "graphics")]
         {
+            // `--menu gear|trade`: open that terminal on the ship as it is.
+            let mut game = game;
+            let view = match settings.menu.as_deref() {
+                Some("gear") => {
+                    game.terminal = Some(planetfall_sim::Terminal::Locker);
+                    Some(ui::menu::View {
+                        tab: 1,
+                        slot: Some(planetfall_sim::content::GearSlot::Suit),
+                        page: 0,
+                    })
+                }
+                Some("trade") => {
+                    game.terminal = Some(planetfall_sim::Terminal::Trade);
+                    game.profile.docked = true;
+                    game.profile.orbiting = None;
+                    if game.profile.market.is_empty() {
+                        game.profile
+                            .restock(&mut quasar_core::Rng::seed_from_u64(7));
+                    }
+                    Some(ui::menu::View::default())
+                }
+                _ => None,
+            };
+            if view.is_some() {
+                game.phase = Phase::Ship;
+                game.run = None;
+            }
+            let menu_screen = settings
+                .menu
+                .as_deref()
+                .filter(|m| !matches!(*m, "gear" | "trade"));
             let size = settings.resolution.unwrap_or((1600, 900));
             let (measure, text) = ui::build_text(asset_root)?;
             let scale = size.1 as f32 / 900.0;
@@ -213,8 +287,8 @@ fn headless(
             // Terminals and level-up choices render as they would on screen.
             use ui::menu::{Content, MenuContext, SavesMode, Screen};
             let surface = game.phase == Phase::Surface;
-            let content = if let Some(name) = &settings.menu {
-                Some(Content::Screen(match name.as_str() {
+            let content = if let Some(name) = menu_screen {
+                Some(Content::Screen(match name {
                     "main" => Screen::Main,
                     "saves" => Screen::Saves(SavesMode::Load),
                     "pause" => Screen::Pause { surface },
@@ -248,6 +322,9 @@ fn headless(
                 active_slot: Some(1),
                 error: None,
             };
+            if let Some(view) = view {
+                menu.set_view(view, &game.terminal);
+            }
             menu.show(content, &game, &measure, scale, &prompts, &context);
             let mut layers = if matches!(settings.menu.as_deref(), Some("main" | "saves")) {
                 vec![]

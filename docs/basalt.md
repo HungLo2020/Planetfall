@@ -59,8 +59,9 @@ Save rules:
   on suspend and on exit.
 - `SaveGame.version` (`SAVE_VERSION` 6: drops hold a list of players with
   classes, upgrades with rarities, element statuses, threat, elites and the
-  contract, over the organic cave generator) and `Profile.version` (`PROFILE_VERSION` 5: the active class,
-  per-class records, unlocked hazard level and mission board) gate
+  contract, over the organic cave generator) and `Profile.version` (`PROFILE_VERSION` 6: the active class,
+  per-class records with equipped gear and weapon blueprints, unlocked hazard
+  level, mission board, the stash, credits and the trade station's shelf) gate
   migrations. A slot from an older save version loads with its drop in
   progress dropped (that format cannot resume) and resumes on the ship. A
   newer save is

@@ -14,11 +14,12 @@
 pub mod defs;
 
 pub use defs::{
-    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, DecorKind, Drop,
-    Element, ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget,
-    MutatorDef, MutatorEffect, ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette,
-    PassiveDef, PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special,
-    Spin, TerrainStyle, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
+    AbilityDef, AbilityKind, AbilityTier, AffixDef, Axis, BlockCosts, ClassDef, ClassUnlock,
+    DecorKind, Drop, Element, ElementDef, EnemyBehavior, EnemyDef, EquipmentTuning, Explosion,
+    GearDef, GearSlot, GearStat, Lunge, ModDef, ModStat, ModTarget, MutatorDef, MutatorEffect,
+    ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette, PassiveDef, PassiveEffect,
+    PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special, Spin, TerrainStyle,
+    TradeTuning, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
@@ -186,6 +187,8 @@ pub struct Content {
     pub objectives: Vec<ObjectiveDef>,
     pub sites: Vec<SiteDef>,
     pub mutators: Vec<MutatorDef>,
+    pub gear: Vec<GearDef>,
+    pub affixes: Vec<AffixDef>,
     pub tuning: Tuning,
 }
 
@@ -203,6 +206,8 @@ pub struct ContentFiles<'a> {
     pub objectives: &'a str,
     pub sites: &'a str,
     pub mutators: &'a str,
+    pub gear: &'a str,
+    pub affixes: &'a str,
 }
 
 impl ContentFiles<'static> {
@@ -219,11 +224,13 @@ impl ContentFiles<'static> {
         objectives: include_str!("../../../../assets/data/objectives.toml"),
         sites: include_str!("../../../../assets/data/sites.toml"),
         mutators: include_str!("../../../../assets/data/mutators.toml"),
+        gear: include_str!("../../../../assets/data/gear.toml"),
+        affixes: include_str!("../../../../assets/data/affixes.toml"),
     };
 }
 
 /// File names in the data directory, in [`ContentFiles`] order.
-pub const FILE_NAMES: [&str; 11] = [
+pub const FILE_NAMES: [&str; 13] = [
     "planets.toml",
     "weapons.toml",
     "enemies.toml",
@@ -235,10 +242,12 @@ pub const FILE_NAMES: [&str; 11] = [
     "objectives.toml",
     "sites.toml",
     "mutators.toml",
+    "gear.toml",
+    "affixes.toml",
 ];
 
 /// Table names: the top-level key of each record file (`[[weapon]]`).
-const TABLES: [&str; 10] = [
+const TABLES: [&str; 12] = [
     "planet",
     "weapon",
     "enemy",
@@ -249,6 +258,8 @@ const TABLES: [&str; 10] = [
     "objective",
     "site",
     "mutator",
+    "gear",
+    "affix",
 ];
 
 impl Content {
@@ -269,7 +280,9 @@ impl Content {
             .register::<ModDef>("mod")
             .register::<ObjectiveDef>("objective")
             .register::<SiteDef>("site")
-            .register::<MutatorDef>("mutator");
+            .register::<MutatorDef>("mutator")
+            .register::<GearDef>("gear")
+            .register::<AffixDef>("affix");
         let sources = [
             files.planets,
             files.weapons,
@@ -281,6 +294,8 @@ impl Content {
             files.objectives,
             files.sites,
             files.mutators,
+            files.gear,
+            files.affixes,
         ];
         let tables: Vec<(&str, &str, ContentFormat)> = TABLES
             .iter()
@@ -308,6 +323,8 @@ impl Content {
             objectives: records(&snapshot, "objective"),
             sites: records(&snapshot, "site"),
             mutators: records(&snapshot, "mutator"),
+            gear: records(&snapshot, "gear"),
+            affixes: records(&snapshot, "affix"),
             tuning,
         };
         content.validate()?;
@@ -334,6 +351,8 @@ impl Content {
             self.objectives.is_empty(),
             self.sites.is_empty(),
             self.mutators.is_empty(),
+            self.gear.is_empty(),
+            self.affixes.is_empty(),
         ]) {
             if empty {
                 errors.push(format!("{table}: no records"));
@@ -361,6 +380,26 @@ impl Content {
             .any(|o| o.kind == ObjectiveKind::OreQuota)
         {
             errors.push("objective: an ore_quota objective is needed for the tutorial".into());
+        }
+        for slot in GearSlot::ALL {
+            if !self
+                .gear
+                .iter()
+                .any(|g| g.slot == slot && g.min_hazard <= 1)
+            {
+                errors.push(format!("gear: no {} base drops at hazard 1", slot.name()));
+            }
+            let affixes = self
+                .affixes
+                .iter()
+                .filter(|a| a.slots.is_empty() || a.slots.contains(&slot))
+                .count();
+            if affixes < self.tuning.equipment.affixes[3] {
+                errors.push(format!(
+                    "affix: {} has {affixes} affixes, fewer than a legendary rolls",
+                    slot.name()
+                ));
+            }
         }
         if !self.planets.iter().any(|p| p.nav_level == 0) {
             errors.push("planet: none is reachable at nav level 0".into());
@@ -570,6 +609,33 @@ impl ContentRecord for MutatorDef {
     }
 }
 
+impl ContentRecord for GearDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .finite("implicit.amount", f64::from(self.implicit.amount))
+            .range("min_hazard", f32::from(self.min_hazard), 1.0, 5.0);
+    }
+}
+
+impl ContentRecord for AffixDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("name", &self.name)
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .check(
+                self.range[0].is_finite() && self.range[0] <= self.range[1],
+                "range",
+                "must be [low, high]",
+            );
+    }
+}
+
 impl ContentRecord for ClassDef {
     fn id(&self) -> &str {
         &self.id
@@ -762,6 +828,18 @@ content_id!(
     MutatorId,
     mutators,
     MutatorDef
+);
+content_id!(
+    /// An equipment base in `gear.toml`.
+    GearId,
+    gear,
+    GearDef
+);
+content_id!(
+    /// An equipment affix in `affixes.toml`.
+    AffixId,
+    affixes,
+    AffixDef
 );
 
 impl PlanetId {

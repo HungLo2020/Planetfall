@@ -17,18 +17,23 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 # Ticks chosen to land on distinct phases with the default headless seed.
+# Tick at which the gear tab is shown (stash well stocked). Find ticks with
+# `--headless --autoplay --trace`.
+MENU_TICKS = 60540
+
 SHOTS = {
     "ship": 150,
     "ftl": 300,
     "descent": 660,
     "surface": 1800,
     "construct": 2600,
-    "board": 2658,
-    "levelup": 3366,
-    "surge": 20800,
-    "debrief": 21313,
-    "build": 21400,
-    "locker": 21652,
+    "board": 2664,
+    "levelup": 3372,
+    "surge": 20700,
+    "debrief": 21699,
+    "build": 21800,
+    "locker": 22038,
+    "trade": 59612,
 }
 
 
@@ -76,6 +81,14 @@ def main() -> None:
                 f"screenshot menu-{menu}",
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--ticks", "10", "--menu", menu,
                  "--screenshot", str(shots / f"menu-{menu}.png")],
+            )
+        # The locker's gear tab, opened on the ship once the autopilot has
+        # found some gear.
+        for menu in ["gear"]:
+            step(
+                f"screenshot {menu}",
+                ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks",
+                 str(MENU_TICKS), "--menu", menu, "--screenshot", str(shots / f"{menu}.png")],
             )
         step("cover", ["cargo", "run", "--release", "--locked", "--", "--cover", str(shots / "cover.png")])
         print(f"screenshots in {shots.relative_to(REPO)}")

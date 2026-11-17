@@ -2,9 +2,10 @@
 //! and migrations; the app stores it in a save slot (see `save`).
 
 use crate::content::{
-    ClassId, Materials, PlanetId, ShipBlock, UpgradeEffect, UpgradeId, WeaponId, class_level,
-    content,
+    ClassId, GearSlot, Material, Materials, PerkEffect, PlanetId, Rarity, ShipBlock, UpgradeEffect,
+    UpgradeId, WeaponId, class_level, content,
 };
+use crate::gear::{self, Gear};
 use crate::mission::{Contract, MAX_HAZARD};
 use crate::run::Loadout;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -17,7 +18,9 @@ use std::collections::BTreeMap;
 /// - 3: content as data: upgrades keyed by module id, planets by id.
 /// - 4: crew classes: the active class and a record per class.
 /// - 5: missions: unlocked hazard level and the mission board.
-pub const PROFILE_VERSION: u32 = 5;
+/// - 6: equipment: the stash, gear equipped per class, credits, the trade
+///   station (docked flag and its shelf).
+pub const PROFILE_VERSION: u32 = 6;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -47,6 +50,8 @@ pub struct ClassRecord {
     /// Familiar weapons found on dives, unlocked as starting weapons.
     #[serde(deserialize_with = "known_weapons")]
     pub found_weapons: Vec<WeaponId>,
+    /// Stash item ids worn in each slot.
+    pub equipped: BTreeMap<GearSlot, u32>,
 }
 
 /// One cell of free-form ship construction.
@@ -89,6 +94,35 @@ pub struct Profile {
     /// content that no longer exists are dropped.
     #[serde(deserialize_with = "known_contracts")]
     pub board: Vec<Contract>,
+    /// Equipment found on dives (kept even on death). Items naming content
+    /// that no longer exists are dropped.
+    #[serde(deserialize_with = "known_gear")]
+    pub stash: Vec<Gear>,
+    /// The next stash item id.
+    pub next_gear: u32,
+    /// Earned by selling at the trade station.
+    pub credits: u32,
+    /// Docked at the trade station (no planet below).
+    pub docked: bool,
+    /// The station's shelf this visit.
+    #[serde(deserialize_with = "known_gear")]
+    pub market: Vec<Gear>,
+}
+
+fn known_gear<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Gear>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Maybe {
+        Known(Gear),
+        Unknown(serde::de::IgnoredAny),
+    }
+    Ok(Vec::<Maybe>::deserialize(d)?
+        .into_iter()
+        .filter_map(|m| match m {
+            Maybe::Known(g) => Some(g),
+            Maybe::Unknown(_) => None,
+        })
+        .collect())
 }
 
 fn known_contracts<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Contract>, D::Error> {
@@ -159,6 +193,11 @@ impl Default for Profile {
             hazard_unlocked: 1,
             hazard_choice: 1,
             board: Vec::new(),
+            stash: Vec::new(),
+            next_gear: 1,
+            credits: 0,
+            docked: false,
+            market: Vec::new(),
         }
     }
 }
@@ -167,6 +206,15 @@ impl Default for Profile {
 pub enum PurchaseError {
     MaxLevel,
     Unaffordable,
+}
+
+/// Why a trade or stash action was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TradeError {
+    Missing,
+    Credits,
+    Materials,
+    StashFull,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -210,6 +258,30 @@ impl Profile {
             .is_none_or(|p| self.board.iter().any(|c| c.planet != p))
         {
             self.board.clear();
+        }
+        // Item ids stay unique; equipped ids must exist and fit their slot.
+        let mut seen = std::collections::BTreeSet::new();
+        for g in &mut self.stash {
+            if g.id == 0 || !seen.insert(g.id) {
+                g.id = 0;
+            }
+        }
+        let mut next = self.stash.iter().map(|g| g.id).max().unwrap_or(0) + 1;
+        for g in &mut self.stash {
+            if g.id == 0 {
+                g.id = next;
+                next += 1;
+            }
+        }
+        self.next_gear = self.next_gear.max(next);
+        let stash = self.stash.clone();
+        for record in self.classes.values_mut() {
+            record
+                .equipped
+                .retain(|slot, id| stash.iter().any(|g| g.id == *id && g.slot() == *slot));
+        }
+        if self.docked {
+            self.orbiting = None;
         }
         Ok(self)
     }
@@ -308,7 +380,222 @@ impl Profile {
             class: self.class,
             class_level: self.class_level(self.class).0,
             start_weapon: self.start_weapon(self.class),
+            gear: self
+                .equipped(self.class)
+                .into_iter()
+                .flat_map(|g| g.stats())
+                .collect(),
+            // Blueprints only for familiar weapons not yet startable.
+            blueprints: {
+                let options = self.start_options(self.class);
+                self.class
+                    .familiar()
+                    .filter(|w| !options.contains(w))
+                    .collect()
+            },
         }
+    }
+
+    pub fn item(&self, id: u32) -> Option<&Gear> {
+        self.stash.iter().find(|g| g.id == id)
+    }
+
+    /// Gear a class wears, in slot order.
+    pub fn equipped(&self, class: ClassId) -> Vec<&Gear> {
+        let record = self.classes.get(&class);
+        GearSlot::ALL
+            .iter()
+            .filter_map(|s| record.and_then(|r| r.equipped.get(s)))
+            .filter_map(|id| self.item(*id))
+            .collect()
+    }
+
+    /// The class wearing an item, if any.
+    pub fn wearer(&self, id: u32) -> Option<ClassId> {
+        self.classes
+            .iter()
+            .find(|(_, r)| r.equipped.values().any(|e| *e == id))
+            .map(|(c, _)| *c)
+    }
+
+    /// Put an item on the active class (taking it off any other class).
+    pub fn equip(&mut self, id: u32) -> bool {
+        let Some(slot) = self.item(id).map(Gear::slot) else {
+            return false;
+        };
+        for record in self.classes.values_mut() {
+            record.equipped.retain(|_, e| *e != id);
+        }
+        self.classes
+            .entry(self.class)
+            .or_default()
+            .equipped
+            .insert(slot, id);
+        true
+    }
+
+    pub fn unequip(&mut self, slot: GearSlot) {
+        if let Some(record) = self.classes.get_mut(&self.class) {
+            record.equipped.remove(&slot);
+        }
+    }
+
+    /// Bank a find in the stash. A full stash salvages it for credits
+    /// instead; returns the new item id, or `None` when salvaged.
+    pub fn add_gear(&mut self, mut item: Gear) -> Option<u32> {
+        if self.stash.len() >= content().tuning.equipment.stash_size {
+            self.credits += item.sell_value();
+            return None;
+        }
+        item.id = self.next_gear;
+        self.next_gear += 1;
+        self.stash.push(item);
+        Some(self.next_gear - 1)
+    }
+
+    /// Remove an item from the stash (and from whoever wears it).
+    fn take(&mut self, id: u32) -> Option<Gear> {
+        let i = self.stash.iter().position(|g| g.id == id)?;
+        for record in self.classes.values_mut() {
+            record.equipped.retain(|_, e| *e != id);
+        }
+        Some(self.stash.remove(i))
+    }
+
+    /// Sell an item at the station. Returns the credits paid.
+    pub fn sell(&mut self, id: u32) -> Option<u32> {
+        let item = self.take(id)?;
+        let value = item.sell_value();
+        self.credits += value;
+        Some(value)
+    }
+
+    /// Buy item `index` off the station's shelf.
+    pub fn buy(&mut self, index: usize) -> Result<u32, TradeError> {
+        let item = self.market.get(index).ok_or(TradeError::Missing)?;
+        let price = item.price();
+        if self.credits < price {
+            return Err(TradeError::Credits);
+        }
+        if self.stash.len() >= content().tuning.equipment.stash_size {
+            return Err(TradeError::StashFull);
+        }
+        self.credits -= price;
+        let item = self.market.remove(index);
+        Ok(self.add_gear(item).unwrap_or(0))
+    }
+
+    /// Reroll an item's affixes for credits.
+    pub fn reroll(&mut self, id: u32, rng: &mut quasar_core::Rng) -> Result<(), TradeError> {
+        let cost = self
+            .item(id)
+            .map(|g| content().tuning.trade.reroll[g.rarity.index()])
+            .ok_or(TradeError::Missing)?;
+        if self.credits < cost {
+            return Err(TradeError::Credits);
+        }
+        self.credits -= cost;
+        if let Some(g) = self.stash.iter_mut().find(|g| g.id == id) {
+            gear::reroll(rng, g);
+        }
+        Ok(())
+    }
+
+    /// Unworn items of `rarity`, weakest first: what fusing would consume.
+    pub fn fusible(&self, rarity: Rarity) -> Vec<u32> {
+        let mut items: Vec<&Gear> = self
+            .stash
+            .iter()
+            .filter(|g| g.rarity == rarity && self.wearer(g.id).is_none())
+            .collect();
+        items.sort_by(|a, b| a.score().total_cmp(&b.score()).then(a.id.cmp(&b.id)));
+        items.into_iter().map(|g| g.id).collect()
+    }
+
+    /// Fuse the weakest unworn items of `rarity` into one of the next.
+    pub fn fuse(&mut self, rarity: Rarity, rng: &mut quasar_core::Rng) -> Result<u32, TradeError> {
+        let t = &content().tuning.trade;
+        if rarity == Rarity::Legendary {
+            return Err(TradeError::Missing);
+        }
+        let ids: Vec<u32> = self.fusible(rarity).into_iter().take(t.fuse).collect();
+        if ids.len() < t.fuse {
+            return Err(TradeError::Missing);
+        }
+        let cost = t.fuse_cost[rarity.index()];
+        if self.credits < cost {
+            return Err(TradeError::Credits);
+        }
+        self.credits -= cost;
+        let items: Vec<Gear> = ids.iter().filter_map(|id| self.take(*id)).collect();
+        let fused = gear::fuse(rng, &items).ok_or(TradeError::Missing)?;
+        Ok(self.add_gear(fused).unwrap_or(0))
+    }
+
+    /// Trade one lot of a material for credits (or back).
+    pub fn trade_material(&mut self, material: Material, buy: bool) -> Result<(), TradeError> {
+        let t = &content().tuning.trade;
+        let i = Material::ALL
+            .iter()
+            .position(|m| *m == material)
+            .unwrap_or(0);
+        let mut lot = Materials::default();
+        lot.add(material, t.lot);
+        if buy {
+            if self.credits < t.material_buy[i] {
+                return Err(TradeError::Credits);
+            }
+            self.credits -= t.material_buy[i];
+            self.materials.add_all(lot);
+        } else {
+            if !self.materials.spend(lot) {
+                return Err(TradeError::Materials);
+            }
+            self.credits += t.material_sell[i];
+        }
+        Ok(())
+    }
+
+    /// Restock the station's shelf (on docking), at the best hazard
+    /// unlocked.
+    pub fn restock(&mut self, rng: &mut quasar_core::Rng) {
+        let t = &content().tuning;
+        self.market = (0..t.trade.stock)
+            .map(|_| gear::roll(rng, self.hazard_unlocked, Rarity::Uncommon, 0.0))
+            .collect();
+    }
+
+    /// A familiar weapon `class` has not found yet, if any (for blueprint
+    /// finds), in data order.
+    pub fn unfound_weapon(&self, class: ClassId) -> Option<WeaponId> {
+        let record = self.class_record(class);
+        class.familiar().find(|w| !record.found_weapons.contains(w))
+    }
+
+    /// Record a weapon blueprint found by `class`.
+    pub fn find_weapon(&mut self, class: ClassId, weapon: WeaponId) {
+        let record = self.classes.entry(class).or_default();
+        if !record.found_weapons.contains(&weapon) {
+            record.found_weapons.push(weapon);
+        }
+    }
+
+    /// Total of one effect over a class's gear (for the locker readout).
+    pub fn gear_total(&self, class: ClassId, effect: PerkEffect) -> f32 {
+        self.equipped(class)
+            .into_iter()
+            .flat_map(|g| g.stats())
+            .filter(|(e, _)| *e == effect)
+            .fold(
+                if effect.multiplicative() { 1.0 } else { 0.0 },
+                |acc, (_, a)| {
+                    if effect.multiplicative() {
+                        acc * a
+                    } else {
+                        acc + a
+                    }
+                },
+            )
     }
 
     /// Choose the starting weapon for the active class. Returns whether it
@@ -393,6 +680,7 @@ impl LegacyProfile {
             hazard_unlocked: 1,
             hazard_choice: 1,
             board: Vec::new(),
+            ..Profile::default()
         }
         .migrate()
     }
@@ -404,6 +692,80 @@ mod tests {
 
     fn id(key: &str) -> UpgradeId {
         UpgradeId::from_key(key).unwrap()
+    }
+
+    #[test]
+    fn stash_equipment_and_trading() {
+        use crate::content::Rarity;
+        let mut rng = quasar_core::Rng::seed_from_u64(3);
+        let mut p = Profile::default();
+        let a = p
+            .add_gear(gear::roll(&mut rng, 1, Rarity::Common, 0.0))
+            .unwrap();
+        let slot = p.item(a).unwrap().slot();
+        assert!(p.equip(a));
+        assert_eq!(p.equipped(p.class).len(), 1);
+        assert_eq!(p.wearer(a), Some(p.class));
+        let stats = p.loadout().gear;
+        assert_eq!(stats, p.item(a).unwrap().stats());
+        // Equipping on another class moves the item.
+        let other = ClassId::all().find(|c| *c != p.class).unwrap();
+        let first = p.class;
+        p.class = other;
+        assert!(p.equip(a));
+        assert!(p.equipped(first).is_empty());
+        assert_eq!(p.wearer(a), Some(other));
+        p.unequip(slot);
+        assert_eq!(p.wearer(a), None);
+        // Selling pays credits; rerolling and buying spend them.
+        let paid = p.sell(a).unwrap();
+        assert_eq!(p.credits, paid);
+        assert!(p.stash.is_empty());
+        p.restock(&mut rng);
+        assert_eq!(p.market.len(), content().tuning.trade.stock);
+        assert_eq!(p.buy(0), Err(TradeError::Credits));
+        p.credits = 10_000;
+        let bought = p.buy(0).unwrap();
+        assert_eq!(p.market.len(), content().tuning.trade.stock - 1);
+        let before = p.item(bought).unwrap().affixes.clone();
+        let credits = p.credits;
+        p.reroll(bought, &mut rng).unwrap();
+        assert!(p.credits < credits);
+        assert_eq!(p.item(bought).unwrap().affixes.len(), before.len());
+        // Fusing three commons gives one uncommon.
+        for _ in 0..3 {
+            let mut g = gear::roll(&mut rng, 1, Rarity::Common, 0.0);
+            g.rarity = Rarity::Common;
+            p.add_gear(g);
+        }
+        let n = p.stash.len();
+        let fused = p.fuse(Rarity::Common, &mut rng).unwrap();
+        assert_eq!(p.stash.len(), n - 2);
+        assert_eq!(p.item(fused).unwrap().rarity, Rarity::Uncommon);
+        // Materials for credits and back.
+        assert_eq!(
+            p.trade_material(Material::Lumite, false),
+            Err(TradeError::Materials)
+        );
+        p.trade_material(Material::Lumite, true).unwrap();
+        assert_eq!(p.materials.lumite, content().tuning.trade.lot);
+        p.trade_material(Material::Lumite, false).unwrap();
+        assert_eq!(p.materials.lumite, 0);
+        // A full stash salvages finds for credits.
+        while p.stash.len() < content().tuning.equipment.stash_size {
+            p.add_gear(gear::roll(&mut rng, 1, Rarity::Common, 0.0));
+        }
+        let credits = p.credits;
+        assert_eq!(
+            p.add_gear(gear::roll(&mut rng, 1, Rarity::Common, 0.0)),
+            None
+        );
+        assert!(p.credits > credits);
+        // Round trip, with ids and equipment intact.
+        p.equip(fused);
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.clone().migrate().unwrap(), p);
     }
 
     #[test]

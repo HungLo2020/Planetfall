@@ -74,6 +74,12 @@ Rebind keys and buttons under Settings → Controls.
   level that climbs all drop long, with elites and warned surge waves, so
   greed decides when to leave; a timed extraction where
   the pod lands at your drop site and you must hold the zone.
+- **Equipment and trade**: four gear slots per class (helmet, suit, boots,
+  gadget) filled with randomised items (rarity, base stat and up to four
+  affixes) found in caches and on elites and bosses, kept even on death and
+  equipped in the locker room; familiar weapon blueprints; the Kestrel
+  Exchange trade station to sell, buy, reroll, fuse and trade materials for
+  credits.
 - **Persistence**: each slot (`data/save/slot-N.json`) holds materials,
   modules, ship edits, stats, tutorial state and any drop in progress;
   settings are TOML in `data/config/`. Dying or abandoning a drop loses
@@ -107,7 +113,7 @@ cargo run --no-default-features -- --headless --autoplay
 
 Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
 `--slot N` (load slot N, skipping the menu), `--no-save`,
-`--menu main|saves|settings|controls|pause` (screenshot a menu), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
+`--menu main|saves|settings|controls|pause|gear|trade` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
 ## Build, verify and package

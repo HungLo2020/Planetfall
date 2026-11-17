@@ -10,6 +10,9 @@ pub struct Settings {
     pub autoplay: bool,
     /// Headless: simulation ticks to run.
     pub ticks: u64,
+    /// Headless: print a line whenever the phase, menu, build mode, surge or
+    /// tutorial step changes (finds screenshot ticks).
+    pub trace: bool,
     pub seed: u64,
     /// Headless: render the final state to a PNG (needs a GPU, no window).
     pub screenshot: Option<PathBuf>,
@@ -40,7 +43,10 @@ const GAME_HELP: &str = "Planetfall options:
   --seed N               World seed (default: time-based when windowed, 1 headless)
   --screenshot FILE      Headless: render the final frame to FILE (PNG)
   --cover FILE           Render 900x1200 Basalt cover art to FILE and exit
-  --menu NAME            With --screenshot: draw the main, saves, settings, controls or pause screen
+  --trace                Print the tick of every phase, menu, build, surge and tutorial change
+  --menu NAME            With --screenshot: draw the main, saves, settings, controls or pause
+                         screen, or open the locker's gear tab (gear) or the station market
+                         (trade) on the ship
   --asset-root DIR       Load models/sounds/fonts from DIR
   --fresh                Start a new unsaved game, skipping the main menu
   --slot N               Load save slot N (1-5), skipping the main menu
@@ -67,6 +73,7 @@ impl Settings {
             headless,
             autoplay: false,
             ticks: 3600,
+            trace: false,
             seed: if headless { 1 } else { time_seed() },
             screenshot: None,
             cover: None,
@@ -99,16 +106,20 @@ impl Settings {
             };
             match flag.as_str() {
                 "--autoplay" => settings.autoplay = true,
+                "--trace" => settings.trace = true,
                 "--ticks" => settings.ticks = parse_num(&value("--ticks")?)?,
                 "--seed" => settings.seed = parse_num(&value("--seed")?)?,
                 "--screenshot" => settings.screenshot = Some(value("--screenshot")?.into()),
                 "--cover" => settings.cover = Some(value("--cover")?.into()),
                 "--menu" => {
                     let name = value("--menu")?;
-                    if !["main", "saves", "pause", "settings", "controls"].contains(&name.as_str())
+                    if ![
+                        "main", "saves", "pause", "settings", "controls", "gear", "trade",
+                    ]
+                    .contains(&name.as_str())
                     {
                         return Err(format!(
-                            "--menu must be main, saves, settings, controls or pause, got {name:?}"
+                            "--menu must be main, saves, settings, controls, pause, gear or trade, got {name:?}"
                         ));
                     }
                     settings.menu = Some(name);

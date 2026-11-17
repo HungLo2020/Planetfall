@@ -39,7 +39,8 @@ headless crates (`quasar-config` parses the content TOML from strings).
 | `cavegen` | Cave layout: chamber graph, winding tunnels, noise alcoves and smoothing, set-piece arena, connectivity repair, ore seams and floor patches (value noise is local; see QUASAR-ISSUES) |
 | `terrain` | The cave committed to a voxel volume, mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one `TILE` per voxel; ground at `y = -1`, walls at `y = 0`) |
-| `profile` | Persistent progress (ship edits, the active class and a `ClassRecord` per class: class XP, starting weapon, found weapons), purchase rules, module bonuses and versioned migration |
+| `profile` | Persistent progress (ship edits, the active class and a `ClassRecord` per class: class XP, starting weapon, found weapon blueprints, equipped gear; the stash, credits, docking and the station shelf), purchase and trade rules, module bonuses and versioned migration |
+| `gear` | Equipment items: rolling bases, rarities and affixes, stat scaling, names, prices, reroll and fuse |
 | `save` | `SaveGame`: a profile plus the resumable `Session` (tick, RNG, tutorial, ship position, a suspended drop) and slot metadata |
 | `mission` | Contracts (primary, secondary, site, mutator), the mission board generator, hazard levels |
 | `tutorial` | Step definitions and prompt text |

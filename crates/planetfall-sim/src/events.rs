@@ -2,8 +2,8 @@
 //! The simulation never depends on whether anyone listens.
 
 use crate::content::{
-    AbilityKind, ClassId, Element, EnemyId, Material, PlanetId, Rarity, ShipBlock, UpgradeId,
-    WeaponId,
+    AbilityKind, ClassId, Element, EnemyId, GearSlot, Material, PlanetId, Rarity, ShipBlock,
+    UpgradeId, WeaponId,
 };
 use crate::math::V2;
 
@@ -75,6 +75,15 @@ pub enum GameEvent {
     WeaponFound {
         weapon: WeaponId,
     },
+    /// Equipment found on a dive (it goes to the stash, even on death).
+    GearFound {
+        rarity: Rarity,
+        slot: GearSlot,
+    },
+    /// A familiar weapon blueprint found: a new starting-weapon option.
+    BlueprintFound {
+        weapon: WeaponId,
+    },
     /// A supply cache was opened (its upgrade choice follows).
     CacheOpened {
         at: V2,
@@ -128,12 +137,17 @@ pub enum GameEvent {
         upgrade: UpgradeId,
         level: u8,
     },
+    /// FTL toward a planet, or the trade station (`None`).
     FtlStarted {
-        to: PlanetId,
+        to: Option<PlanetId>,
     },
     FtlArrived {
-        at: PlanetId,
+        at: Option<PlanetId>,
     },
+    /// Gear put on or taken off in the locker room.
+    Equipped,
+    /// A trade went through at the station.
+    Traded,
     DescentStarted,
     Landed,
     RunEnded {

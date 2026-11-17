@@ -469,6 +469,127 @@ pub enum MutatorEffect {
     GlassCannon,
 }
 
+/// Equipment slots: each class wears one item in each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GearSlot {
+    Helmet,
+    Suit,
+    Boots,
+    /// The gadget holds the most unusual effects.
+    Gadget,
+}
+
+impl GearSlot {
+    pub const ALL: [Self; 4] = [Self::Helmet, Self::Suit, Self::Boots, Self::Gadget];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Helmet => "Helmet",
+            Self::Suit => "Suit",
+            Self::Boots => "Boots",
+            Self::Gadget => "Gadget",
+        }
+    }
+}
+
+/// A stat change: an effect and its amount (multiplicative effects scale
+/// from 1, see [`PerkEffect::multiplicative`]).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GearStat {
+    pub effect: PerkEffect,
+    pub amount: f32,
+}
+
+/// An equipment base type (`gear.toml`): its slot and built-in stat.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GearDef {
+    pub id: String,
+    pub name: String,
+    pub slot: GearSlot,
+    pub description: String,
+    /// The base's own stat, scaled by rarity like affixes.
+    pub implicit: GearStat,
+    pub weight: u32,
+    /// Lowest hazard level it can drop at.
+    #[serde(default = "first_hazard")]
+    pub min_hazard: u8,
+}
+
+fn first_hazard() -> u8 {
+    1
+}
+
+/// A random equipment affix (`affixes.toml`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AffixDef {
+    pub id: String,
+    /// Shown before the base name ("Swift Runner Boots").
+    pub name: String,
+    pub effect: PerkEffect,
+    /// Roll range at common rarity (for multiplicative effects, the
+    /// factor; both scale their change from 1).
+    pub range: [f32; 2],
+    /// Slots it can roll on (empty: any).
+    #[serde(default)]
+    pub slots: Vec<GearSlot>,
+    pub weight: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EquipmentTuning {
+    /// Affixes rolled per rarity.
+    pub affixes: [usize; 4],
+    /// Stat scale per rarity (implicit and affixes).
+    pub scale: [f32; 4],
+    /// Extra stat scale per hazard level above 1.
+    pub hazard_scale: f32,
+    /// A cache rolls gear at least this rare.
+    pub cache_min: Rarity,
+    /// Chance a cache holds a familiar weapon blueprint instead of gear
+    /// (while the class has some left to find).
+    pub weapon_find: f32,
+    /// Chance an elite drops gear.
+    pub elite_drop: f32,
+    /// Bosses and hunted elites always drop gear at least this rare.
+    pub boss_min: Rarity,
+    /// Items kept in the stash; finds beyond it are salvaged for credits.
+    pub stash_size: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeTuning {
+    /// Credits for selling an item, by rarity.
+    pub sell: [u32; 4],
+    /// Extra credits per affix.
+    pub sell_per_affix: u32,
+    /// Buying costs this many times the sell price.
+    pub markup: f32,
+    /// Items on sale at each visit.
+    pub stock: usize,
+    /// Credits to reroll an item's affixes, by rarity.
+    pub reroll: [u32; 4],
+    /// Items of one rarity fused into one of the next.
+    pub fuse: usize,
+    /// Credits to fuse, by the rarity fused.
+    pub fuse_cost: [u32; 4],
+    /// Materials per trade.
+    pub lot: u32,
+    /// Credits per lot sold, by material (ferrite, lumite, voidstone).
+    pub material_sell: [u32; 3],
+    /// Credits per lot bought.
+    pub material_buy: [u32; 3],
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MutatorDef {
@@ -504,9 +625,35 @@ pub enum PerkEffect {
     AbilityCooldown,
     /// Better upgrade rarities.
     Luck,
+    /// Fraction of incoming damage ignored (equipment).
+    Armor,
+    /// Extra XP from every shard.
+    XpGain,
 }
 
 impl PerkEffect {
+    /// A stat line: "+12 max health", "+4% move speed".
+    pub fn describe(self, a: f32) -> String {
+        let pct = |v: f32| (v * 100.0).round();
+        match self {
+            Self::MaxHealth => format!("+{:.0} max health", a),
+            Self::MoveSpeed => format!("+{}% move speed", pct(a - 1.0)),
+            Self::Damage => format!("+{}% damage", pct(a)),
+            Self::FireRate => format!("+{}% fire rate", pct(1.0 / a.max(0.01) - 1.0)),
+            Self::PickupRange => format!("+{:.1} m pickup range", a),
+            Self::Mining => format!("+{}% mining speed", pct(a)),
+            Self::Regeneration => format!("+{:.1} health/s", a),
+            Self::OreBonus => format!("+{}% bonus ore", pct(a)),
+            Self::ExtractionSpeed => format!("+{}% extraction speed", pct(a)),
+            Self::DashCooldown => format!("{}% faster dash", pct(1.0 - a)),
+            Self::HeavyDamage => format!("+{}% vs heavies", pct(a)),
+            Self::AbilityCooldown => format!("{}% faster ability", pct(1.0 - a)),
+            Self::Luck => format!("+{}% luck", pct(a)),
+            Self::Armor => format!("{}% armor", pct(a)),
+            Self::XpGain => format!("+{}% XP", pct(a)),
+        }
+    }
+
     /// Effects that scale by `amount` instead of adding it.
     pub fn multiplicative(self) -> bool {
         matches!(
@@ -702,6 +849,8 @@ pub struct Tuning {
     pub missions: MissionTuning,
     pub elites: EliteTuning,
     pub class: ClassTuning,
+    pub equipment: EquipmentTuning,
+    pub trade: TradeTuning,
     pub extraction: ExtractionTuning,
     pub tutorial: TutorialTuning,
     pub blocks: BlockCosts,

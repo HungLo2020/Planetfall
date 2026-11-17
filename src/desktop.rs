@@ -498,7 +498,7 @@ impl App {
             }
             MenuAction::Game(command) => self.controls.command = Some(command),
             // Handled inside the menu.
-            MenuAction::SetHazard(_) => {}
+            MenuAction::SetHazard(_) | MenuAction::SetView(_) => {}
         }
         None
     }

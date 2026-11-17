@@ -57,9 +57,10 @@ Warden loses nothing.
 | Engineer | Orbit Drones | **Sentry Turret**: a turret that fires at the nearest hostile | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
 
 - **Familiar weapons** (two per class) are offered three times as often in
-  the weapon picks at dive levels 5, 10 and 15. Each can be chosen as the starting weapon once
-  unlocked (class levels 2 and 5, or found on a dive in a later stage); the
-  signature weapon then joins the pool.
+  the weapon picks at dive levels 5, 10 and 15. Each can be chosen as the
+  starting weapon once unlocked: at class levels 2 and 5, or sooner by
+  finding its **blueprint** in a supply cache. The signature weapon then
+  joins the pool.
 - **Class XP**: everything collected on a dive plus a bonus for extracting
   (half of the collected XP, no bonus, after a failed drop). Levels grow the
   ability (tiers at class levels 4 and 8) and passive (6 and 10), unlock
@@ -68,6 +69,35 @@ Warden loses nothing.
   their class: e.g. Momentum and Executioner for the Striker, Rich Veins and
   Overclocked Drill for the Prospector.
 - New commanders start as the Striker; the tutorial is unchanged.
+
+## Equipment, the stash and the trade station
+
+Every class wears four items: **helmet, suit, boots and gadget**. An item is
+a base (`gear.toml`: a slot and a built-in stat, e.g. Plated Suit +max
+health, Runner Boots +move speed, Neural Siphon +XP) with a **rarity** and
+one to four random **affixes** (`affixes.toml`: Sturdy, Swift, Keen,
+Plated...). Rarity and the hazard level it dropped at scale every stat; the
+first affix names the item ("Swift Runner Boots"). Gadgets carry the odd
+effects: luck, bonus ore, ability recharge, XP gain, damage against heavies.
+
+- **Finds.** Every supply cache holds a find: gear (uncommon or better) or,
+  sometimes, a familiar weapon blueprint the class still lacks. Elites
+  sometimes drop gear; bosses and hunted elites always drop rare or better.
+  A banner names each find. **Finds are kept whatever happens**: they reach
+  the stash when the drop ends, even after death or an abort.
+- **The stash** holds 24 items; a find that does not fit is salvaged for
+  its credit value. Equip items per class on the locker's **GEAR** tab
+  (▲/▼ compares with what is worn). An item is worn by one class at a time.
+- **Kestrel Exchange.** Jump there from the navigation console like a
+  planet; while docked, the drop bay opens onto the market:
+  - **Sell** unworn items for **credits** (by rarity, plus per affix).
+  - **Buy** from a shelf of four items restocked on every visit (rolled at
+    your best unlocked hazard), at 2.5 times their sell price.
+  - **Workshop:** reroll an item's affixes, or **fuse** three unworn items of
+    one rarity into one of the next (weakest first).
+  - **Materials:** trade ferrite, lumite and voidstone in lots of ten.
+
+Numbers live in `tuning.toml` (`[equipment]`, `[trade]`).
 
 ## Tutorial
 
@@ -290,6 +320,8 @@ Content and balance are TOML in `assets/data/` (shipped as
 | `objectives.toml` | Primary and secondary objectives: archetype, target count (+ per hazard), enemy, planets, weight, bonus reward |
 | `sites.toml` | Site conditions: ore, toughness, spawn and threat multipliers, spawn weights, light tint, planets |
 | `mutators.toml` | Mutators: effect, amount, reward share |
+| `gear.toml` | Equipment bases: slot, built-in stat, weight, minimum hazard |
+| `affixes.toml` | Equipment affixes: effect, roll range, slots, weight |
 | `models.toml` | Model names for files outside `assets/models` (Kenney props) |
 
 To add content that fits an existing archetype, add an entry with a new `id`

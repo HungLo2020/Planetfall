@@ -1,0 +1,113 @@
+# Random equipment affixes. An item gets `tuning.equipment.affixes` of them
+# by rarity (no repeats), each rolled in `range` and scaled by rarity and
+# hazard (`tuning.equipment.scale`, `hazard_scale`). `slots` limits where an
+# affix rolls (empty: any). The first affix names the item.
+
+[[affix]]
+id = "sturdy"
+name = "Sturdy"
+effect = "max_health"
+range = [6.0, 14.0]
+slots = ["helmet", "suit", "boots"]
+weight = 4
+
+[[affix]]
+id = "swift"
+name = "Swift"
+effect = "move_speed"
+range = [1.02, 1.05]
+slots = ["suit", "boots"]
+weight = 3
+
+[[affix]]
+id = "keen"
+name = "Keen"
+effect = "damage"
+range = [0.03, 0.07]
+weight = 4
+
+[[affix]]
+id = "rapid"
+name = "Rapid"
+effect = "fire_rate"
+range = [0.95, 0.98]
+slots = ["helmet", "suit", "gadget"]
+weight = 3
+
+[[affix]]
+id = "magnetic"
+name = "Magnetic"
+effect = "pickup_range"
+range = [0.4, 1.0]
+weight = 2
+
+[[affix]]
+id = "drilling"
+name = "Drilling"
+effect = "mining"
+range = [0.1, 0.25]
+slots = ["helmet", "suit", "gadget"]
+weight = 2
+
+[[affix]]
+id = "mending"
+name = "Mending"
+effect = "regeneration"
+range = [0.15, 0.4]
+slots = ["helmet", "suit"]
+weight = 2
+
+[[affix]]
+id = "lucky"
+name = "Lucky"
+effect = "luck"
+range = [0.04, 0.1]
+slots = ["helmet", "gadget"]
+weight = 2
+
+[[affix]]
+id = "prospecting"
+name = "Prospecting"
+effect = "ore_bonus"
+range = [0.04, 0.1]
+slots = ["helmet", "boots", "gadget"]
+weight = 2
+
+[[affix]]
+id = "nimble"
+name = "Nimble"
+effect = "dash_cooldown"
+range = [0.94, 0.97]
+slots = ["boots", "gadget"]
+weight = 2
+
+[[affix]]
+id = "brutal"
+name = "Brutal"
+effect = "heavy_damage"
+range = [0.06, 0.14]
+weight = 2
+
+[[affix]]
+id = "focused"
+name = "Focused"
+effect = "ability_cooldown"
+range = [0.94, 0.97]
+slots = ["helmet", "gadget"]
+weight = 2
+
+[[affix]]
+id = "plated"
+name = "Plated"
+effect = "armor"
+range = [0.02, 0.04]
+slots = ["helmet", "suit", "boots"]
+weight = 3
+
+[[affix]]
+id = "studious"
+name = "Studious"
+effect = "xp_gain"
+range = [0.03, 0.07]
+slots = ["helmet", "gadget"]
+weight = 2

@@ -9,7 +9,7 @@ use crate::input::{Command, GameInput};
 use crate::math::V2;
 use crate::mission::Contract;
 use crate::profile::{Profile, PurchaseError};
-use crate::run::{Extraction, Run, RunConfig, RunOutcome, RunState};
+use crate::run::{Extraction, Find, Run, RunConfig, RunOutcome, RunState};
 use crate::ship::{Ship, StationKind};
 use crate::terrain::{Terrain, Tile};
 use crate::tutorial::{Prompt, Tutorial, TutorialStep};
@@ -26,7 +26,8 @@ pub enum Phase {
     /// Walking around the ship.
     Ship,
     /// FTL cinematic.
-    Ftl { ticks: u32, to: PlanetId },
+    /// FTL cinematic to a planet, or to the trade station (`None`).
+    Ftl { ticks: u32, to: Option<PlanetId> },
     /// Drop pod falling to the surface.
     Descent { ticks: u32 },
     /// On the planet surface; see [`Game::run`].
@@ -65,6 +66,10 @@ pub struct RunSummary {
     pub bonus: Materials,
     /// A new hazard level unlocked by this drop.
     pub unlocked: Option<u8>,
+    /// Finds banked to the stash (kept whatever the outcome).
+    pub finds: Vec<String>,
+    /// Credits from finds salvaged because the stash was full.
+    pub salvaged: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -76,6 +81,8 @@ pub enum Terminal {
     Locker,
     /// Contracts for the planet in orbit, taken at the drop pod.
     MissionBoard,
+    /// The trade station's market, through the drop bay while docked.
+    Trade,
 }
 
 /// A short status message, e.g. why an action was refused.
@@ -163,8 +170,17 @@ impl Game {
             Phase::Ship => self.update_ship(input),
             Phase::Ftl { ticks, to } => {
                 if ticks <= 1 {
-                    self.profile.orbiting = Some(to);
-                    self.profile.board = crate::mission::board(&mut self.rng, to);
+                    self.profile.orbiting = to;
+                    self.profile.docked = to.is_none();
+                    match to {
+                        Some(planet) => {
+                            self.profile.board = crate::mission::board(&mut self.rng, planet);
+                        }
+                        None => {
+                            self.profile.board.clear();
+                            self.profile.restock(&mut self.rng);
+                        }
+                    }
                     self.phase = Phase::Ship;
                     self.events.push(GameEvent::FtlArrived { at: to });
                     self.events.push(GameEvent::ProfileChanged);
@@ -221,6 +237,19 @@ impl Game {
                     self.events.push(GameEvent::TerminalClosed);
                 }
                 (Terminal::Navigation, Command::TravelTo(planet)) => self.travel(planet),
+                (Terminal::Navigation, Command::Dock) => self.dock(),
+                (Terminal::Locker, Command::Equip(id)) => {
+                    if self.profile.equip(id) {
+                        self.events.push(GameEvent::Equipped);
+                        self.events.push(GameEvent::ProfileChanged);
+                    }
+                }
+                (Terminal::Locker, Command::Unequip(slot)) => {
+                    self.profile.unequip(slot);
+                    self.events.push(GameEvent::Equipped);
+                    self.events.push(GameEvent::ProfileChanged);
+                }
+                (Terminal::Trade, command) => self.trade(command),
                 (Terminal::Fabricator, Command::Purchase(upgrade)) => self.purchase(upgrade),
                 (Terminal::MissionBoard, Command::Deploy { contract, hazard }) => {
                     let hazard = hazard.clamp(1, self.profile.hazard_unlocked);
@@ -277,6 +306,8 @@ impl Game {
             StationKind::Fabricator => self.open(Terminal::Fabricator),
             StationKind::Locker => self.open(Terminal::Locker),
             StationKind::Module(u) => self.open(Terminal::Module(u)),
+            // Docked: the drop bay opens onto the station's market.
+            StationKind::DropPod if self.profile.docked => self.open(Terminal::Trade),
             StationKind::DropPod => match self.profile.orbiting {
                 // The tutorial drop skips the board.
                 Some(planet) if self.in_tutorial() => self.deploy(Contract::tutorial_on(planet), 1),
@@ -329,6 +360,48 @@ impl Game {
         self.events.push(GameEvent::TerminalOpened);
     }
 
+    fn dock(&mut self) {
+        if self.profile.docked {
+            self.events.push(GameEvent::Denied);
+            self.notify("Already docked at the trade station.");
+            return;
+        }
+        self.terminal = None;
+        self.phase = Phase::Ftl {
+            ticks: FTL_TICKS,
+            to: None,
+        };
+        self.events.push(GameEvent::FtlStarted { to: None });
+    }
+
+    /// Station market commands.
+    fn trade(&mut self, command: Command) {
+        use crate::profile::TradeError;
+        let result = match command {
+            Command::Sell(id) => self.profile.sell(id).map(|_| ()).ok_or(TradeError::Missing),
+            Command::Buy(index) => self.profile.buy(index).map(|_| ()),
+            Command::Reroll(id) => self.profile.reroll(id, &mut self.rng),
+            Command::Fuse(rarity) => self.profile.fuse(rarity, &mut self.rng).map(|_| ()),
+            Command::TradeMaterial { material, buy } => self.profile.trade_material(material, buy),
+            _ => return,
+        };
+        match result {
+            Ok(()) => {
+                self.events.push(GameEvent::Traded);
+                self.events.push(GameEvent::ProfileChanged);
+            }
+            Err(e) => {
+                self.events.push(GameEvent::Denied);
+                self.notify(match e {
+                    TradeError::Missing => "Nothing to do that with.",
+                    TradeError::Credits => "Not enough credits.",
+                    TradeError::Materials => "Not enough of that in the hold.",
+                    TradeError::StashFull => "The stash is full. Sell something first.",
+                });
+            }
+        }
+    }
+
     fn travel(&mut self, planet: PlanetId) {
         if !self.profile.unlocked(planet) {
             self.events.push(GameEvent::Denied);
@@ -338,7 +411,7 @@ impl Game {
             ));
             return;
         }
-        if self.profile.orbiting == Some(planet) {
+        if self.profile.orbiting == Some(planet) && !self.profile.docked {
             self.events.push(GameEvent::Denied);
             self.notify(format!("Already in orbit of {}.", planet.info().name));
             return;
@@ -346,9 +419,9 @@ impl Game {
         self.terminal = None;
         self.phase = Phase::Ftl {
             ticks: FTL_TICKS,
-            to: planet,
+            to: Some(planet),
         };
-        self.events.push(GameEvent::FtlStarted { to: planet });
+        self.events.push(GameEvent::FtlStarted { to: Some(planet) });
     }
 
     fn purchase(&mut self, upgrade: UpgradeId) {
@@ -529,7 +602,23 @@ impl Game {
         } else {
             Materials::default()
         };
+        // Finds survive any outcome: gear to the stash (salvaged for credits
+        // when it is full), blueprints to the class record.
+        let mut finds = Vec::new();
+        let credits_before = self.profile.credits;
+        for find in &run.finds {
+            finds.push(find.name());
+            match find {
+                Find::Gear(item) => {
+                    self.profile.add_gear(item.clone());
+                }
+                Find::Weapon { class, weapon } => self.profile.find_weapon(*class, *weapon),
+            }
+        }
+        let salvaged = self.profile.credits - credits_before;
         let summary = RunSummary {
+            finds,
+            salvaged,
             planet: run.planet,
             outcome,
             banked,
@@ -740,6 +829,9 @@ impl Game {
                 .then(|| "{build} Build mode".to_owned());
         };
         Some(match station.kind {
+            StationKind::DropPod if self.profile.docked => {
+                "{interact} Kestrel Exchange: trade".into()
+            }
             StationKind::DropPod => match self.profile.orbiting {
                 Some(p) if self.in_tutorial() => {
                     format!("{{interact}} Deploy to {}", p.info().name)

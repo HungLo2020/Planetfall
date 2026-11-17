@@ -39,6 +39,10 @@ pub fn build(cx: &HudContext) -> Layer {
             let panel = b.card(root, pinned(Anchor::TopLeft, 330.0), 2.0, 10.0);
             b.label(panel, "THE MAYFLY  //  SALVAGE CUTTER", TextStyle::Body);
             let status = match game.profile.orbiting {
+                _ if game.profile.docked => format!(
+                    "Docked: Kestrel Exchange  ·  {} credits",
+                    game.profile.credits
+                ),
                 Some(p) => format!("In orbit: {} ({})", p.info().name, p.info().kind),
                 None => "Adrift in deep space".into(),
             };
@@ -236,6 +240,39 @@ pub fn build(cx: &HudContext) -> Layer {
                     );
                     b.label(warn, "SURGE", TextStyle::Body);
                 }
+                // The latest find, kept even if the drop goes wrong.
+                if run.find_banner > 0
+                    && let Some(find) = run.finds.last()
+                {
+                    let color = match find {
+                        planetfall_sim::run::Find::Gear(g) => g.rarity,
+                        planetfall_sim::run::Find::Weapon { .. } => {
+                            planetfall_sim::content::Rarity::Legendary
+                        }
+                    };
+                    let banner = b.card(
+                        root,
+                        LayoutItem::size(Length::fixed(420.0), Length::Auto)
+                            .with_anchor(Anchor::Top)
+                            .with_offset(Vec2::new(0.0, 96.0)),
+                        2.0,
+                        8.0,
+                    );
+                    let _ = b.ui.set_style(
+                        banner,
+                        Some(
+                            NodeStyle::filled(Color::rgba(10, 14, 22, 220))
+                                .with_border(2.0, crate::ui::rarity_color(color))
+                                .with_radius(3.0),
+                        ),
+                    );
+                    b.label(banner, format!("FOUND: {}", find.name()), TextStyle::Body);
+                    b.label(
+                        banner,
+                        "Sent to the stash. Finds are kept even if you fall.",
+                        TextStyle::Small,
+                    );
+                }
             }
             if matches!(game.phase, Phase::Lost { .. }) {
                 let lost = b.card(
@@ -259,7 +296,10 @@ pub fn build(cx: &HudContext) -> Layer {
             b.label(panel, "FTL JUMP IN PROGRESS", TextStyle::Body);
             b.label(
                 panel,
-                format!("Destination: {} · {}", to.info().name, to.info().kind),
+                match to {
+                    Some(to) => format!("Destination: {} · {}", to.info().name, to.info().kind),
+                    None => "Destination: Kestrel Exchange · trade station".to_owned(),
+                },
                 TextStyle::Small,
             );
         }

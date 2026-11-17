@@ -200,6 +200,10 @@ impl Audio {
                 GameEvent::PickedUpMaterial { .. } => self.play("pickup_material", 0.5, None, 3),
                 GameEvent::LevelUp { .. } => self.play("level_up", 0.7, None, 0),
                 GameEvent::WeaponFound { .. } => self.play("weapon_found", 0.8, None, 0),
+                GameEvent::GearFound { .. } => self.play("gear_found", 0.8, None, 0),
+                GameEvent::BlueprintFound { .. } => self.play("weapon_found", 0.9, None, 0),
+                GameEvent::Equipped => self.play("ui_confirm", 0.5, None, 2),
+                GameEvent::Traded => self.play("trade", 0.6, None, 2),
                 GameEvent::ObjectiveComplete => self.play("console", 0.8, None, 0),
                 GameEvent::ExtractionCalled => self.play("alarm", 0.7, None, 0),
                 GameEvent::ExtractionDenied | GameEvent::Denied => {

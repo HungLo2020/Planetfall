@@ -1014,6 +1014,29 @@ def ice_spire() -> list[Part]:
     return [part]
 
 
+def trade_station() -> list[Part]:
+    """The trade station seen from the ship: a ring on spokes around a hub
+    with docking arms and lit windows. About 2 units across."""
+    ring = Part("ring")
+    segments = 24
+    for i in range(segments):
+        a = 2 * math.pi * i / segments
+        x, z = math.cos(a) * 0.9, math.sin(a) * 0.9
+        ring.box("hull", (x, 0, z), (0.26, 0.16, 0.24), rot=(0.0, -a, 0.0))
+        ring.box("glow_yellow" if i % 3 else "glow_cyan", (x * 1.07, 0, z * 1.07), (0.03, 0.05, 0.12), rot=(0.0, -a, 0.0))
+    hub = Part("hub")
+    hub.prism("hull_dark", (0, 0, 0), 0.22, 0.6, sides=8)
+    hub.prism("hull", (0, 0.36, 0), 0.16, 0.14, sides=8, top_radius=0.06)
+    hub.prism("glow_cyan", (0, -0.34, 0), 0.12, 0.06, sides=8)
+    for i in range(4):
+        a = math.pi / 2 * i + math.pi / 4
+        hub.box("hull_dark", (math.cos(a) * 0.46, 0, math.sin(a) * 0.46), (0.5, 0.05, 0.05), rot=(0.0, -a, 0.0))
+    for i in range(2):
+        a = math.pi * i
+        hub.box("accent", (math.cos(a) * 0.32, 0.22, math.sin(a) * 0.32), (0.18, 0.06, 0.06), rot=(0.0, -a, 0.0))
+    return [ring, hub]
+
+
 def locker() -> list[Part]:
     """Four crew lockers in a row, one per class colour, facing +Z."""
     part = Part("lockers")
@@ -1057,6 +1080,7 @@ MODELS = {
     "fungus": fungus,
     "crystal-growth": crystal_growth,
     "ice-spire": ice_spire,
+    "trade-station": trade_station,
     "reactor-core": reactor_core,
     "med-bay": med_bay,
     "weapon-rack": weapon_rack,

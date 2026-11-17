@@ -5,7 +5,7 @@
 use super::{
     Affix, BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, Hit, PickupKind, Run,
 };
-use crate::content::{DT, EnemyBehavior, Material, content};
+use crate::content::{DT, EnemyBehavior, Material, Rarity, content};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
 use crate::terrain::TILE;
@@ -174,6 +174,7 @@ impl Run {
                 let e = self.enemies[i];
                 let info = e.kind.info();
                 self.kills += 1;
+                let targeted = self.mission.target == Some(e.id);
                 self.mission_kill(&e, events);
                 events.push(GameEvent::EnemyKilled {
                     kind: e.kind,
@@ -196,6 +197,17 @@ impl Run {
                 if e.elite.is_some() {
                     self.drop_pickup(PickupKind::Material(Material::Ferrite, 2), e.pos);
                     self.drop_pickup(PickupKind::Material(Material::Lumite, 1), e.pos);
+                }
+                // Gear: always from bosses and hunted targets, sometimes
+                // from elites; credited to the nearest living player.
+                let gear = &content().tuning.equipment;
+                let finder = self.nearest_player(e.pos);
+                if let Some(finder) = finder {
+                    if info.boss || targeted {
+                        self.find_gear(finder, gear.boss_min, events);
+                    } else if e.elite.is_some() && self.rng.chance(f64::from(gear.elite_drop)) {
+                        self.find_gear(finder, Rarity::Common, events);
+                    }
                 }
                 for drop in &info.drops {
                     if drop.chance >= 1.0 || self.rng.chance(f64::from(drop.chance)) {

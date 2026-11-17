@@ -207,6 +207,12 @@ def build(rng: random.Random) -> dict[str, tuple[list[float], float, bool]]:
     add("level_up", lowpass(mix(*lvl), 5000), 0.55)
     chord = mix(*[gain(sweep(1.0, note(m) * 0.5, note(m), "saw", 0.3), 0.3) for m in (60, 67, 72)])
     add("weapon_found", lowpass(shaped(chord, env(int(1.0 * RATE), 0.01, 0.35)), 3500), 0.6)
+    # Gear find: a rising shimmer of bell partials.
+    shimmer = mix(*[offset(gain(tone(note(m), 0.6, 0.002, 0.25), 0.5), i * 0.05) for i, m in enumerate((79, 84, 88, 91, 96))])
+    add("gear_found", lowpass(shimmer, 6000), 0.5)
+    # Trade: two coin clinks.
+    clink = lambda f: mix(tone(f, 0.18, 0.001, 0.05, "triangle"), gain(tone(f * 2.76, 0.12, 0.001, 0.03), 0.4))
+    add("trade", mix(clink(2100), offset(clink(2500), 0.07)), 0.35)
 
     # --- interface ----------------------------------------------------------
     add("ui_move", tone(1600, 0.035, 0.001, 0.01, "triangle"), 0.25)

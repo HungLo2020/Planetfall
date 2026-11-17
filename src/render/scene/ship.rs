@@ -242,7 +242,12 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
         );
     }
     ship_markers(p, game);
-    space_backdrop(p, game.profile.orbiting, V2::new(7.5 * TILE, 8.5 * TILE));
+    space_backdrop(
+        p,
+        game.profile.orbiting,
+        game.profile.docked,
+        V2::new(7.5 * TILE, 8.5 * TILE),
+    );
     SceneOutput {
         draws: std::mem::take(&mut p.draws),
         lights: std::mem::take(&mut p.lights),
@@ -261,7 +266,7 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
     }
 }
 
-fn space_backdrop(p: &mut Painter<'_, '_>, orbiting: Option<PlanetId>, center: V2) {
+fn space_backdrop(p: &mut Painter<'_, '_>, orbiting: Option<PlanetId>, docked: bool, center: V2) {
     for i in 0..260 {
         let h = |k: i32| tile_hash(i * 7 + k, i * 13 - k);
         let x = center[0] + (h(1) - 0.5) * 260.0;
@@ -273,6 +278,23 @@ fn space_backdrop(p: &mut Painter<'_, '_>, orbiting: Option<PlanetId>, center: V
         p.glow(
             t(x, y, z) * s(size, size, size),
             math_scale3(color, twinkle * 1.6),
+        );
+    }
+    if docked {
+        // Moored beside the trade station, lit by its windows.
+        let spin = Mat4::rotation_y(p.time * 0.03);
+        p.model(
+            names::TRADE_STATION,
+            t(center[0] - 45.0, -40.0, center[1] - 10.0)
+                * Mat4::rotation_x(0.35)
+                * spin
+                * s(26.0, 26.0, 26.0),
+        );
+        p.point(
+            [center[0] - 30.0, -20.0, center[1]],
+            [1.0, 0.85, 0.55],
+            3.0,
+            60.0,
         );
     }
     if let Some(planet) = orbiting {

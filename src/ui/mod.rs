@@ -236,3 +236,14 @@ pub fn format_cost(m: &planetfall_sim::content::Materials) -> String {
         parts.join(" · ")
     }
 }
+
+/// Border colour of an upgrade or item by rarity.
+pub(crate) fn rarity_color(rarity: planetfall_sim::content::Rarity) -> Color {
+    use planetfall_sim::content::Rarity;
+    match rarity {
+        Rarity::Common => Color::rgba(140, 150, 160, 200),
+        Rarity::Uncommon => Color::rgba(90, 215, 100, 230),
+        Rarity::Rare => Color::rgba(80, 150, 255, 240),
+        Rarity::Legendary => Color::rgba(255, 165, 40, 255),
+    }
+}
