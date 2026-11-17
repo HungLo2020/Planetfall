@@ -454,12 +454,22 @@ impl Run {
                 events.push(GameEvent::SurvivorFound);
             }
         } else if let Some(leader) = nearest {
-            // Walk behind the nearest player.
+            // Walk behind the nearest player, around corners along the
+            // horde's flow field (which leads to the players) when the way
+            // is not straight.
             let to = leader - s.pos;
             let dist = to.length();
             s.moving = dist > 1.6;
             if s.moving {
-                let step = to.normalize_or_zero() * (5.2 * DT).min(dist - 1.4);
+                let toward = if self.terrain.line_clear(s.pos, leader) {
+                    to
+                } else {
+                    self.flow
+                        .as_ref()
+                        .and_then(|f| f.next_waypoint(&self.terrain, s.pos))
+                        .map_or(to, |w| w - s.pos)
+                };
+                let step = toward.normalize_or_zero() * (5.2 * DT).min(dist - 1.4);
                 let (pos, _) = self.terrain.resolve_circle(s.pos + step, 0.4);
                 s.pos = pos;
                 s.yaw = math::turn_toward(s.yaw, math::yaw_of(to), 0.3);

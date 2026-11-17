@@ -22,13 +22,13 @@ SHOTS = {
     "ftl": 300,
     "descent": 660,
     "surface": 1800,
-    "debrief": 2480,
-    "construct": 2590,
-    "board": 2640,
-    "levelup": 16560,
-    "surge": 20850,
-    "build": 33020,
-    "locker": 33548,
+    "construct": 2600,
+    "board": 2658,
+    "levelup": 3366,
+    "surge": 20800,
+    "debrief": 21313,
+    "build": 21400,
+    "locker": 21652,
 }
 
 

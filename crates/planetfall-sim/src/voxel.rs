@@ -26,8 +26,10 @@ pub const WINDOW: u16 = 10;
 pub const LAMP: u16 = 11;
 /// Dark underside below decks and walls.
 pub const KEEL: u16 = 12;
+/// Planet ground under a patch of moss, ash or frost.
+pub const GROUND_PATCH: u16 = 13;
 /// Number of block IDs (for catalog tables).
-pub const BLOCK_COUNT: u16 = 13;
+pub const BLOCK_COUNT: u16 = 14;
 
 pub type Layout = Cube16;
 

@@ -48,7 +48,8 @@ mod tex {
     pub const WINDOW: u32 = 11;
     pub const LAMP: u32 = 12;
     pub const KEEL: u32 = 13;
-    pub const COUNT: u32 = 14;
+    pub const PATCH: u32 = 14;
+    pub const COUNT: u32 = 15;
 }
 
 /// Which world the grid currently holds.
@@ -123,6 +124,10 @@ impl Content {
                     .with_emission(14),
             ),
             (voxel::KEEL, BlockDef::cube("keel", tex::KEEL)),
+            (
+                voxel::GROUND_PATCH,
+                BlockDef::cube("ground-patch", tex::PATCH),
+            ),
         ];
         for (id, def) in defs {
             let added = catalog.add(def);
@@ -218,6 +223,15 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
                         tex::LUMITE => (ore([0.35, 0.95, 1.0]), 1.0),
                         tex::VOIDSTONE => (ore([0.55, 0.25, 0.85]), 1.0),
                         tex::BEDROCK => (shade(palette.bedrock, 0.25), 1.0),
+                        tex::PATCH => {
+                            // Clumped growth over the floor colour.
+                            let clump = hash(x / 2, y / 2, layer + 11);
+                            if clump > 0.3 {
+                                (shade(palette.patch, 0.22), 1.0)
+                            } else {
+                                (shade(palette.floor, 0.12), 1.0)
+                            }
+                        }
                         tex::DECK => {
                             let seam = edge || x == TEXELS / 2;
                             let rivet = (x == 2 || x == TEXELS - 3) && (y == 2 || y == TEXELS - 3);

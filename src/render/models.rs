@@ -31,6 +31,9 @@ pub mod names {
     pub const POD_CRADLE: &str = "pod-cradle";
     pub const LOCKER: &str = "locker";
     pub const GLOWCAP: &str = "glowcap";
+    pub const FUNGUS: &str = "fungus";
+    pub const CRYSTAL_GROWTH: &str = "crystal-growth";
+    pub const ICE_SPIRE: &str = "ice-spire";
     pub const BEACON: &str = "beacon";
     pub const DRILL_RIG: &str = "drill-rig";
     pub const WORKBENCH: &str = "workbench";
@@ -46,7 +49,7 @@ pub mod names {
     pub const LUMITE_CHUNK: &str = "lumite-chunk";
     pub const VOIDSTONE_CHUNK: &str = "voidstone-chunk";
 
-    pub const ALL: [&str; 23] = [
+    pub const ALL: [&str; 26] = [
         ASTRONAUT,
         DROP_POD,
         DRONE,
@@ -56,6 +59,9 @@ pub mod names {
         POD_CRADLE,
         LOCKER,
         GLOWCAP,
+        FUNGUS,
+        CRYSTAL_GROWTH,
+        ICE_SPIRE,
         BEACON,
         DRILL_RIG,
         WORKBENCH,

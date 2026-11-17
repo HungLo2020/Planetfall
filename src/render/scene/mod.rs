@@ -25,7 +25,7 @@ use crate::render::camera::{ascent_height, descent_height};
 use crate::render::effects::outline;
 use planetfall_sim::content::ShipBlock;
 use planetfall_sim::content::{
-    Axis, ClassId, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,
+    Axis, ClassId, DecorKind, EnemyBehavior, Material, Palette, PlanetId, WeaponBehavior, WeaponId,
 };
 use planetfall_sim::game::{FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::{self, V2};

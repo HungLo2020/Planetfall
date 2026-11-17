@@ -328,12 +328,51 @@ fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
 fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option<OverlayBox> {
     let (cx, cy) = Terrain::tile_of(center);
     let mut glows: Vec<(f32, [f32; 3], [f32; 3])> = Vec::new();
+    let style = &run.planet.info().terrain;
+    let decor = style.decor.map(|kind| match kind {
+        DecorKind::Fungus => (names::FUNGUS, [0.6, 0.35, 1.0]),
+        DecorKind::Crystal => (names::CRYSTAL_GROWTH, [1.0, 0.45, 0.12]),
+        DecorKind::Ice => (names::ICE_SPIRE, [0.55, 0.75, 1.0]),
+    });
+    let walled = |x: i32, y: i32| {
+        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .filter(|(dx, dy)| run.terrain.tile(x + dx, y + dy).solid())
+            .count()
+    };
     for y in cy - 10 - extra..=cy + 8 + extra {
         for x in cx - 12 - extra..=cx + 12 + extra {
             let tile = run.terrain.tile(x, y);
             let c = Terrain::center_of(x, y);
             let h = tile_hash(x, y);
             match tile {
+                // Props grow on wall-side floor, pushed toward the wall.
+                Tile::Floor
+                    if decor.is_some()
+                        && tile_hash(x * 3, y * 7) < style.decor_density
+                        && walled(x, y) > 0 =>
+                {
+                    let (model, light) = decor.expect("checked");
+                    let mut toward = V2::ZERO;
+                    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        if run.terrain.tile(x + dx, y + dy).solid() {
+                            toward += V2::new(dx as f32, dy as f32);
+                        }
+                    }
+                    let size = 0.75 + h * 0.6;
+                    let pos = c + toward.normalize_or_zero() * 0.45;
+                    p.model(
+                        model,
+                        at(pos, 0.0) * Mat4::rotation_y(h * 40.0) * s(size, size, size),
+                    );
+                    if h > 0.7 {
+                        glows.push((
+                            c.distance_squared(run.player().pos),
+                            [pos[0], 1.0, pos[1]],
+                            light,
+                        ));
+                    }
+                }
                 // Scattered pebbles on open ground.
                 Tile::Floor if h > 0.9 => {
                     let off = V2::new(

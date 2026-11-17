@@ -2,6 +2,7 @@
 //! ore, cave generation, circle collision, mining, line of sight (voxel
 //! raycasts) and a horde flow field over the voxel nav grid (`quasar-nav`).
 
+use crate::cavegen::{self, Cell};
 use crate::content::{Material, PlanetId};
 use crate::math::V2;
 use crate::voxel::{self, AIR, Blocks};
@@ -15,7 +16,7 @@ use std::collections::BTreeMap;
 
 /// World size of one block, in meters.
 pub const TILE: f32 = 2.0;
-pub const MAP_SIZE: u32 = 52;
+pub const MAP_SIZE: u32 = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tile {
@@ -317,168 +318,31 @@ impl Terrain {
             .count()
     }
 
-    /// Generate a cave for `planet`. Deterministic for a given seed.
+    /// Generate a cave for `planet` (see `cavegen`). Deterministic for a
+    /// given seed.
     pub fn generate(planet: PlanetId, seed: u64, tutorial: bool) -> (Self, Layout) {
-        let info = planet.info();
         let mut rng = Rng::seed_from_u64(seed);
         let (w, h) = (MAP_SIZE as i32, MAP_SIZE as i32);
-        let mut solid = vec![false; (w * h) as usize];
+        let cave = cavegen::generate(planet, w, &mut rng, seed, SITES, tutorial);
         let idx = |x: i32, y: i32| (y * w + x) as usize;
-        for y in 0..h {
-            for x in 0..w {
-                let border = x < 2 || y < 2 || x >= w - 2 || y >= h - 2;
-                solid[idx(x, y)] = border || rng.chance(0.47);
-            }
-        }
-        for _ in 0..5 {
-            let mut next = solid.clone();
-            for y in 2..h - 2 {
-                for x in 2..w - 2 {
-                    let mut walls = 0;
-                    for dy in -1..=1 {
-                        for dx in -1..=1 {
-                            if (dx != 0 || dy != 0) && solid[idx(x + dx, y + dy)] {
-                                walls += 1;
-                            }
-                        }
-                    }
-                    next[idx(x, y)] = walls > 4 || (walls == 4 && solid[idx(x, y)]);
-                }
-            }
-            solid = next;
-        }
-        let (lx, ly) = (w / 2, h / 2);
-        let clear = |solid: &mut Vec<bool>, cx: i32, cy: i32, r: i32| {
-            for y in cy - r..=cy + r {
-                for x in cx - r..=cx + r {
-                    if x > 1
-                        && y > 1
-                        && x < w - 2
-                        && y < h - 2
-                        && (x - cx).pow(2) + (y - cy).pow(2) <= r * r + 1
-                    {
-                        solid[idx(x, y)] = false;
-                    }
-                }
-            }
-        };
-        clear(&mut solid, lx, ly, 4);
-        // Carve a few tunnels from the landing site so the cave is explorable.
-        for _ in 0..5 {
-            let angle = rng.range_f32(0.0..std::f32::consts::TAU);
-            let (mut x, mut y) = (lx as f32, ly as f32);
-            let len = rng.range_f32(10.0..20.0) as i32;
-            let mut a = angle;
-            for _ in 0..len {
-                a += rng.range_f32(-0.5..0.5);
-                x = (x + a.cos()).clamp(3.0, (w - 4) as f32);
-                y = (y + a.sin()).clamp(3.0, (h - 4) as f32);
-                clear(&mut solid, x as i32, y as i32, 1);
-            }
-        }
-        // Keep only the floor region connected to the landing site.
-        let mut reachable = vec![false; solid.len()];
-        let mut stack = vec![(lx, ly)];
-        while let Some((x, y)) = stack.pop() {
-            if x < 0 || y < 0 || x >= w || y >= h || solid[idx(x, y)] || reachable[idx(x, y)] {
-                continue;
-            }
-            reachable[idx(x, y)] = true;
-            stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
-        }
-        let mut tiles = vec![Tile::rock(); solid.len()];
-        for y in 0..h {
-            for x in 0..w {
-                let border = x < 1 || y < 1 || x >= w - 1 || y >= h - 1;
-                tiles[idx(x, y)] = if border {
-                    Tile::Bedrock
-                } else if reachable[idx(x, y)] {
-                    Tile::Floor
-                } else {
-                    Tile::rock()
-                };
-            }
-        }
-        // Mission sites: far, spread-out floor; where the cave does not reach
-        // far enough, carve a chamber for the player to dig through to.
-        let mut sites: Vec<(i32, i32)> = Vec::new();
-        {
-            let far = |x: i32, y: i32| ((x - lx).pow(2) + (y - ly).pow(2)) as f32;
-            let mut floor: Vec<(i32, i32)> = (2..h - 2)
-                .flat_map(|y| (2..w - 2).map(move |x| (x, y)))
-                .filter(|&(x, y)| tiles[idx(x, y)] == Tile::Floor)
-                .collect();
-            floor.sort_by(|a, b| far(b.0, b.1).total_cmp(&far(a.0, a.1)));
-            for (x, y) in floor {
-                if sites.len() >= SITES {
-                    break;
-                }
-                let spread = sites
-                    .iter()
-                    .all(|&(sx, sy)| (sx - x).pow(2) + (sy - y).pow(2) > 14 * 14);
-                if far(x, y) > 22.0 * 22.0 && spread {
-                    sites.push((x, y));
-                }
-            }
-            let mut guard = 0;
-            while sites.len() < SITES && guard < 2000 {
-                guard += 1;
-                let x = 5 + rng.range_usize(0..(w - 10) as usize) as i32;
-                let y = 5 + rng.range_usize(0..(h - 10) as usize) as i32;
-                let spread = sites
-                    .iter()
-                    .all(|&(sx, sy)| (sx - x).pow(2) + (sy - y).pow(2) > 12 * 12);
-                if far(x, y) > 20.0 * 20.0 && spread {
-                    for cy in y - 2..=y + 2 {
-                        for cx in x - 2..=x + 2 {
-                            if (cx - x).pow(2) + (cy - y).pow(2) <= 5 {
-                                tiles[idx(cx, cy)] = Tile::Floor;
-                            }
-                        }
-                    }
-                    sites.push((x, y));
-                }
-            }
-        }
-        // Ore veins on walls that touch open floor, seeded and grown into clusters.
+        let (lx, ly) = cave.landing;
+        let mut tiles: Vec<Tile> = cave
+            .cells
+            .iter()
+            .map(|c| match c {
+                Cell::Floor => Tile::Floor,
+                Cell::Rock => Tile::rock(),
+                Cell::Ore(m) => Tile::ore(*m),
+                Cell::Bedrock => Tile::Bedrock,
+            })
+            .collect();
+        let sites = cave.sites.clone();
         let exposed = |tiles: &Vec<Tile>, x: i32, y: i32| {
             [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dy)| {
                 let (nx, ny) = (x + dx, y + dy);
                 nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[idx(nx, ny)] == Tile::Floor
             })
         };
-        let mut seeds = Vec::new();
-        for y in 1..h - 1 {
-            for x in 1..w - 1 {
-                if !matches!(tiles[idx(x, y)], Tile::Rock { .. }) || !exposed(&tiles, x, y) {
-                    continue;
-                }
-                let roll = rng.next_f32();
-                let mut acc = 0.0;
-                for material in &Material::ALL {
-                    acc += info.ore.get(*material) * 0.45;
-                    if roll < acc {
-                        seeds.push((x, y, *material));
-                        break;
-                    }
-                }
-            }
-        }
-        for (x, y, material) in seeds {
-            tiles[idx(x, y)] = Tile::ore(material);
-            for _ in 0..rng.range_usize(0..3) {
-                let (dx, dy) = [(1, 0), (-1, 0), (0, 1), (0, -1)][rng.range_usize(0..4)];
-                let (nx, ny) = (x + dx, y + dy);
-                if nx > 0
-                    && ny > 0
-                    && nx < w - 1
-                    && ny < h - 1
-                    && matches!(tiles[idx(nx, ny)], Tile::Rock { .. })
-                {
-                    tiles[idx(nx, ny)] = Tile::ore(material);
-                }
-            }
-        }
         let floor: Vec<(i32, i32)> = (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
             .filter(|&(x, y)| tiles[idx(x, y)] == Tile::Floor)
@@ -531,6 +395,7 @@ impl Terrain {
             Some((lx, ly, 7)),
         );
         ensure(&mut tiles, &mut rng, Material::Lumite, objective + 8, None);
+        ensure(&mut tiles, &mut rng, Material::Ferrite, 14, None);
 
         // Commit the tiles to voxels: ground under everything, walls above,
         // and a taller bedrock rim.
@@ -538,7 +403,9 @@ impl Terrain {
         for y in 0..h {
             for x in 0..w {
                 let tile = tiles[idx(x, y)];
-                let ground = if (x + y) % 2 == 0 {
+                let ground = if cave.patches[idx(x, y)] {
+                    voxel::GROUND_PATCH
+                } else if (x + y) % 2 == 0 {
                     voxel::GROUND
                 } else {
                     voxel::GROUND_ALT
@@ -725,6 +592,54 @@ mod tests {
             assert!(!layout.caches.is_empty());
             for cache in &layout.caches {
                 assert!(!a.solid_at(*cache));
+            }
+        }
+    }
+
+    #[test]
+    fn caves_are_connected_organic_and_stocked() {
+        for planet in PlanetId::all() {
+            for seed in 0..25 {
+                for tutorial in [false, true] {
+                    let (t, layout) = Terrain::generate(planet, seed, tutorial);
+                    // Everything open is reachable from the pod without mining.
+                    let field = FlowField::new(&t, layout.landing);
+                    for ((x, y), tile) in t.tiles() {
+                        if tile == Tile::Floor {
+                            assert!(
+                                field.distance_at(x, y).is_finite(),
+                                "{planet:?} seed {seed}: ({x}, {y}) cut off"
+                            );
+                        }
+                    }
+                    assert_eq!(layout.sites.len(), SITES);
+                    for p in layout
+                        .sites
+                        .iter()
+                        .chain(&layout.caches)
+                        .chain(&layout.spots)
+                    {
+                        assert!(!t.solid_at(*p), "{planet:?} seed {seed}: {p:?} in rock");
+                    }
+                    // The arena is a big open room far from the pod.
+                    let arena = layout.sites[0];
+                    assert!(arena.distance(layout.landing) > 30.0);
+                    let (ax, ay) = Terrain::tile_of(arena);
+                    let open = (-3..=3)
+                        .flat_map(|dy| (-3..=3).map(move |dx| (dx, dy)))
+                        .filter(|&(dx, dy)| t.tile(ax + dx, ay + dy) == Tile::Floor)
+                        .count();
+                    assert!(open >= 40, "{planet:?} seed {seed}: arena has {open} floor");
+                    let floor = t.tiles().filter(|(_, t)| *t == Tile::Floor).count();
+                    assert!(
+                        (500..1800).contains(&floor),
+                        "{planet:?} seed {seed} tutorial {tutorial}: {floor} floor"
+                    );
+                    if !tutorial {
+                        assert!(t.count_ore(Material::Lumite) >= MIN_LUMITE);
+                        assert!(t.count_ore(Material::Ferrite) >= 10);
+                    }
+                }
             }
         }
     }

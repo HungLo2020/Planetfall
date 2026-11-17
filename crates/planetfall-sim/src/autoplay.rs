@@ -3,7 +3,7 @@
 
 use crate::content::{
     AbilityKind, ClassId, Material, ModStat, ObjectiveKind, Offer, PerkEffect, PlanetId, ShipBlock,
-    Upgrade, UpgradeId,
+    Upgrade, UpgradeId, WeaponBehavior,
 };
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
@@ -60,18 +60,43 @@ impl Autopilot {
                     let options = profile.start_options(want);
                     if profile.class != want {
                         Command::SelectClass(want)
-                    } else if options.len() > 1 && profile.start_weapon(want) == want.signature() {
+                    } else if let Some(alt) = options
+                        .iter()
+                        .copied()
+                        .filter(|w| *w != want.signature())
+                        .find(|w| {
+                            // Direct fire holds the first wave; lobbed and
+                            // orbiting weapons do not on their own.
+                            matches!(
+                                w.info().behavior,
+                                WeaponBehavior::Bolt
+                                    | WeaponBehavior::Scatter
+                                    | WeaponBehavior::Arc
+                            )
+                        })
+                        .filter(|_| profile.start_weapon(want) == want.signature())
+                    {
                         // Exercise the starting-weapon choice once unlocked.
-                        Command::SetStartWeapon(options[1])
+                        Command::SetStartWeapon(alt)
                     } else {
                         Command::Close
                     }
                 }
-                // Rotate through the board; push the hazard up as it unlocks.
-                Terminal::MissionBoard => Command::Deploy {
-                    contract: game.profile.stats.drops as usize % game.profile.board.len().max(1),
-                    hazard: game.profile.hazard_unlocked.min(2),
-                },
+                // Rotate through the board; push the hazard up as it
+                // unlocks, and back off to Easy while deaths outpace half
+                // the extractions.
+                Terminal::MissionBoard => {
+                    let stats = &game.profile.stats;
+                    let struggling = stats.deaths * 2 > stats.extractions;
+                    Command::Deploy {
+                        contract: stats.drops as usize % game.profile.board.len().max(1),
+                        hazard: if struggling {
+                            1
+                        } else {
+                            game.profile.hazard_unlocked.min(2)
+                        },
+                    }
+                }
                 Terminal::Debrief(_) | Terminal::Module(_) => Command::Close,
             };
             return GameInput {
@@ -182,8 +207,11 @@ impl Autopilot {
         // Greed, as a player would: keep fighting and mining after the
         // objective until hurt, the threat is high or time is long.
         let p = run.player();
+        // Nothing left worth mining: go home too.
+        let mined_out = Material::ALL.iter().all(|m| nearest_ore(run, *m).is_none());
         let ready = run.objective_done()
             && (run.tutorial
+                || mined_out
                 || p.health < p.max_health * 0.6
                 || run.threat_level() >= 8
                 || run.minutes() >= 14.0);
@@ -203,13 +231,27 @@ impl Autopilot {
         } else if !mission.primary.done {
             match mission.primary_kind() {
                 ObjectiveKind::OreQuota => nearest_ore(run, Material::Lumite),
-                // Build up before waking a boss: levels or a few minutes.
+                // Build up before waking a boss: levels or a few minutes,
+                // mining well clear of its arena.
                 ObjectiveKind::Boss
                     if mission.target.is_none()
                         && run.player().level < 8
                         && run.minutes() < 4.0 =>
                 {
-                    nearest_ore(run, Material::Lumite)
+                    let arena = mission.arena.unwrap_or(run.landing);
+                    ore_clear_of(run, arena, 26.0).or_else(|| nearest_ore(run, Material::Lumite))
+                }
+                // The hunted elite roams from the start: level up and keep
+                // away from it first.
+                ObjectiveKind::Hunt if run.player().level < 6 && run.minutes() < 3.0 => {
+                    match mission
+                        .target
+                        .and_then(|id| run.enemies.iter().find(|e| e.id == id))
+                    {
+                        Some(e) if e.pos.distance(player) < 10.0 => Some(player * 2.0 - e.pos),
+                        Some(e) => ore_clear_of(run, e.pos, 14.0),
+                        None => nearest_ore(run, Material::Lumite),
+                    }
                 }
                 ObjectiveKind::Boss | ObjectiveKind::Hunt => {
                     match mission
@@ -248,6 +290,8 @@ impl Autopilot {
                         .filter(|p| p.distance(player) < 30.0)
                 })
                 .or_else(|| nearest_ore(run, Material::Lumite))
+                .or_else(|| nearest_ore(run, Material::Voidstone))
+                .or_else(|| nearest_ore(run, Material::Ferrite))
         };
         let _ = keep_away;
         let mut movement = goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero());
@@ -289,6 +333,25 @@ impl Autopilot {
             ..GameInput::default()
         }
     }
+}
+
+/// The nearest lumite at least `clear` metres from `avoid`.
+fn ore_clear_of(run: &crate::run::Run, avoid: V2, clear: f32) -> Option<V2> {
+    let player = run.player().pos;
+    run.terrain
+        .tiles()
+        .filter(|(_, t)| {
+            matches!(
+                t,
+                crate::terrain::Tile::Ore {
+                    material: Material::Lumite,
+                    ..
+                }
+            )
+        })
+        .map(|((x, y), _)| crate::terrain::Terrain::center_of(x, y))
+        .filter(|p| p.distance(avoid) >= clear)
+        .min_by(|a, b| a.distance(player).total_cmp(&b.distance(player)))
 }
 
 /// A sensible pick: rarer first, then new weapons and offence over

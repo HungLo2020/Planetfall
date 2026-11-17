@@ -8,6 +8,7 @@
 //! navigation (`quasar-nav`) and spatial queries (`quasar-spatial`).
 
 pub mod autoplay;
+pub mod cavegen;
 pub mod content;
 pub mod events;
 pub mod game;

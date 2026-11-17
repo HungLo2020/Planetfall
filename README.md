@@ -64,7 +64,9 @@ Rebind keys and buttons under Settings → Controls.
   quotas, boss kills, rescues, drill defence, salvage and elite hunts, with
   optional secondary objectives, site conditions, mutators and hazard levels
   1 to 5 that unlock as you succeed.
-- **Surface runs**: procedurally generated voxel caves of minable blocks; ferrite,
+- **Surface runs**: organic voxel caves of minable blocks (winding tunnels,
+  looping chambers, a pillared set-piece arena, ore seams, per-planet floor
+  patches and props); ferrite,
   lumite and voidstone ore; four enemy types (husks, skitters, bloaters, brutes)
   driven by a flow field; six auto-firing weapons in four slots (new picks at
   levels 5, 10 and 15); rarity-rolled upgrades with elements (fire, acid,

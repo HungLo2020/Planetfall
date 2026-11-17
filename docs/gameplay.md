@@ -92,6 +92,33 @@ show keyboard or controller labels depending on the last device used.
 Planet hazard scales enemy health, damage and spawn pressure; the hazard
 level and threat level (below) do the rest.
 
+## Caves
+
+Every drop is a fresh 60 x 60 block cave on one flat floor level (no pits),
+generated from the drop's seed (`cavegen.rs`):
+
+- **Chambers and tunnels.** The landing chamber sits in the middle; the
+  mission sites are spread around it and a dozen or so organic chambers fill
+  the rest. A spanning tree of winding tunnels links them, plus a few extra
+  tunnels that close loops so you (and the horde) can circle round. Noise
+  opens alcoves along the walls and a smoothing pass rounds them off.
+- **Set pieces.** The main mission site is a round arena with four rock
+  pillars for cover. It is the boss lair, the survivor's camp, the drill
+  site or the wreck, depending on the contract. The other sites hold relays
+  and spill-over objectives.
+- **Always connected.** Every open pocket is either tunnelled to the landing
+  or filled in, so the pod, every objective and extraction are reachable
+  without mining. Drilling is a shortcut, never a requirement.
+- **Ore seams** follow noise ridges through the rock next to the floor, so
+  veins run along walls and deeper into them instead of scattering. Each
+  region of rock leans to one ore, and voidstone is more common far from the
+  pod. Every map guarantees enough lumite for the largest ore quota and a
+  starter vein of lumite and ferrite by the pod.
+- **Planet character.** `[planet.terrain]` in `planets.toml` sets chamber
+  count and size, tunnel width, wall roughness, loops, alcoves, floor
+  patches (moss, ash, frost) and decoration props (fungus on Verdant-7,
+  ember-lit obsidian on Cinder Reach, ice spires on Hollow Frost).
+
 ## Contracts and the mission board
 
 Interacting with the drop pod opens the **mission board**: three random
@@ -270,7 +297,8 @@ and refer to models and sounds by name (generate new ones with the
 `regenerate-assets` skill). New behaviour needs a new archetype variant in
 `crates/planetfall-sim/src/content/defs.rs` and its system in `run/`.
 Content is validated on load, so a bad file stops the game with a message
-naming it. Terrain generation and ore toughness remain in `terrain.rs`.
+naming it. Cave shapes are tuned per planet in `[planet.terrain]`; the
+generator is `cavegen.rs` and ore toughness is in `terrain.rs`.
 
 `cargo test` checks the data (every model and sound it names exists, every
 enemy can spawn on every planet), and `cargo run --release -- --headless

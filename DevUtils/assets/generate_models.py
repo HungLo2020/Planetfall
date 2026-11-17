@@ -62,6 +62,9 @@ MATERIALS: dict[str, tuple[tuple[float, float, float, float], float, float, tupl
     "voidstone": ((0.55, 0.25, 0.85, 1), 0.2, 0.2, (0.45, 0.12, 0.75)),
     "white": ((1.0, 1.0, 1.0, 1), 0.0, 0.7, (0, 0, 0)),
     "screen": ((0.1, 0.3, 0.45, 1), 0.0, 0.2, (0.15, 0.55, 0.85)),
+    "ice": ((0.72, 0.86, 0.96, 1), 0.1, 0.12, (0.04, 0.08, 0.12)),
+    "obsidian": ((0.07, 0.06, 0.07, 1), 0.3, 0.15, (0, 0, 0)),
+    "stalk": ((0.62, 0.58, 0.46, 1), 0.0, 0.8, (0, 0, 0)),
 }
 
 
@@ -983,6 +986,34 @@ def glowcap() -> list[Part]:
     return [part]
 
 
+def fungus() -> list[Part]:
+    """Cave fungus (Verdant decoration): pale stalks with wide shelf caps."""
+    part = Part("fungus")
+    for x, z, h, r in ((0.0, 0.0, 0.9, 0.42), (0.38, 0.22, 0.55, 0.28), (-0.3, 0.3, 0.42, 0.22), (0.1, -0.35, 0.3, 0.16)):
+        part.prism("stalk", (x, h * 0.5, z), 0.07, h, sides=6, top_radius=0.05)
+        part.prism("chitin_light", (x, h, z), r, 0.12, sides=9, top_radius=r * 0.35)
+        part.prism("glow_purple", (x, h - 0.07, z), r * 0.8, 0.02, sides=9)
+    return [part]
+
+
+def crystal_growth() -> list[Part]:
+    """Obsidian shards with ember cores (Cinder decoration)."""
+    part = Part("crystals")
+    for x, z, h, rx, rz in ((0.0, 0.0, 1.7, 0.12, 0.05), (0.38, 0.2, 1.1, -0.3, 0.2), (-0.32, 0.26, 0.95, 0.25, -0.35), (0.12, -0.38, 0.8, -0.35, -0.1)):
+        part.crystal("obsidian", (x, h * 0.3, z), 0.24, h, sides=5, rot=(rx, 0.0, rz))
+        # A glowing ember seam breaking out of each shard's side.
+        part.crystal("glow_orange", (x + 0.1, h * 0.2, z + 0.1), 0.09, h * 0.55, sides=4, rot=(rx + 0.3, 0.0, rz - 0.3))
+    return [part]
+
+
+def ice_spire() -> list[Part]:
+    """Leaning ice spires (Hollow Frost decoration)."""
+    part = Part("ice")
+    for x, z, h, r, rx, rz in ((0.0, 0.0, 1.8, 0.28, 0.05, 0.08), (0.36, 0.2, 1.1, 0.2, -0.2, 0.25), (-0.32, 0.28, 0.9, 0.18, 0.2, -0.25), (0.06, -0.36, 0.7, 0.15, -0.3, 0.0)):
+        part.prism("ice", (x, h * 0.5, z), r, h, sides=6, rot=(rx, 0.0, rz), top_radius=0.0)
+    return [part]
+
+
 def locker() -> list[Part]:
     """Four crew lockers in a row, one per class colour, facing +Z."""
     part = Part("lockers")
@@ -1023,6 +1054,9 @@ MODELS = {
     "pod-cradle": pod_cradle,
     "locker": locker,
     "glowcap": glowcap,
+    "fungus": fungus,
+    "crystal-growth": crystal_growth,
+    "ice-spire": ice_spire,
     "reactor-core": reactor_core,
     "med-bay": med_bay,
     "weapon-rack": weapon_rack,

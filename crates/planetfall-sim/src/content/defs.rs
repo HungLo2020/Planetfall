@@ -16,6 +16,8 @@ pub struct Palette {
     pub rock: [f32; 3],
     pub rock_top: [f32; 3],
     pub bedrock: [f32; 3],
+    /// Floor patches (moss, ash, frost).
+    pub patch: [f32; 3],
     pub ambient: [f32; 3],
     pub sun: [f32; 3],
     pub sky: [f32; 3],
@@ -56,6 +58,62 @@ pub struct PlanetDef {
     #[serde(default)]
     pub spawn_weights: BTreeMap<String, f32>,
     pub palette: Palette,
+    #[serde(default)]
+    pub terrain: TerrainStyle,
+}
+
+/// Cave generation knobs per planet (see `cavegen`).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct TerrainStyle {
+    /// Extra chambers besides the landing and mission sites (min, max).
+    pub chambers: [u32; 2],
+    /// Chamber radius range in blocks.
+    pub chamber_radius: [f32; 2],
+    /// Tunnel half-width range in blocks.
+    pub tunnel_width: [f32; 2],
+    /// How far chamber walls wobble from round (0 to 1).
+    pub roughness: f32,
+    /// Chance each chamber gets an extra tunnel that closes a loop.
+    pub loops: f32,
+    /// Noise alcoves opened along walls (0 to 1).
+    pub alcoves: f32,
+    /// Floor patch coverage (0 to 1).
+    pub patches: f32,
+    /// Ore density multiplier on top of the planet's `ore` chances.
+    pub seams: f32,
+    /// Decoration props growing on the floor near walls.
+    pub decor: Option<DecorKind>,
+    /// Share of wall-side floor blocks that get a prop.
+    pub decor_density: f32,
+}
+
+impl Default for TerrainStyle {
+    fn default() -> Self {
+        Self {
+            chambers: [6, 9],
+            chamber_radius: [2.5, 5.0],
+            tunnel_width: [1.0, 1.5],
+            roughness: 0.3,
+            loops: 0.35,
+            alcoves: 0.5,
+            patches: 0.5,
+            seams: 1.0,
+            decor: None,
+            decor_density: 0.15,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecorKind {
+    /// Fungal stalks and shelf caps.
+    Fungus,
+    /// Ember-lit obsidian crystal growths.
+    Crystal,
+    /// Ice spires.
+    Ice,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

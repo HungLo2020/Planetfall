@@ -18,11 +18,13 @@ use serde::{Deserialize, Serialize};
 /// - 3: weapon upgrades with rarities, elements and statuses.
 /// - 4: the threat level, surges and elites.
 /// - 5: contracts: objectives, set pieces, hazard levels.
+/// - 6: the organic cave generator (terrain regenerates from its seed, so
+///   older drops would rebuild a different map).
 ///
 /// A drop in progress from an older version cannot be resumed; the app
 /// strips it before parsing ([`SaveGame::strip_stale_run`]) and the slot
 /// resumes on the ship.
-pub const SAVE_VERSION: u32 = 5;
+pub const SAVE_VERSION: u32 = 6;
 /// Selectable save slots.
 pub const SLOTS: usize = 5;
 
@@ -175,10 +177,16 @@ mod tests {
         let mut game = Game::new(Profile::default(), 9);
         let mut pilot = Autopilot::new();
         play(&mut game, &mut pilot, 2000);
-        while game.phase != Phase::Surface {
-            play(&mut game, &mut pilot, 1);
+        // Capture well inside a drop (not during an extraction).
+        loop {
+            while game.phase != Phase::Surface {
+                play(&mut game, &mut pilot, 1);
+            }
+            play(&mut game, &mut pilot, 300);
+            if game.phase == Phase::Surface {
+                break;
+            }
         }
-        play(&mut game, &mut pilot, 300);
         let save = SaveGame::capture(&game, SlotMeta::default());
         let json = serde_json::to_string(&save).unwrap();
         let loaded: SaveGame = serde_json::from_str(&json).unwrap();

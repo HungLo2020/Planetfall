@@ -37,6 +37,10 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
 5. **render-3d: particle systems have no `clear`.** Live particles survive a
    scene change (a new drop, a loaded save) until they expire. They are short
    enough not to matter here, but a reset would be tidier.
+6. **core: no coherent noise.** `quasar-core` has a seeded `Rng` but no
+   value/Perlin/simplex noise, so `cavegen.rs` carries a small seeded value
+   noise with fractal octaves for alcoves, ore seams and floor patches. A
+   deterministic 2D/3D noise module would replace it.
 
 ## 2. Still missing or not adopted
 
@@ -62,4 +66,4 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
   and `quasar-jobs` with `RemeshQueue` for background meshing, are available
   but not yet adopted.
 - **Chunk streaming** (`StreamingPlanner`, `RemeshQueue`) is unnecessary for
-  52x52 maps; multi-layer planets will need it.
+  60x60 maps; multi-layer planets will need it.

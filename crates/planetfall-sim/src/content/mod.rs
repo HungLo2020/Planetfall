@@ -14,11 +14,11 @@
 pub mod defs;
 
 pub use defs::{
-    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, Drop, Element,
-    ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget, MutatorDef,
-    MutatorEffect, ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette, PassiveDef,
-    PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special, Spin, Tuning,
-    UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
+    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, DecorKind, Drop,
+    Element, ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget,
+    MutatorDef, MutatorEffect, ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette,
+    PassiveDef, PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, SiteDef, Spawn, Special,
+    Spin, TerrainStyle, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
