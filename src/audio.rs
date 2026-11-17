@@ -4,7 +4,7 @@
 
 use crate::storage::Preferences;
 use planetfall_sim::Phase;
-use planetfall_sim::content::AbilityKind;
+use planetfall_sim::content::{AbilityKind, Rarity};
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::math::V2;
 use quasar_audio::{
@@ -221,6 +221,17 @@ impl Audio {
                 GameEvent::PlayerDown { .. } => self.play("player_die", 0.7, None, 0),
                 GameEvent::ClassChanged { .. } => self.play("class_select", 0.6, None, 0),
                 GameEvent::ClassLevelUp { .. } => self.play("level_up", 0.8, None, 0),
+                GameEvent::CacheOpened { at } => self.play("weapon_found", 0.7, Some(at), 0),
+                GameEvent::RareUpgrade { rarity } => {
+                    let clip = if rarity == Rarity::Legendary {
+                        "weapon_found"
+                    } else {
+                        "ui_confirm"
+                    };
+                    self.play(clip, 0.7, None, 0);
+                }
+                // Statuses are visual (particles and tints).
+                GameEvent::Status { .. } => {}
                 GameEvent::Liftoff => self.play("liftoff", 0.9, None, 0),
                 GameEvent::TerminalOpened => self.play("console", 0.5, None, 4),
                 GameEvent::TerminalClosed => self.play("ui_move", 0.5, None, 2),

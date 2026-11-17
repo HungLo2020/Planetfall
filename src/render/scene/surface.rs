@@ -145,8 +145,21 @@ fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
                     );
                 }
             }
-            DeployableKind::Turret { weapon } => {
+            DeployableKind::Turret { weapon, mobile } => {
                 let root = at(d.pos, 0.0);
+                // A mobile sentry stands on little legs.
+                if mobile {
+                    for k in 0..3 {
+                        let a = k as f32 * std::f32::consts::TAU / 3.0 + time * 6.0;
+                        let leg = root * Mat4::rotation_y(a) * t(0.0, 0.12, 0.32);
+                        p.block(
+                            leg * s(0.05, 0.14, 0.05),
+                            [0.25, 0.27, 0.3],
+                            Surface::Metal,
+                            1.0,
+                        );
+                    }
+                }
                 p.block(
                     root * t(0.0, 0.25, 0.0) * s(0.35, 0.25, 0.35),
                     [0.3, 0.32, 0.36],

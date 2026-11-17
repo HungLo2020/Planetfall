@@ -2,7 +2,7 @@
 //! barriers, behaviour-specific attacks, deaths, drops and explosions.
 //! Numbers come from `enemies.toml`.
 
-use super::{BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, PickupKind, Run};
+use super::{BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, Hit, PickupKind, Run};
 use crate::content::{DT, EnemyBehavior, content};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
@@ -58,8 +58,9 @@ impl Run {
                 }
             }
             let reach = info.radius + player_radius + 0.2;
-            let mut speed = info.speed * e.speed_scale;
-            if dist < reach || e.spawn_ticks > 0 {
+            // Chill slows; a frozen enemy stands still and cannot attack.
+            let mut speed = info.speed * e.speed_scale * (1.0 - 0.6 * e.chill.min(1.0));
+            if dist < reach || e.spawn_ticks > 0 || e.frozen > 0 {
                 speed = 0.0;
             }
             if let Some(lunge) = info.lunge
@@ -106,7 +107,7 @@ impl Run {
                     });
                 }
             }
-            if dist < reach && en.spawn_ticks == 0 {
+            if dist < reach && en.spawn_ticks == 0 && en.frozen == 0 {
                 if info.behavior == EnemyBehavior::Exploder {
                     detonate.push(i);
                 } else if en.attack_cooldown == 0 {
@@ -187,7 +188,7 @@ impl Run {
                     }
                 }
                 for j in self.enemies_near(at, explosion.radius) {
-                    self.damage_enemy(j, explosion.enemy_damage, 0.0, events);
+                    self.damage_enemy(j, Hit::plain(explosion.enemy_damage), events);
                 }
             }
         }

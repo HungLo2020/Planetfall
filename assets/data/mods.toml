@@ -1,0 +1,291 @@
+# Level-up upgrades for weapons and class abilities. Each offer rolls a
+# rarity (common, uncommon, rare, legendary; odds in tuning.toml) and the
+# mod's `amounts` gives its value at each rarity. Every upgrade taken on a
+# weapon also adds tuning.weapons.growth to its damage (the weapon's level).
+# Field and class perks (perks.toml) scale by rarity too.
+#
+# target: "weapon" (applies to one carried weapon) or "ability".
+# stat (weapon): damage (% more), fire_rate (% faster), count (+N
+#   projectiles, pellets, chain jumps, shells or drones), range (% longer),
+#   area (% larger radius), pierce (+N), element (adds `element` with
+#   amounts as potency), special (a behaviour change, see `special`).
+# stat (ability): cooldown (% faster), power (% more damage), reach (% more
+#   range, duration and posts), special.
+# min_rarity: the lowest rarity this mod can roll at.
+# behaviors / abilities: only for these weapon behaviours / ability kinds.
+# max_stacks: how many times one weapon (or the ability) can take it.
+#
+# Specials (code archetypes):
+#   twin_barrel   bolt: every shot also fires at a second target
+#   double_blast  scatter: a second fan fires behind you
+#   overload      arc: every jump forks to a second enemy
+#   cluster       mortar: shells split into three bomblets
+#   second_ring   orbit: a second, wider ring turning the other way
+#   mobile_sentry turret: the turret walks with you
+#   echo          blink: a second charge before the cooldown
+#   molten_bore   bore: wider, and sets everything in it on fire
+#   arc_fence     barrier: posts zap twice as far, with shock
+
+[[mod]]
+id = "hotter-rounds"
+title = "Hotter Rounds"
+description = "+{amount}% damage"
+target = "weapon"
+stat = "damage"
+amounts = [20.0, 32.0, 48.0, 70.0]
+weight = 4
+
+[[mod]]
+id = "cycler"
+title = "Cycler"
+description = "Fires {amount}% faster"
+target = "weapon"
+stat = "fire_rate"
+amounts = [12.0, 18.0, 26.0, 36.0]
+weight = 3
+max_stacks = 6
+
+[[mod]]
+id = "extra-payload"
+title = "Extra Payload"
+description = "+{amount} projectiles, pellets, jumps, shells or drones"
+target = "weapon"
+stat = "count"
+amounts = [1.0, 1.0, 2.0, 3.0]
+min_rarity = "uncommon"
+weight = 2
+max_stacks = 4
+
+[[mod]]
+id = "long-barrel"
+title = "Long Barrel"
+description = "+{amount}% range"
+target = "weapon"
+stat = "range"
+amounts = [10.0, 16.0, 24.0, 35.0]
+behaviors = ["bolt", "scatter", "arc", "mortar"]
+weight = 2
+max_stacks = 4
+
+[[mod]]
+id = "wide-field"
+title = "Wide Field"
+description = "+{amount}% area"
+target = "weapon"
+stat = "area"
+amounts = [12.0, 20.0, 30.0, 45.0]
+behaviors = ["arc", "mortar", "orbit"]
+weight = 2
+max_stacks = 4
+
+[[mod]]
+id = "penetrator"
+title = "Penetrator"
+description = "Shots pierce {amount} more enemies"
+target = "weapon"
+stat = "pierce"
+amounts = [1.0, 1.0, 2.0, 3.0]
+behaviors = ["bolt", "scatter"]
+weight = 2
+max_stacks = 4
+
+# -- Elements (rare and up) --------------------------------------------------
+
+[[mod]]
+id = "incendiary"
+title = "Incendiary"
+description = "Hits burn for {amount} damage per second"
+target = "weapon"
+stat = "element"
+element = "fire"
+amounts = [4.0, 6.0, 9.0, 14.0]
+min_rarity = "rare"
+weight = 2
+max_stacks = 2
+
+[[mod]]
+id = "corrosive"
+title = "Corrosive"
+description = "Hits corrode: {amount} damage per second and +25% damage taken"
+target = "weapon"
+stat = "element"
+element = "acid"
+amounts = [3.0, 5.0, 7.0, 11.0]
+min_rarity = "rare"
+weight = 2
+max_stacks = 2
+
+[[mod]]
+id = "cryo"
+title = "Cryo"
+description = "Hits chill (power {amount}): slowed, then frozen"
+target = "weapon"
+stat = "element"
+element = "cold"
+amounts = [3.0, 5.0, 7.0, 10.0]
+min_rarity = "rare"
+weight = 2
+max_stacks = 2
+
+[[mod]]
+id = "capacitor"
+title = "Capacitor"
+description = "Hits may arc {amount} damage to a nearby enemy"
+target = "weapon"
+stat = "element"
+element = "shock"
+amounts = [6.0, 9.0, 13.0, 20.0]
+min_rarity = "rare"
+weight = 2
+max_stacks = 2
+
+# -- Legendary weapon behaviours ----------------------------------------------
+
+[[mod]]
+id = "twin-barrel"
+title = "Twin Barrel"
+description = "Every shot also fires at a second target"
+target = "weapon"
+stat = "special"
+special = "twin_barrel"
+amounts = [1.0, 1.0, 1.0, 1.0]
+behaviors = ["bolt"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "double-blast"
+title = "Double Blast"
+description = "A second fan of pellets fires behind you"
+target = "weapon"
+stat = "special"
+special = "double_blast"
+amounts = [1.0, 1.0, 1.0, 1.0]
+behaviors = ["scatter"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "overload"
+title = "Overload"
+description = "Every lightning jump forks to a second enemy"
+target = "weapon"
+stat = "special"
+special = "overload"
+amounts = [1.0, 1.0, 1.0, 1.0]
+behaviors = ["arc"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "cluster-shells"
+title = "Cluster Shells"
+description = "Shells split into three bomblets on impact"
+target = "weapon"
+stat = "special"
+special = "cluster"
+amounts = [1.0, 1.0, 1.0, 1.0]
+behaviors = ["mortar"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "second-ring"
+title = "Second Ring"
+description = "A second, wider ring of drones turns the other way"
+target = "weapon"
+stat = "special"
+special = "second_ring"
+amounts = [1.0, 1.0, 1.0, 1.0]
+behaviors = ["orbit"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+# -- Class abilities ------------------------------------------------------------
+
+[[mod]]
+id = "quick-charge"
+title = "Quick Charge"
+description = "Ability recharges {amount}% faster"
+target = "ability"
+stat = "cooldown"
+amounts = [8.0, 12.0, 17.0, 24.0]
+weight = 2
+max_stacks = 4
+
+[[mod]]
+id = "amplifier"
+title = "Amplifier"
+description = "Ability deals {amount}% more damage"
+target = "ability"
+stat = "power"
+amounts = [15.0, 25.0, 40.0, 60.0]
+weight = 2
+max_stacks = 4
+
+[[mod]]
+id = "extended"
+title = "Extended"
+description = "Ability reaches {amount}% further and lasts longer"
+target = "ability"
+stat = "reach"
+amounts = [10.0, 16.0, 24.0, 35.0]
+weight = 2
+max_stacks = 3
+
+[[mod]]
+id = "mobile-sentry"
+title = "Mobile Sentry"
+description = "Your turret follows you around"
+target = "ability"
+stat = "special"
+special = "mobile_sentry"
+amounts = [1.0, 1.0, 1.0, 1.0]
+abilities = ["turret"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "echo-step"
+title = "Echo Step"
+description = "Blink holds a second charge"
+target = "ability"
+stat = "special"
+special = "echo"
+amounts = [1.0, 1.0, 1.0, 1.0]
+abilities = ["blink"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "molten-bore"
+title = "Molten Bore"
+description = "A wider bore that sets everything in it on fire"
+target = "ability"
+stat = "special"
+special = "molten_bore"
+amounts = [1.0, 1.0, 1.0, 1.0]
+abilities = ["bore"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "arc-fence"
+title = "Arc Fence"
+description = "Barrier posts zap twice as far, with shock"
+target = "ability"
+stat = "special"
+special = "arc_fence"
+amounts = [1.0, 1.0, 1.0, 1.0]
+abilities = ["barrier"]
+min_rarity = "legendary"
+weight = 3
+max_stacks = 1

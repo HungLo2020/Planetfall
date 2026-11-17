@@ -14,10 +14,10 @@
 pub mod defs;
 
 pub use defs::{
-    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, Drop,
-    EnemyBehavior, EnemyDef, Explosion, Lunge, OreChances, Palette, PassiveDef, PassiveEffect,
-    PerkDef, PerkEffect, PlanetDef, Spawn, Spin, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior,
-    WeaponDef, WeaponStats,
+    AbilityDef, AbilityKind, AbilityTier, Axis, BlockCosts, ClassDef, ClassUnlock, Drop, Element,
+    ElementDef, EnemyBehavior, EnemyDef, Explosion, Lunge, ModDef, ModStat, ModTarget, OreChances,
+    Palette, PassiveDef, PassiveEffect, PerkDef, PerkEffect, PlanetDef, Rarity, Spawn, Special,
+    Spin, Tuning, UpgradeDef, UpgradeEffect, WeaponBehavior, WeaponDef, WeaponStats,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
@@ -181,6 +181,7 @@ pub struct Content {
     pub perks: Vec<PerkDef>,
     pub upgrades: Vec<UpgradeDef>,
     pub classes: Vec<ClassDef>,
+    pub mods: Vec<ModDef>,
     pub tuning: Tuning,
 }
 
@@ -194,6 +195,7 @@ pub struct ContentFiles<'a> {
     pub upgrades: &'a str,
     pub tuning: &'a str,
     pub classes: &'a str,
+    pub mods: &'a str,
 }
 
 impl ContentFiles<'static> {
@@ -206,11 +208,12 @@ impl ContentFiles<'static> {
         upgrades: include_str!("../../../../assets/data/upgrades.toml"),
         tuning: include_str!("../../../../assets/data/tuning.toml"),
         classes: include_str!("../../../../assets/data/classes.toml"),
+        mods: include_str!("../../../../assets/data/mods.toml"),
     };
 }
 
 /// File names in the data directory, in [`ContentFiles`] order.
-pub const FILE_NAMES: [&str; 7] = [
+pub const FILE_NAMES: [&str; 8] = [
     "planets.toml",
     "weapons.toml",
     "enemies.toml",
@@ -218,10 +221,13 @@ pub const FILE_NAMES: [&str; 7] = [
     "upgrades.toml",
     "tuning.toml",
     "classes.toml",
+    "mods.toml",
 ];
 
 /// Table names: the top-level key of each record file (`[[weapon]]`).
-const TABLES: [&str; 6] = ["planet", "weapon", "enemy", "perk", "upgrade", "class"];
+const TABLES: [&str; 7] = [
+    "planet", "weapon", "enemy", "perk", "upgrade", "class", "mod",
+];
 
 impl Content {
     /// Parse and validate the data files. Record tables go through Quasar's
@@ -237,7 +243,8 @@ impl Content {
             .register::<EnemyDef>("enemy")
             .register::<PerkDef>("perk")
             .register::<UpgradeDef>("upgrade")
-            .register::<ClassDef>("class");
+            .register::<ClassDef>("class")
+            .register::<ModDef>("mod");
         let sources = [
             files.planets,
             files.weapons,
@@ -245,6 +252,7 @@ impl Content {
             files.perks,
             files.upgrades,
             files.classes,
+            files.mods,
         ];
         let tables: Vec<(&str, &str, ContentFormat)> = TABLES
             .iter()
@@ -268,6 +276,7 @@ impl Content {
             perks: records(&snapshot, "perk"),
             upgrades: records(&snapshot, "upgrade"),
             classes: records(&snapshot, "class"),
+            mods: records(&snapshot, "mod"),
             tuning,
         };
         content.validate()?;
@@ -290,23 +299,14 @@ impl Content {
             self.perks.is_empty(),
             self.upgrades.is_empty(),
             self.classes.is_empty(),
+            self.mods.is_empty(),
         ]) {
             if empty {
                 errors.push(format!("{table}: no records"));
             }
         }
-        let levels = usize::from(self.tuning.weapons.max_level);
         if self.classes.iter().filter(|c| c.starter).count() != 1 {
             errors.push("class: exactly one class must be marked starter".into());
-        }
-        for w in &self.weapons {
-            if w.levels.len() != levels {
-                errors.push(format!(
-                    "weapon[{}].levels: {} levels, tuning.weapons.max_level is {levels}",
-                    w.id,
-                    w.levels.len()
-                ));
-            }
         }
         if !self.planets.iter().any(|p| p.nav_level == 0) {
             errors.push("planet: none is reachable at nav level 0".into());
@@ -344,25 +344,18 @@ impl ContentRecord for WeaponDef {
         &self.id
     }
     fn validate(&self, v: &mut Validator) {
+        let l = &self.stats;
         v.non_empty("name", &self.name)
             .non_empty("model", &self.model)
             .non_empty("sound", &self.sound)
             .check(
-                !self.levels.is_empty(),
-                "levels",
-                "needs at least one level",
-            );
-        for (i, l) in self.levels.iter().enumerate() {
-            v.check(
                 l.cooldown > 0.0 && l.range > 0.0,
-                &format!("levels[{i}]"),
+                "stats",
                 "cooldown and range must be positive",
             )
-            .check(
-                l.count > 0,
-                &format!("levels[{i}].count"),
-                "must be at least 1",
-            );
+            .check(l.count > 0, "stats.count", "must be at least 1");
+        if let Some(e) = self.element {
+            v.check(e.potency > 0.0, "element.potency", "must be positive");
         }
     }
 }
@@ -405,6 +398,57 @@ impl ContentRecord for PerkDef {
         v.non_empty("title", &self.title)
             .finite("amount", f64::from(self.amount))
             .optional_reference("class", "class", self.class.as_deref());
+    }
+}
+
+impl ContentRecord for ModDef {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn validate(&self, v: &mut Validator) {
+        v.non_empty("title", &self.title)
+            .check(self.weight > 0, "weight", "must be at least 1")
+            .check(
+                self.amounts.iter().all(|a| a.is_finite() && *a >= 0.0),
+                "amounts",
+                "must be non-negative",
+            )
+            .check(
+                (self.stat == ModStat::Element) == self.element.is_some(),
+                "element",
+                "element mods (and only they) name an element",
+            )
+            .check(
+                (self.stat == ModStat::Special) == self.special.is_some(),
+                "special",
+                "special mods (and only they) name a special",
+            );
+        let weapon_stat = matches!(
+            self.stat,
+            ModStat::Damage
+                | ModStat::FireRate
+                | ModStat::Count
+                | ModStat::Range
+                | ModStat::Area
+                | ModStat::Pierce
+                | ModStat::Element
+        );
+        let ability_stat = matches!(
+            self.stat,
+            ModStat::Cooldown | ModStat::Power | ModStat::Reach
+        );
+        match self.target {
+            ModTarget::Weapon => v.check(
+                !ability_stat && self.abilities.is_empty(),
+                "stat",
+                "weapon mods change weapon stats",
+            ),
+            ModTarget::Ability => v.check(
+                !weapon_stat && self.behaviors.is_empty(),
+                "stat",
+                "ability mods change ability stats",
+            ),
+        };
     }
 }
 
@@ -577,6 +621,12 @@ content_id!(
     classes,
     ClassDef
 );
+content_id!(
+    /// A weapon or ability upgrade in `mods.toml`.
+    ModId,
+    mods,
+    ModDef
+);
 
 impl PlanetId {
     pub fn name(self) -> &'static str {
@@ -595,10 +645,9 @@ impl WeaponId {
         &self.info().name
     }
 
-    /// Stats at `level` (1-based, clamped to the defined levels).
-    pub fn stats(self, level: u8) -> WeaponStats {
-        let levels = &self.info().levels;
-        levels[usize::from(level.max(1) - 1).min(levels.len() - 1)]
+    /// Base stats (before upgrades).
+    pub fn base(self) -> WeaponStats {
+        self.info().stats
     }
 }
 
@@ -701,28 +750,85 @@ impl PlanetId {
     }
 }
 
-/// A level-up choice.
+/// What a level-up (or cache) can give.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum Perk {
+pub enum Upgrade {
+    /// A new weapon in a free slot (dive levels in `pick_levels`).
     NewWeapon(WeaponId),
-    WeaponLevel(WeaponId),
+    /// A mod on one carried weapon.
+    WeaponMod(WeaponId, ModId),
+    /// A mod on the class ability.
+    AbilityMod(ModId),
+    /// A field or class perk.
     Field(PerkId),
 }
 
-impl Perk {
+/// One offered choice: an upgrade at a rarity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Offer {
+    pub upgrade: Upgrade,
+    pub rarity: Rarity,
+}
+
+impl ModId {
+    /// Value at a rarity.
+    pub fn amount(self, rarity: Rarity) -> f32 {
+        self.info().amounts[rarity.index()]
+    }
+}
+
+impl PerkId {
+    /// Effect amount at a rarity (multiplicative effects scale their change
+    /// from 1).
+    pub fn amount(self, rarity: Rarity) -> f32 {
+        let info = self.info();
+        let k = content().tuning.rarity.perk_scale[rarity.index()];
+        if info.effect.multiplicative() {
+            1.0 + (info.amount - 1.0) * k
+        } else {
+            info.amount * k
+        }
+    }
+}
+
+/// A number without needless decimals ("12", "1.5").
+fn number(v: f32) -> String {
+    if (v - v.round()).abs() < 0.01 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.1}")
+    }
+}
+
+impl Offer {
     pub fn title(self) -> String {
-        match self {
-            Self::NewWeapon(w) => format!("NEW: {}", w.info().name),
-            Self::WeaponLevel(w) => format!("{} +1", w.info().name),
-            Self::Field(p) => p.info().title.clone(),
+        match self.upgrade {
+            Upgrade::NewWeapon(w) => format!("NEW WEAPON: {}", w.info().name),
+            Upgrade::WeaponMod(w, m) => format!("{}: {}", w.info().name, m.info().title),
+            Upgrade::AbilityMod(m) => format!("Ability: {}", m.info().title),
+            Upgrade::Field(p) => p.info().title.clone(),
         }
     }
 
     pub fn description(self) -> String {
-        match self {
-            Self::NewWeapon(w) => w.info().description.clone(),
-            Self::WeaponLevel(_) => "More damage, speed and projectiles.".into(),
-            Self::Field(p) => p.info().description.clone(),
+        match self.upgrade {
+            Upgrade::NewWeapon(w) => w.info().description.clone(),
+            Upgrade::WeaponMod(_, m) | Upgrade::AbilityMod(m) => m
+                .info()
+                .description
+                .replace("{amount}", &number(m.amount(self.rarity))),
+            Upgrade::Field(p) => {
+                let a = p.amount(self.rarity);
+                let percent = if p.info().effect.multiplicative() {
+                    (a - 1.0).abs() * 100.0
+                } else {
+                    a * 100.0
+                };
+                p.info()
+                    .description
+                    .replace("{amount}", &number(a))
+                    .replace("{percent}", &number(percent))
+            }
         }
     }
 }
@@ -828,13 +934,39 @@ mod tests {
         assert_eq!(bank, Materials::new(5, 0, 0));
     }
 
+    /// Rarer offers are worth more, and descriptions show the real amount.
     #[test]
-    fn weapon_levels_improve() {
-        let max = content().tuning.weapons.max_level;
-        for w in WeaponId::all() {
-            let (a, b) = (w.stats(1), w.stats(max));
-            assert!(b.damage > a.damage, "{}", w.key());
-            assert!(b.cooldown <= a.cooldown, "{}", w.key());
+    fn rarity_scales_amounts_and_text() {
+        let hot = ModId::from_key("hotter-rounds").unwrap();
+        assert!(hot.amount(Rarity::Legendary) > hot.amount(Rarity::Common));
+        let blaster = WeaponId::from_key("pulse-blaster").unwrap();
+        let offer = Offer {
+            upgrade: Upgrade::WeaponMod(blaster, hot),
+            rarity: Rarity::Rare,
+        };
+        assert!(
+            offer.description().contains("48"),
+            "{}",
+            offer.description()
+        );
+        let boots = PerkId::from_key("servo-boots").unwrap();
+        assert!(boots.amount(Rarity::Legendary) > boots.amount(Rarity::Common));
+        assert!(boots.amount(Rarity::Common) > 1.0);
+        let text = Offer {
+            upgrade: Upgrade::Field(boots),
+            rarity: Rarity::Common,
+        }
+        .description();
+        assert_eq!(text, "+10% movement speed.");
+        // Elements need rare, behaviour changes legendary.
+        for m in ModId::all() {
+            let info = m.info();
+            if info.stat == ModStat::Element {
+                assert!(info.min_rarity >= Rarity::Rare, "{}", m.key());
+            }
+            if info.stat == ModStat::Special {
+                assert_eq!(info.min_rarity, Rarity::Legendary, "{}", m.key());
+            }
         }
     }
 }

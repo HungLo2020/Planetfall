@@ -34,7 +34,7 @@ pub(super) fn projectiles(p: &mut Painter<'_, '_>, run: &Run) {
         }
     }
     for b in &run.beams {
-        let color = b.weapon.info().color;
+        let color = b.color;
         let fade = b.ttl as f32 / 9.0;
         for w in b.points.windows(2) {
             let (a, c) = (w[0], w[1]);

@@ -27,8 +27,8 @@ mod spawner;
 mod weapons;
 
 use crate::content::{
-    ClassId, EnemyId, Material, Materials, Perk, PerkEffect, PlanetId, WeaponId, content, seconds,
-    xp_to_next,
+    ClassId, Element, EnemyId, Material, Materials, ModId, ModStat, Offer, PerkEffect, PlanetId,
+    Rarity, Special, WeaponId, WeaponStats, content, seconds, xp_to_next,
 };
 use crate::events::GameEvent;
 use crate::input::{Command, GameInput};
@@ -83,13 +83,86 @@ pub struct Mining {
 }
 
 /// A class's active ability during a drop.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Ability {
     pub tier: u8,
-    /// Ticks until it can be used again.
+    /// Ticks until the next charge is ready.
     pub cooldown: u32,
     /// The full cooldown last started (for the HUD).
     pub cooldown_total: u32,
+    /// Uses ready now, and the most it can hold (Echo Step gives two).
+    pub charges: u8,
+    pub max_charges: u8,
+    /// Ability upgrades taken this drop, with their rarity.
+    pub mods: Vec<(ModId, Rarity)>,
+}
+
+impl Ability {
+    fn sum(&self, stat: ModStat) -> f32 {
+        self.mods
+            .iter()
+            .filter(|(m, _)| m.info().stat == stat)
+            .map(|(m, r)| m.amount(*r) / 100.0)
+            .sum()
+    }
+
+    /// Damage multiplier from upgrades.
+    pub fn power(&self) -> f32 {
+        1.0 + self.sum(ModStat::Power)
+    }
+
+    /// Range, duration and post-count multiplier from upgrades.
+    pub fn reach(&self) -> f32 {
+        1.0 + self.sum(ModStat::Reach)
+    }
+
+    pub fn has(&self, special: Special) -> bool {
+        self.mods
+            .iter()
+            .any(|(m, _)| m.info().special == Some(special))
+    }
+
+    pub fn stacks(&self, id: ModId) -> u32 {
+        self.mods.iter().filter(|(m, _)| *m == id).count() as u32
+    }
+}
+
+/// Element potencies carried by a hit (index by [`Element::index`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Elements(pub [f32; 4]);
+
+impl Elements {
+    pub fn get(&self, e: Element) -> f32 {
+        self.0[e.index()]
+    }
+
+    pub fn add(&mut self, e: Element, potency: f32) {
+        self.0[e.index()] += potency;
+    }
+
+    pub fn any(&self) -> bool {
+        self.0.iter().any(|p| *p > 0.0)
+    }
+}
+
+/// One instance of damage to an enemy.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Hit {
+    pub damage: f32,
+    /// Bonus against heavy enemies (from the attacker).
+    pub heavy: f32,
+    pub elements: Elements,
+    /// Shock arcs and burns do not set off further shock arcs.
+    pub secondary: bool,
+}
+
+impl Hit {
+    pub fn plain(damage: f32) -> Self {
+        Self {
+            damage,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -125,11 +198,14 @@ pub struct Player {
     pub dash_cooldown_multiplier: f32,
     pub heavy_damage: f32,
     pub ability_cooldown_multiplier: f32,
+    pub luck: f32,
     pub mining: Option<Mining>,
     mine_sound: u32,
     pub weapons: Vec<WeaponSlot>,
     pub drone_angle: f32,
     pub ability: Ability,
+    /// Opened caches waiting to offer their upgrade.
+    pending_caches: u32,
 }
 
 impl Player {
@@ -166,6 +242,7 @@ impl Player {
             dash_cooldown_multiplier: 1.0,
             heavy_damage: 0.0,
             ability_cooldown_multiplier: 1.0,
+            luck: 0.0,
             mining: None,
             mine_sound: 0,
             weapons: vec![WeaponSlot::new(loadout.start_weapon, 0.5)],
@@ -174,7 +251,11 @@ impl Player {
                 tier: class.ability_tier(loadout.class_level),
                 cooldown: 0,
                 cooldown_total: 1,
+                charges: 1,
+                max_charges: 1,
+                mods: Vec::new(),
             },
+            pending_caches: 0,
         };
         let tier = class.passive_tier(loadout.class_level);
         for effect in &class.info().passive.effects {
@@ -212,6 +293,7 @@ impl Player {
             PerkEffect::DashCooldown => self.dash_cooldown_multiplier *= a,
             PerkEffect::HeavyDamage => self.heavy_damage += a,
             PerkEffect::AbilityCooldown => self.ability_cooldown_multiplier *= a,
+            PerkEffect::Luck => self.luck += a,
         }
     }
 
@@ -230,21 +312,45 @@ impl Player {
             PerkEffect::DashCooldown => self.dash_cooldown_multiplier,
             PerkEffect::HeavyDamage => self.heavy_damage,
             PerkEffect::AbilityCooldown => self.ability_cooldown_multiplier,
+            PerkEffect::Luck => self.luck,
         }
     }
 
-    pub fn weapon_level(&self, kind: WeaponId) -> Option<u8> {
-        self.weapons
+    pub fn carries(&self, kind: WeaponId) -> bool {
+        self.weapons.iter().any(|w| w.kind == kind)
+    }
+
+    /// Re-derive ability charges after an ability upgrade.
+    fn refresh_ability(&mut self) {
+        let max = if self.ability.has(Special::Echo) {
+            2
+        } else {
+            1
+        };
+        if max > self.ability.max_charges {
+            self.ability.charges += max - self.ability.max_charges;
+            self.ability.max_charges = max;
+        }
+    }
+
+    /// Ability cooldown multiplier including Quick Charge upgrades.
+    pub fn ability_cooldown(&self) -> f32 {
+        let faster: f32 = self
+            .ability
+            .mods
             .iter()
-            .find(|w| w.kind == kind)
-            .map(|w| w.level)
+            .filter(|(m, _)| m.info().stat == ModStat::Cooldown)
+            .map(|(m, r)| m.amount(*r) / 100.0)
+            .sum();
+        self.ability_cooldown_multiplier / (1.0 + faster)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WeaponSlot {
     pub kind: WeaponId,
-    pub level: u8,
+    /// Upgrades taken this drop, with their rarity.
+    pub mods: Vec<(ModId, Rarity)>,
     cooldown: f32,
     /// Ticks since this weapon last fired (for muzzle flashes).
     pub since_fired: u32,
@@ -256,11 +362,61 @@ impl WeaponSlot {
     fn new(kind: WeaponId, cooldown: f32) -> Self {
         Self {
             kind,
-            level: 1,
+            mods: Vec::new(),
             cooldown,
             since_fired: 999,
             aim: 0.0,
         }
+    }
+
+    /// 1 plus the upgrades taken (for the HUD).
+    pub fn level(&self) -> usize {
+        1 + self.mods.len()
+    }
+
+    fn sum(&self, stat: ModStat) -> f32 {
+        self.mods
+            .iter()
+            .filter(|(m, _)| m.info().stat == stat)
+            .map(|(m, r)| m.amount(*r))
+            .sum()
+    }
+
+    /// Base stats with every upgrade applied.
+    pub fn stats(&self) -> WeaponStats {
+        let mut s = self.kind.base();
+        let growth = content().tuning.weapons.growth * self.mods.len() as f32;
+        s.damage *= 1.0 + growth + self.sum(ModStat::Damage) / 100.0;
+        s.cooldown /= 1.0 + self.sum(ModStat::FireRate) / 100.0;
+        s.count += self.sum(ModStat::Count).round() as u32;
+        s.range *= 1.0 + self.sum(ModStat::Range) / 100.0;
+        s.radius *= 1.0 + self.sum(ModStat::Area) / 100.0;
+        s.pierce += self.sum(ModStat::Pierce).round() as u32;
+        s
+    }
+
+    /// The weapon's base element plus element upgrades.
+    pub fn elements(&self) -> Elements {
+        let mut e = Elements::default();
+        if let Some(base) = self.kind.info().element {
+            e.add(base.kind, base.potency);
+        }
+        for (m, r) in &self.mods {
+            if let Some(element) = m.info().element {
+                e.add(element, m.amount(*r));
+            }
+        }
+        e
+    }
+
+    pub fn has(&self, special: Special) -> bool {
+        self.mods
+            .iter()
+            .any(|(m, _)| m.info().special == Some(special))
+    }
+
+    pub fn stacks(&self, id: ModId) -> u32 {
+        self.mods.iter().filter(|(m, _)| *m == id).count() as u32
     }
 }
 
@@ -269,8 +425,9 @@ impl WeaponSlot {
 pub enum DeployableKind {
     /// A shock post the horde cannot pass.
     Barrier,
-    /// Fires `weapon` at the nearest enemy in range.
-    Turret { weapon: WeaponId },
+    /// Fires `weapon` at the nearest enemy in range; a mobile one follows
+    /// its owner.
+    Turret { weapon: WeaponId, mobile: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -283,9 +440,10 @@ pub struct Deployable {
     pub ttl: u32,
     pub total: u32,
     damage: f32,
-    /// Turret reach in metres.
+    /// Turret reach in metres (barriers: zap reach).
     pub range: f32,
     heavy: f32,
+    elements: Elements,
     cooldown: f32,
     /// Ticks since it last fired or zapped something.
     pub since_fired: u32,
@@ -310,6 +468,14 @@ pub struct Enemy {
     drone_cooldown: u32,
     speed_scale: f32,
     alerted: bool,
+    /// Element statuses: ticks left (and damage per second).
+    pub burning: u32,
+    burn_dps: f32,
+    pub corroded: u32,
+    acid_dps: f32,
+    /// Builds up from cold hits (0..1); at 1 the enemy freezes.
+    pub chill: f32,
+    pub frozen: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -338,6 +504,9 @@ pub struct Projectile {
     damage: f32,
     /// Bonus against heavy enemies (from the firing player).
     heavy: f32,
+    elements: Elements,
+    /// Mortar shells that split on impact.
+    cluster: bool,
     radius: f32,
     pub age: u32,
     ttl: u32,
@@ -353,7 +522,8 @@ impl Projectile {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Beam {
-    pub weapon: WeaponId,
+    /// Linear colour (the firing weapon's, or the shock colour).
+    pub color: [f32; 3],
     pub points: Vec<V2>,
     pub ttl: u32,
 }
@@ -423,13 +593,24 @@ pub enum RunOutcome {
     Abandoned,
 }
 
+/// Why an upgrade choice is on screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OfferSource {
+    LevelUp,
+    /// A dive level that grants a new weapon.
+    WeaponPick,
+    /// A supply cache (rare or better).
+    Cache,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RunState {
     Active,
     /// A player chooses one of `choices`; the drop pauses meanwhile.
     LevelUp {
         player: usize,
-        choices: Vec<Perk>,
+        choices: Vec<Offer>,
+        source: OfferSource,
     },
     Ended(RunOutcome),
 }
@@ -563,9 +744,17 @@ impl Run {
         &mut self.players[0]
     }
 
-    pub fn level_up_choices(&self) -> Option<&[Perk]> {
+    pub fn level_up_choices(&self) -> Option<&[Offer]> {
         match &self.state {
             RunState::LevelUp { choices, .. } => Some(choices),
+            _ => None,
+        }
+    }
+
+    /// Why the current choice is offered.
+    pub fn offer_source(&self) -> Option<OfferSource> {
+        match &self.state {
+            RunState::LevelUp { source, .. } => Some(*source),
             _ => None,
         }
     }
@@ -610,12 +799,14 @@ impl Run {
         }
         match &self.state {
             RunState::Ended(_) => return,
-            RunState::LevelUp { player, choices } => {
+            RunState::LevelUp {
+                player, choices, ..
+            } => {
                 let player = *player;
                 if let Some(Command::ChoosePerk(i)) = input(player).command
-                    && let Some(&perk) = choices.get(i)
+                    && let Some(&offer) = choices.get(i)
                 {
-                    self.apply_perk(player, perk, events);
+                    self.apply_offer(player, offer, events);
                     self.state = RunState::Active;
                     self.offer_level_up(events);
                 }
@@ -644,6 +835,7 @@ impl Run {
         self.fire_weapons(events);
         self.update_projectiles(events);
         self.update_drones(events);
+        self.update_statuses(events);
         self.update_enemies(events);
         self.update_blasts();
         self.remove_dead(events);

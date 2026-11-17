@@ -1,7 +1,9 @@
 //! A simple autopilot that plays the whole loop. Used for headless runs,
 //! soak tests and CI, so every feature is drivable without a window.
 
-use crate::content::{ClassId, Material, PlanetId, ShipBlock, UpgradeId};
+use crate::content::{
+    ClassId, Material, ModStat, Offer, PerkEffect, PlanetId, ShipBlock, Upgrade, UpgradeId,
+};
 use crate::game::{Game, Phase, Terminal, nearest_ore};
 use crate::input::{Command, GameInput};
 use crate::math::V2;
@@ -164,14 +166,18 @@ impl Autopilot {
         let Some(run) = &game.run else {
             return GameInput::default();
         };
-        if run.level_up_choices().is_some() {
+        if let Some(choices) = run.level_up_choices() {
             return GameInput {
-                command: pulse.then_some(Command::ChoosePerk(0)),
+                command: pulse.then_some(Command::ChoosePerk(best_offer(choices))),
                 ..GameInput::default()
             };
         }
         let player = run.player().pos;
-        let goal: Option<V2> = if run.objective_done {
+        // Build up before calling the pod, as a player would: a couple of
+        // minutes or a few levels, whichever comes first.
+        let ready =
+            run.objective_done && (run.tutorial || run.minutes() >= 2.0 || run.player().level >= 6);
+        let goal: Option<V2> = if ready {
             Some(run.landing)
         } else if let Some(cache) = run
             .caches
@@ -183,7 +189,7 @@ impl Autopilot {
             nearest_ore(run, Material::Lumite)
         };
         let mut movement = goal.map_or(V2::new(0.0, 0.0), |g| (g - player).normalize_or_zero());
-        if run.objective_done && run.landing.distance(player) < 1.5 {
+        if ready && run.landing.distance(player) < 1.5 {
             movement = V2::new(0.0, 0.0);
         }
         // Sidestep nearby hostiles.
@@ -203,14 +209,40 @@ impl Autopilot {
         let ability = run.player().ability.cooldown == 0 && crowd >= 3 && pulse;
         GameInput {
             movement: movement.clamp_length_max(1.0),
-            call_extraction: run.objective_done
-                && matches!(run.extraction, Extraction::Idle)
-                && pulse,
+            call_extraction: ready && matches!(run.extraction, Extraction::Idle) && pulse,
             dash: run.player().hurt_ticks > 0 && pulse,
             ability,
             ..GameInput::default()
         }
     }
+}
+
+/// A sensible pick: rarer first, then new weapons and offence over
+/// utility.
+fn best_offer(choices: &[Offer]) -> usize {
+    let score = |o: &Offer| {
+        let kind = match o.upgrade {
+            Upgrade::NewWeapon(_) => 50,
+            Upgrade::WeaponMod(_, m) => match m.info().stat {
+                ModStat::Special => 40,
+                ModStat::Damage | ModStat::FireRate | ModStat::Count => 30,
+                ModStat::Element => 25,
+                _ => 15,
+            },
+            Upgrade::AbilityMod(_) => 18,
+            Upgrade::Field(p) => match p.info().effect {
+                PerkEffect::Damage | PerkEffect::FireRate | PerkEffect::MaxHealth => 22,
+                PerkEffect::Regeneration => 20,
+                _ => 10,
+            },
+        };
+        kind + o.rarity.index() as i32 * 12
+    };
+    choices
+        .iter()
+        .enumerate()
+        .max_by_key(|(i, o)| (score(o), -(*i as i32)))
+        .map_or(0, |(i, _)| i)
 }
 
 /// The class the autopilot plays: the starter through the tutorial, then a

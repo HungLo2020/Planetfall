@@ -23,8 +23,8 @@ the main menu. A drop in progress is saved too and resumes where you left it.
 3. **Drop.** The pod falls to a landing site in a generated cave.
 4. **Surface.** Weapons fire automatically at the nearest hostile. Walk into
    rock to drill through it. Press Q / (LB) for the class ability. Collect XP shards to level up (pick 1 of 3 field
-   perks; the run pauses while you choose). Walk over **weapon caches** for new
-   weapons. Mine **lumite** to complete the objective.
+   upgrades; the run pauses while you choose). Walk over **supply caches** for
+   a rare-or-better upgrade. Mine **lumite** to complete the objective.
 5. **Extract.** Press F / (Y) once the objective is done. The pod lands at the
    drop site after 12 s and the horde intensifies. Stand inside the ring for 6 s
    (leaving drains progress) to lift off.
@@ -51,8 +51,8 @@ Warden loses nothing.
 | Warden | Scattergun | **Barrier**: a row of shock posts the horde cannot pass | **Hold the Line**: +25 max health, extraction zone fills 30% faster |
 | Engineer | Orbit Drones | **Sentry Turret**: a turret that fires at the nearest hostile | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
 
-- **Familiar weapons** (two per class) are offered three times as often on
-  level-ups and from caches. Each can be chosen as the starting weapon once
+- **Familiar weapons** (two per class) are offered three times as often in
+  the weapon picks at dive levels 5, 10 and 15. Each can be chosen as the starting weapon once
   unlocked (class levels 2 and 5, or found on a dive in a later stage); the
   signature weapon then joins the pool.
 - **Class XP**: everything collected on a dive plus a bonus for extracting
@@ -87,18 +87,46 @@ show keyboard or controller labels depending on the last device used.
 Hazard scales enemy health and damage. Spawn pressure grows with time on the
 surface and nearly doubles during extraction.
 
-## Weapons (levels 1–5, max 4 carried)
+## Weapons (4 slots)
 
-| Weapon | Behaviour |
-|---|---|
-| Pulse Blaster | Striker signature. Fast bolts at the nearest target; twin bolts at 4, pierce at 5 |
-| Seam Cutter | Prospector signature. Short-range piercing cutting bolts |
-| Scattergun | Short-range pellet fan; more pellets per level |
-| Arc Caster | Chain lightning jumping between nearby enemies |
-| Plasma Mortar | Lobbed shells that burst in an area |
-| Orbit Drones | Blades circling the player, hitting anything they touch |
+| Weapon | Behaviour | Element |
+|---|---|---|
+| Pulse Blaster | Striker signature. Fast bolts at the nearest target | — |
+| Seam Cutter | Prospector signature. Short-range piercing cutting bolts | — |
+| Scattergun | Warden signature. Short-range pellet fan | — |
+| Arc Caster | Chain lightning jumping between nearby enemies | Shock |
+| Plasma Mortar | Lobbed shells that burst in an area (arcs over walls) | Fire |
+| Orbit Drones | Engineer signature. Blades circling the player | — |
 
-Weapons only fire with line of sight (the mortar arcs over walls).
+A dive starts with the class's starting weapon. Dive levels **5, 10 and 15**
+offer a choice of three new weapons (familiar ones three times as likely)
+until all four slots are full. Weapons only fire with line of sight (the
+mortar arcs over walls).
+
+## Upgrades, rarity and elements
+
+Every other level-up offers three upgrades, each rolled at a **rarity**:
+common, uncommon, rare or legendary (base odds 60/27/10/3; planet hazard and
+the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
++20/32/48/70% damage) and unlocks more:
+
+- **Weapon mods** (`mods.toml`): damage, fire rate, extra projectiles,
+  range, area, pierce. Every upgrade on a weapon also adds 6% damage (its
+  level, shown as Lv on the HUD).
+- **Elements** (rare and up): Incendiary (burn damage over time), Corrosive
+  (damage over time and +25% damage taken), Cryo (chill slows, then
+  freezes), Capacitor (hits may arc to a neighbour). The Arc Caster and
+  Plasma Mortar have shock and fire built in. Elements do not interact yet.
+- **Legendary behaviour changes**: Twin Barrel (bolts also fire at a second
+  target), Double Blast (a second fan behind you), Overload (lightning
+  forks), Cluster Shells (shells split into bomblets), Second Ring (a second
+  drone ring), and for abilities Mobile Sentry (the turret follows you),
+  Echo Step (two blink charges), Molten Bore (wider, burning bore) and Arc
+  Fence (barrier posts zap further, with shock).
+- **Ability mods**: Quick Charge, Amplifier, Extended.
+- **Field and class perks**, scaled by rarity.
+
+**Supply caches** offer a choice of three rare-or-better upgrades.
 
 ## Enemies
 
@@ -113,12 +141,12 @@ Enemies follow a flow field toward the player, separate from each other and
 climb out of the ground when they spawn. Weapons and enemies check line of
 sight with voxel raycasts, and mining a block repairs the flow field locally.
 
-## Field perks (on level-up)
+## Field perks
 
-New weapon, weapon +1, Reinforced Suit (+20 max health and heal), Servo Boots
-(+10% speed), Overcharge (+15% damage), Rapid Cycling (10% faster weapons),
-Magnetic Field (+1.5 m pickup range), Hardened Drill (+40% mining), Nanite
-Repair (+1 HP/s).
+Reinforced Suit (max health and heal), Servo Boots (speed), Overcharge
+(damage), Rapid Cycling (fire rate), Magnetic Field (pickup range), Hardened
+Drill (mining), Nanite Repair (regeneration), Lucky Charm (rarer upgrades),
+plus two class perks per class. Amounts scale with the rolled rarity.
 
 ## Ship modules (permanent)
 
@@ -162,13 +190,14 @@ Content and balance are TOML in `assets/data/` (shipped as
 
 | File | Holds |
 |---|---|
-| `weapons.toml` | Behaviour archetype, five levels of stats, held model, sound, colour, starter flag |
+| `weapons.toml` | Behaviour archetype, base stats, optional base element, held model, sound, colour |
 | `enemies.toml` | Behaviour archetype, stats, spawn rules (weight, group size, first minute, late or tutorial), drops, model, blood colour, sounds |
 | `planets.toml` | Unlock level, hazard, objective, ore chances, voxel palette, per-enemy spawn weights |
-| `perks.toml` | Field perks: effect, amount, weight, optional cap, optional class and class level |
+| `perks.toml` | Field perks: effect, common amount (scaled by rarity), weight, optional cap, optional class and class level |
+| `mods.toml` | Weapon and ability upgrades: stat, amounts per rarity, minimum rarity, element or legendary special, which behaviours or abilities, max stacks |
 | `classes.toml` | Classes: signature and familiar weapons, ability archetype and tiers, passive effects, unlock levels, suit colour |
 | `upgrades.toml` | Ship modules: effect, per-level amount, costs, room rectangle, station model and light |
-| `tuning.toml` | Player, weapon, XP, horde, extraction, tutorial and build-block numbers |
+| `tuning.toml` | Player, weapon slots and pick levels, rarity odds, XP, horde, class XP, extraction, tutorial and build-block numbers |
 | `models.toml` | Model names for files outside `assets/models` (Kenney props) |
 
 To add content that fits an existing archetype, add an entry with a new `id`

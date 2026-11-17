@@ -11,7 +11,7 @@
 //! - **Outlines** (`OutlineRenderer`): rings and a fill over the parts of the
 //!   player and the horde hidden behind rock, so nothing fights unseen.
 
-use planetfall_sim::content::{AbilityKind, EnemyBehavior, Material, PlanetId};
+use planetfall_sim::content::{AbilityKind, Element, EnemyBehavior, Material, PlanetId};
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::math::V2;
 use planetfall_sim::{Game, Phase};
@@ -356,6 +356,21 @@ impl Effects {
                         }
                     }
                 }
+                GameEvent::Status { element, at } => {
+                    let c = element_color(element);
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.35,
+                        count: 12,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.2,
+                        speed: [1.0, 3.0],
+                        life: [0.3, 0.6],
+                        size: [0.12, 0.02],
+                        color_start: [c[0], c[1], c[2], 1.0],
+                        color_end: [c[0] * 0.4, c[1] * 0.4, c[2] * 0.4, 0.0],
+                    })?;
+                }
                 GameEvent::Dashed => {
                     let p = run.player().pos;
                     dust.emit(&ParticleBurst {
@@ -372,6 +387,39 @@ impl Effects {
                     })?;
                 }
                 _ => {}
+            }
+        }
+        // Burning and corroded enemies shed embers and drips while it lasts.
+        if particles {
+            self.counter = self.counter.wrapping_add(1);
+            for (n, e) in run
+                .enemies
+                .iter()
+                .filter(|e| e.burning > 0 || e.corroded > 0)
+                .take(40)
+                .enumerate()
+            {
+                if !(self.counter as usize + n).is_multiple_of(4) {
+                    continue;
+                }
+                let element = if e.burning > 0 {
+                    Element::Fire
+                } else {
+                    Element::Acid
+                };
+                let c = element_color(element);
+                glow.emit(&ParticleBurst {
+                    position: [e.pos[0], 1.0, e.pos[1]],
+                    position_jitter: 0.3,
+                    count: 2,
+                    direction: [0.0, 1.0, 0.0],
+                    spread: 0.5,
+                    speed: [0.6, 1.6],
+                    life: [0.3, 0.6],
+                    size: [0.1, 0.02],
+                    color_start: [c[0], c[1], c[2], 1.0],
+                    color_end: [c[0] * 0.3, c[1] * 0.3, c[2] * 0.3, 0.0],
+                })?;
             }
         }
         for burst in &glow.bursts {
@@ -524,6 +572,16 @@ fn glints(at: V2, height: f32, color: [f32; 3], count: u32) -> ParticleBurst {
         size: [0.1, 0.02],
         color_start: [color[0], color[1], color[2], 1.0],
         color_end: [color[0] * 0.5, color[1] * 0.5, color[2] * 0.5, 0.0],
+    }
+}
+
+/// HDR colour of an element's sparks.
+fn element_color(element: Element) -> [f32; 3] {
+    match element {
+        Element::Fire => [3.0, 1.3, 0.3],
+        Element::Acid => [0.9, 2.6, 0.4],
+        Element::Cold => [1.2, 2.0, 3.0],
+        Element::Shock => [1.6, 2.0, 3.0],
     }
 }
 

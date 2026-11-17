@@ -29,7 +29,12 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
    with both a field error and a dangling reference reports the field error
    first and the reference on the next attempt. Listing both would save an
    edit-reload cycle.
-4. **render-3d: particle systems have no `clear`.** Live particles survive a
+4. **ui: a node style paints beneath its widget.** `set_style` on a
+   `Widget::Button` draws the border first and the button's own background
+   over it, so a coloured button border never shows. Planetfall wraps each
+   upgrade offer in a styled panel instead. Painting the border after the
+   widget (or a button style) would fix it.
+5. **render-3d: particle systems have no `clear`.** Live particles survive a
    scene change (a new drop, a loaded save) until they expire. They are short
    enough not to matter here, but a reset would be tidier.
 

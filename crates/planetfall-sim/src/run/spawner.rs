@@ -108,6 +108,12 @@ impl Run {
                 drone_cooldown: 0,
                 speed_scale: self.rng.range_f32(0.85..1.15),
                 alerted: false,
+                burning: 0,
+                burn_dps: 0.0,
+                corroded: 0,
+                acid_dps: 0.0,
+                chill: 0.0,
+                frozen: 0,
             });
         }
     }

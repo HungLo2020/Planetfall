@@ -90,6 +90,7 @@ fn install_content(asset_root: &std::path::Path) -> Result<(), String> {
         upgrades: &texts[4],
         tuning: &texts[5],
         classes: &texts[6],
+        mods: &texts[7],
     })
     .map_err(|e| format!("content data in {}: {e}", dir.display()))?;
     content::install(loaded).map_err(|_| "content was read before it was installed".to_owned())

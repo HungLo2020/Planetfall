@@ -99,11 +99,11 @@ impl Tutorial {
             ),
             TutorialStep::Collect => (
                 "SHIP AI // FIELD UPGRADES",
-                "Fallen hostiles drop green XP shards. Collect them to level up and pick a field upgrade. Press {ability} for your class ability when they close in.".into(),
+                "Fallen hostiles drop green XP shards. Collect them to level up and pick an upgrade: rarer ones are stronger, and legendary ones change how a weapon works. Press {ability} for your class ability when they close in.".into(),
             ),
             TutorialStep::Cache => (
-                "SHIP AI // WEAPON CACHE",
-                "I'm reading a supply cache nearby. Walk over it to claim a new weapon. Field gear doesn't survive the trip home, so use it.".into(),
+                "SHIP AI // SUPPLY CACHE",
+                "I'm reading a supply cache nearby. Walk over it for a rare upgrade. New weapons come as you level: one at levels 5, 10 and 15. Field gear doesn't survive the trip home, so use it.".into(),
             ),
             TutorialStep::Objective => (
                 "SHIP AI // OBJECTIVE",

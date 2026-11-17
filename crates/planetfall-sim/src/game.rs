@@ -454,7 +454,7 @@ impl Game {
                 .player()
                 .weapons
                 .iter()
-                .map(|w| (w.kind, w.level))
+                .map(|w| (w.kind, w.level() as u8))
                 .collect(),
             class,
             class_xp,

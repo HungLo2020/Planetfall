@@ -1,18 +1,21 @@
-# Level-up field perks (lost when the drop ends). New-weapon and weapon-level
-# choices come from weapons.toml.
+# Level-up field perks (lost when the drop ends), offered beside the weapon
+# and ability upgrades in mods.toml. Each offer rolls a rarity; `amount` is
+# the common value and scales by tuning.rarity.perk_scale (multiplicative
+# effects scale their change from 1). In descriptions `{amount}` is the
+# scaled value and `{percent}` the change as a percentage.
 #
 # effect: max_health (also heals), move_speed (multiplier), damage,
 # fire_rate (cooldown multiplier), pickup_range, mining, regeneration (HP/s),
 # ore_bonus (chance of an extra ore drop), extraction_speed (faster hold),
 # dash_cooldown (multiplier), heavy_damage (bonus against enemies with 100+
-# health), ability_cooldown (multiplier). `max` caps the stacked total of an
+# health), ability_cooldown (multiplier), luck (better upgrade rarities). `max` caps the stacked total of an
 # additive effect. Class perks (`class`) are only offered to that class,
 # from class level `class_level`.
 
 [[perk]]
 id = "reinforced-suit"
 title = "Reinforced Suit"
-description = "+20 max health and heal 20."
+description = "+{amount} max health and heal {amount}."
 effect = "max_health"
 amount = 20.0
 weight = 2
@@ -20,7 +23,7 @@ weight = 2
 [[perk]]
 id = "servo-boots"
 title = "Servo Boots"
-description = "+10% movement speed."
+description = "+{percent}% movement speed."
 effect = "move_speed"
 amount = 1.1
 weight = 2
@@ -28,7 +31,7 @@ weight = 2
 [[perk]]
 id = "overcharge"
 title = "Overcharge"
-description = "+15% damage for all weapons."
+description = "+{percent}% damage for all weapons."
 effect = "damage"
 amount = 0.15
 weight = 2
@@ -36,7 +39,7 @@ weight = 2
 [[perk]]
 id = "rapid-cycling"
 title = "Rapid Cycling"
-description = "Weapons cycle 10% faster."
+description = "Weapons cycle {percent}% faster."
 effect = "fire_rate"
 amount = 0.9
 weight = 2
@@ -44,7 +47,7 @@ weight = 2
 [[perk]]
 id = "magnetic-field"
 title = "Magnetic Field"
-description = "+1.5 m pickup range."
+description = "+{amount} m pickup range."
 effect = "pickup_range"
 amount = 1.5
 weight = 2
@@ -52,7 +55,7 @@ weight = 2
 [[perk]]
 id = "hardened-drill"
 title = "Hardened Drill"
-description = "+40% mining speed."
+description = "+{percent}% mining speed."
 effect = "mining"
 amount = 0.4
 weight = 1
@@ -60,18 +63,27 @@ weight = 1
 [[perk]]
 id = "nanite-repair"
 title = "Nanite Repair"
-description = "Regenerate 1 health per second."
+description = "Regenerate {amount} health per second."
 effect = "regeneration"
 amount = 1.0
 weight = 2
 max = 3.0
+
+[[perk]]
+id = "lucky-charm"
+title = "Lucky Charm"
+description = "+{percent}% luck: rarer upgrades turn up more often."
+effect = "luck"
+amount = 0.25
+weight = 1
+max = 1.5
 
 # -- Class perks ------------------------------------------------------------
 
 [[perk]]
 id = "momentum"
 title = "Momentum"
-description = "Dash recharges 20% faster."
+description = "Dash recharges {percent}% faster."
 effect = "dash_cooldown"
 amount = 0.8
 weight = 2
@@ -80,7 +92,7 @@ class = "striker"
 [[perk]]
 id = "executioner"
 title = "Executioner"
-description = "+25% damage against heavy enemies."
+description = "+{percent}% damage against heavy enemies."
 effect = "heavy_damage"
 amount = 0.25
 weight = 2
@@ -90,7 +102,7 @@ class_level = 3
 [[perk]]
 id = "rich-veins"
 title = "Rich Veins"
-description = "+20% chance of extra ore from every vein."
+description = "+{percent}% chance of extra ore from every vein."
 effect = "ore_bonus"
 amount = 0.2
 weight = 2
@@ -99,7 +111,7 @@ class = "prospector"
 [[perk]]
 id = "overclocked-drill"
 title = "Overclocked Drill"
-description = "+60% mining speed."
+description = "+{percent}% mining speed."
 effect = "mining"
 amount = 0.6
 weight = 2
@@ -109,7 +121,7 @@ class_level = 3
 [[perk]]
 id = "bulwark"
 title = "Bulwark"
-description = "+30 max health and heal 30."
+description = "+{amount} max health and heal {amount}."
 effect = "max_health"
 amount = 30.0
 weight = 2
@@ -118,7 +130,7 @@ class = "warden"
 [[perk]]
 id = "dug-in"
 title = "Dug In"
-description = "Hold the extraction zone 25% faster."
+description = "Hold the extraction zone {percent}% faster."
 effect = "extraction_speed"
 amount = 0.25
 weight = 1
@@ -129,7 +141,7 @@ max = 1.5
 [[perk]]
 id = "capacitors"
 title = "Capacitors"
-description = "Ability recharges 15% faster."
+description = "Ability recharges {percent}% faster."
 effect = "ability_cooldown"
 amount = 0.85
 weight = 2
@@ -138,7 +150,7 @@ class = "engineer"
 [[perk]]
 id = "auto-repair"
 title = "Auto-Repair"
-description = "Regenerate 1.5 health per second."
+description = "Regenerate {amount} health per second."
 effect = "regeneration"
 amount = 1.5
 weight = 2

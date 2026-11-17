@@ -24,7 +24,16 @@ impl Run {
         p.dash_cooldown = p.dash_cooldown.saturating_sub(1);
         p.invulnerable_ticks = p.invulnerable_ticks.saturating_sub(1);
         p.hurt_ticks = p.hurt_ticks.saturating_sub(1);
-        p.ability.cooldown = p.ability.cooldown.saturating_sub(1);
+        // Recharge one ability charge at a time.
+        if p.ability.charges < p.ability.max_charges {
+            p.ability.cooldown = p.ability.cooldown.saturating_sub(1);
+            if p.ability.cooldown == 0 {
+                p.ability.charges += 1;
+                if p.ability.charges < p.ability.max_charges {
+                    p.ability.cooldown = p.ability.cooldown_total;
+                }
+            }
+        }
         if input.dash && p.dash_cooldown == 0 && p.dash_ticks == 0 {
             p.dash_ticks = tuning.dash_ticks;
             p.dash_cooldown =

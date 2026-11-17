@@ -92,14 +92,19 @@ pub fn build(cx: &HudContext) -> Layer {
                 if !weapons.is_empty() {
                     weapons.push_str("  ·  ");
                 }
-                weapons.push_str(&format!("{} {}", wpn.kind.name(), roman(wpn.level)));
+                weapons.push_str(&format!("{} Lv{}", wpn.kind.name(), wpn.level()));
             }
             b.paragraph(status, &weapons, TextStyle::Small);
             // Class ability: ready prompt or recharge bar.
             let ability = &p.class.info().ability;
-            let line = if p.ability.cooldown == 0 {
+            let charges = if p.ability.max_charges > 1 {
+                format!(" ×{}", p.ability.charges)
+            } else {
+                String::new()
+            };
+            let line = if p.ability.charges > 0 {
                 text(&format!(
-                    "{}  ·  {} READY  {{ability}}",
+                    "{}  ·  {} READY{charges}  {{ability}}",
                     p.class.name().to_uppercase(),
                     ability.name.to_uppercase()
                 ))

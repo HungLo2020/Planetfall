@@ -15,13 +15,23 @@ spawn_invulnerability = 2.0
 
 [weapons]
 max_carried = 4
-max_level = 5
-# Damage boost when a cache finds nothing left to upgrade.
-cache_overflow_damage = 0.1
-new_weapon_weight = 3
-level_up_weight = 4
+# Dive levels that offer a choice of new weapon while a slot is free; every
+# other level-up offers rarity-rolled upgrades.
+pick_levels = [5, 10, 15]
 # Weight multiplier for weapons the class is familiar with.
 familiar_weight = 3.0
+# Damage each upgrade on a weapon adds on top of the upgrade itself.
+growth = 0.06
+
+[rarity]
+# Base odds of common, uncommon, rare and legendary upgrade offers.
+weights = [60.0, 27.0, 10.0, 3.0]
+# Perk amounts at each rarity.
+perk_scale = [1.0, 1.6, 2.3, 3.2]
+# Planet hazard above 1 (and luck) shift the odds toward rarer offers.
+hazard_bonus = 0.5
+# Supply caches always offer this rarity or better.
+cache_min = "rare"
 
 [xp]
 # XP to advance from level n: base + n * per_level.
@@ -31,7 +41,7 @@ cache_xp = 5
 
 [horde]
 # One group per period at intensity 1; intensity grows with time.
-spawn_period = 2.6
+spawn_period = 2.9
 cap = 160
 tutorial_cap = 45
 tutorial_intensity = 0.5

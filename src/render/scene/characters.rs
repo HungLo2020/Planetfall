@@ -108,7 +108,28 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         } else {
             outline::ENEMY
         };
-        p.character(&info.model, root, &layers, glow, Some(style));
+        // Element statuses: frost, flame flicker, acid sheen.
+        let mut tint = [1.0f32; 3];
+        if e.frozen > 0 {
+            tint = [0.65, 0.9, 1.35];
+        } else if e.chill > 0.05 {
+            tint = mix3(tint, [0.75, 0.9, 1.2], e.chill.min(1.0));
+        }
+        if e.corroded > 0 {
+            tint = [tint[0] * 0.75, tint[1] * 1.15, tint[2] * 0.6];
+        }
+        if e.burning > 0 {
+            glow += 0.25 + 0.15 * (p.time * 18.0 + e.id as f32).sin();
+        }
+        p.character_tinted(
+            &info.model,
+            root,
+            &layers,
+            glow,
+            Some(style),
+            tint,
+            [1.0; 3],
+        );
     }
     for c in &run.corpses {
         let info = c.kind.info();

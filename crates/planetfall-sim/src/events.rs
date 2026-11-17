@@ -2,7 +2,8 @@
 //! The simulation never depends on whether anyone listens.
 
 use crate::content::{
-    AbilityKind, ClassId, EnemyId, Material, PlanetId, ShipBlock, UpgradeId, WeaponId,
+    AbilityKind, ClassId, Element, EnemyId, Material, PlanetId, Rarity, ShipBlock, UpgradeId,
+    WeaponId,
 };
 use crate::math::V2;
 
@@ -73,6 +74,19 @@ pub enum GameEvent {
     },
     WeaponFound {
         weapon: WeaponId,
+    },
+    /// A supply cache was opened (its upgrade choice follows).
+    CacheOpened {
+        at: V2,
+    },
+    /// A rare or legendary upgrade was taken.
+    RareUpgrade {
+        rarity: Rarity,
+    },
+    /// An element status took hold on an enemy (for effects).
+    Status {
+        element: Element,
+        at: V2,
     },
     ObjectiveComplete,
     // Extraction.

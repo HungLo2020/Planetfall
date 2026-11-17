@@ -7,13 +7,14 @@
 use super::{Builder, Layer, format_cost, format_materials, hud::roman};
 use crate::bindings::{self, Prompts};
 use crate::storage::{SlotState, SlotSummary};
-use planetfall_sim::content::{ClassId, PlanetId, UpgradeId, class_xp_to_next, content};
+use planetfall_sim::content::{ClassId, PlanetId, Rarity, UpgradeId, class_xp_to_next, content};
+use planetfall_sim::run::OfferSource;
 use planetfall_sim::run::RunOutcome;
 use planetfall_sim::{Command, Game, Terminal};
 use quasar_input::{Bindings, Button, DeviceFamily, InputDevice};
 use quasar_ui::{
-    ActionId, Align, ControlEntry, ControlsOutcome, ControlsScreen, LayoutItem, Length, NodeId,
-    Rect, TextMeasure, TextStyle, UiEvent, UiInput, UiText, Widget,
+    ActionId, Align, Border, Color, ControlEntry, ControlsOutcome, ControlsScreen, LayoutItem,
+    Length, NodeId, NodeStyle, Rect, TextMeasure, TextStyle, UiEvent, UiInput, UiText, Widget,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -317,9 +318,9 @@ impl Menu {
         text: impl Into<String>,
         action: MenuAction,
         enabled: bool,
-    ) {
+    ) -> NodeId {
         let id = self.action(action);
-        b.button(parent, text, id, enabled);
+        b.button(parent, text, id, enabled)
     }
 
     fn build(
@@ -333,32 +334,61 @@ impl Menu {
         match content {
             Content::Screen(screen) => self.build_screen(b, screen, prompts, context),
             Content::LevelUp => {
-                let card = Self::card(b, 560.0);
-                let level = game.run.as_ref().map_or(1, |r| r.player().level);
-                b.label(
-                    card,
-                    format!("LEVEL {level} — FIELD UPGRADE"),
-                    TextStyle::Heading,
-                );
-                b.label(
-                    card,
-                    "Choose one. Field upgrades last until this drop ends.",
-                    TextStyle::Small,
-                );
-                let choices = game
-                    .run
-                    .as_ref()
+                let card = Self::card(b, 680.0);
+                let run = game.run.as_ref();
+                let level = run.map_or(1, |r| r.player().level);
+                let source = run.and_then(|r| r.offer_source());
+                let (title, hint) = match source {
+                    Some(OfferSource::WeaponPick) => (
+                        format!("LEVEL {level} — NEW WEAPON"),
+                        "Choose a weapon for a free slot. Familiar weapons turn up more often.",
+                    ),
+                    Some(OfferSource::Cache) => (
+                        "SUPPLY CACHE".to_owned(),
+                        "Choose one rare or better upgrade.",
+                    ),
+                    _ => (
+                        format!("LEVEL {level} — UPGRADE"),
+                        "Choose one. Upgrades last until this drop ends.",
+                    ),
+                };
+                b.label(card, title, TextStyle::Heading);
+                b.label(card, hint, TextStyle::Small);
+                let choices = run
                     .and_then(|r| r.level_up_choices())
                     .unwrap_or(&[])
                     .to_vec();
-                for (i, perk) in choices.iter().enumerate() {
+                for (i, offer) in choices.iter().enumerate() {
+                    let pick = source == Some(OfferSource::WeaponPick);
+                    let tag = if pick {
+                        String::new()
+                    } else {
+                        format!("[{}]  ", offer.rarity.name().to_uppercase())
+                    };
+                    // Each offer sits in a panel bordered in its rarity colour.
+                    let slot =
+                        b.panel(card, LayoutItem::size(Length::Fill, Length::Auto), 3.0, 5.0);
+                    let color = if pick {
+                        Color::rgba(140, 150, 160, 160)
+                    } else {
+                        rarity_color(offer.rarity)
+                    };
+                    let _ = b.ui.set_style(
+                        slot,
+                        Some(NodeStyle {
+                            background: None,
+                            border: Some(Border { width: 2.0, color }),
+                            radius: 3.0,
+                        }),
+                    );
                     self.button(
                         b,
-                        card,
-                        format!("{}  —  {}", perk.title(), perk.description()),
+                        slot,
+                        format!("{tag}{}", offer.title()),
                         MenuAction::Game(Command::ChoosePerk(i)),
                         true,
                     );
+                    b.paragraph(slot, &offer.description(), TextStyle::Small);
                 }
             }
             Content::Terminal => match &game.terminal {
@@ -713,7 +743,9 @@ impl Menu {
                             TextStyle::Small,
                         );
                     }
-                    None => self.button(b, card, "CONTINUE", MenuAction::Continue, false),
+                    None => {
+                        self.button(b, card, "CONTINUE", MenuAction::Continue, false);
+                    }
                 }
                 self.button(
                     b,
@@ -992,6 +1024,16 @@ fn signature(content: Content, game: &Game, prompts: &Prompts, context: &MenuCon
         Content::Screen(_) => s.push_str(&format!("|{context:?}")),
     }
     s
+}
+
+/// Border colour of an upgrade by rarity.
+fn rarity_color(rarity: Rarity) -> Color {
+    match rarity {
+        Rarity::Common => Color::rgba(140, 150, 160, 200),
+        Rarity::Uncommon => Color::rgba(90, 215, 100, 230),
+        Rarity::Rare => Color::rgba(80, 150, 255, 240),
+        Rarity::Legendary => Color::rgba(255, 165, 40, 255),
+    }
 }
 
 /// "1h 05m" / "12m".

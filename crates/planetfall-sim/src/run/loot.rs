@@ -1,12 +1,21 @@
-//! Loot and progression within a drop: pickups, weapon caches, level-up
-//! offers and perks (`perks.toml`, plus weapon choices from `weapons.toml`).
-//! Weapons the player's class is familiar with are offered more often, and
-//! class perks only to that class.
+//! Loot and progression within a drop: pickups, supply caches and upgrade
+//! offers.
+//!
+//! - Dive levels in `tuning.weapons.pick_levels` offer a choice of new
+//!   weapon (familiar weapons more often) while a slot is free.
+//! - Every other level-up offers three upgrades, each rolled at a rarity:
+//!   weapon mods and ability mods (`mods.toml`) and field or class perks
+//!   (`perks.toml`). Luck and planet hazard push the odds toward rarer
+//!   offers; elements need rare and behaviour changes legendary.
+//! - A supply cache offers three upgrades at rare or better.
 
-use super::{Pickup, PickupKind, Run, RunState, WeaponSlot};
-use crate::content::{DT, Perk, PerkId, WeaponId, content};
+use super::{OfferSource, Pickup, PickupKind, Player, Run, RunState, WeaponSlot};
+use crate::content::{DT, ModId, ModTarget, Offer, PerkId, Rarity, Upgrade, WeaponId, content};
 use crate::events::GameEvent;
 use crate::math::{FloatExt, V2};
+
+/// Offers per choice.
+const CHOICES: usize = 3;
 
 impl Run {
     pub(super) fn drop_pickup(&mut self, kind: PickupKind, at: V2) {
@@ -88,17 +97,6 @@ impl Run {
         }
     }
 
-    /// Weight for offering `weapon` to `player` (familiar weapons more often).
-    fn weapon_weight(&self, player: usize, weapon: WeaponId, base: u32) -> u32 {
-        let familiar = self.players[player].class.is_familiar(weapon);
-        let k = if familiar {
-            content().tuning.weapons.familiar_weight
-        } else {
-            1.0
-        };
-        ((base as f32 * k).round() as u32).max(1)
-    }
-
     /// Pick from weighted choices with the run's RNG.
     fn weighted<T: Copy>(&mut self, choices: &[(T, u32)]) -> Option<T> {
         let total: u32 = choices.iter().map(|(_, w)| w).sum();
@@ -119,8 +117,7 @@ impl Run {
             .map(|(c, _)| *c)
     }
 
-    /// Walking into a cache grants an unowned weapon (familiar ones are
-    /// likelier), else upgrades one.
+    /// Walking into a supply cache queues a rare-or-better upgrade choice.
     pub(super) fn update_caches(&mut self, events: &mut Vec<GameEvent>) {
         let tuning = &content().tuning;
         for i in 0..self.caches.len() {
@@ -138,58 +135,73 @@ impl Run {
             };
             self.caches[i].opened = true;
             self.caches_opened += 1;
-            let unowned: Vec<(WeaponId, u32)> = WeaponId::all()
-                .filter(|k| self.players[player].weapon_level(*k).is_none())
-                .map(|k| (k, self.weapon_weight(player, k, 1)))
-                .collect();
-            let carried = self.players[player].weapons.len();
-            let weapon = match self.weighted(&unowned) {
-                Some(kind) if carried < tuning.weapons.max_carried => {
-                    self.players[player]
-                        .weapons
-                        .push(WeaponSlot::new(kind, 0.3));
-                    kind
-                }
-                _ => {
-                    let max = tuning.weapons.max_level;
-                    let p = &mut self.players[player];
-                    match p
-                        .weapons
-                        .iter_mut()
-                        .filter(|w| w.level < max)
-                        .min_by_key(|w| w.level)
-                    {
-                        Some(w) => {
-                            w.level += 1;
-                            w.kind
-                        }
-                        None => {
-                            p.damage_multiplier += tuning.weapons.cache_overflow_damage;
-                            p.weapons[0].kind
-                        }
-                    }
-                }
-            };
+            self.players[player].pending_caches += 1;
             self.drop_pickup(PickupKind::Xp(tuning.xp.cache_xp), c.pos);
-            events.push(GameEvent::WeaponFound { weapon });
+            events.push(GameEvent::CacheOpened { at: c.pos });
         }
     }
 
-    /// The choices a level-up can offer `player` now, with their weights.
-    pub(super) fn perk_pool(&self, player: usize) -> Vec<(Perk, u32)> {
-        let tuning = &content().tuning.weapons;
+    /// Rarity odds for a player: base weights shifted toward rarer tiers by
+    /// luck and planet hazard. `min` zeroes everything below it.
+    pub(super) fn rarity_weights(&self, player: usize, min: Rarity) -> [f32; 4] {
+        let tuning = &content().tuning.rarity;
         let p = &self.players[player];
-        let mut pool = Vec::new();
-        if p.weapons.len() < tuning.max_carried {
-            for k in WeaponId::all().filter(|k| p.weapon_level(*k).is_none()) {
-                pool.push((
-                    Perk::NewWeapon(k),
-                    self.weapon_weight(player, k, tuning.new_weapon_weight),
-                ));
+        let shift = (1.0 + p.luck) * (1.0 + tuning.hazard_bonus * (self.hazard - 1.0).max(0.0));
+        let mut weights = tuning.weights;
+        for (i, w) in weights.iter_mut().enumerate() {
+            *w *= shift.powi(i as i32);
+            if i < min.index() {
+                *w = 0.0;
             }
         }
-        for w in p.weapons.iter().filter(|w| w.level < tuning.max_level) {
-            pool.push((Perk::WeaponLevel(w.kind), tuning.level_up_weight));
+        weights
+    }
+
+    fn roll_rarity(&mut self, player: usize, min: Rarity) -> Rarity {
+        let weights = self.rarity_weights(player, min);
+        let total: f32 = weights.iter().sum();
+        let mut roll = self.rng.next_f32() * total;
+        for r in Rarity::ALL {
+            roll -= weights[r.index()];
+            if roll < 0.0 && weights[r.index()] > 0.0 {
+                return r;
+            }
+        }
+        Rarity::ALL
+            .into_iter()
+            .rev()
+            .find(|r| weights[r.index()] > 0.0)
+            .unwrap_or(Rarity::Common)
+    }
+
+    /// Upgrades `player` could take at `rarity`, with their weights.
+    pub(super) fn upgrade_pool(&self, player: usize, rarity: Rarity) -> Vec<(Upgrade, u32)> {
+        let p = &self.players[player];
+        let mut pool = Vec::new();
+        let ability = p.class.info().ability.kind;
+        for m in ModId::all() {
+            let info = m.info();
+            if info.min_rarity > rarity {
+                continue;
+            }
+            let room = |taken: u32| info.max_stacks.is_none_or(|max| taken < max);
+            match info.target {
+                ModTarget::Weapon => {
+                    for w in &p.weapons {
+                        let fits = info.behaviors.is_empty()
+                            || info.behaviors.contains(&w.kind.info().behavior);
+                        if fits && room(w.stacks(m)) {
+                            pool.push((Upgrade::WeaponMod(w.kind, m), info.weight));
+                        }
+                    }
+                }
+                ModTarget::Ability => {
+                    let fits = info.abilities.is_empty() || info.abilities.contains(&ability);
+                    if fits && room(p.ability.stacks(m)) {
+                        pool.push((Upgrade::AbilityMod(m), info.weight));
+                    }
+                }
+            }
         }
         for perk in PerkId::all() {
             let info = perk.info();
@@ -201,12 +213,70 @@ impl Run {
                 .max
                 .is_some_and(|max| p.effect_total(info.effect) >= max);
             if for_class && !capped && info.weight > 0 {
-                pool.push((Perk::Field(perk), info.weight));
+                pool.push((Upgrade::Field(perk), info.weight));
             }
         }
         pool
     }
 
+    /// Three different upgrades, each at its own rolled rarity (never below
+    /// `min`). A rarity with nothing to offer falls back to the next lower.
+    fn roll_upgrades(&mut self, player: usize, min: Rarity) -> Vec<Offer> {
+        let mut offers: Vec<Offer> = Vec::new();
+        for _ in 0..CHOICES * 4 {
+            if offers.len() == CHOICES {
+                break;
+            }
+            let rolled = self.roll_rarity(player, min);
+            for rarity in Rarity::ALL
+                .into_iter()
+                .rev()
+                .filter(|r| *r <= rolled && *r >= min)
+            {
+                let pool: Vec<(Upgrade, u32)> = self
+                    .upgrade_pool(player, rarity)
+                    .into_iter()
+                    .filter(|(u, _)| offers.iter().all(|o| o.upgrade != *u))
+                    .collect();
+                if let Some(upgrade) = self.weighted(&pool) {
+                    offers.push(Offer { upgrade, rarity });
+                    break;
+                }
+            }
+        }
+        offers
+    }
+
+    /// New weapons `player` could pick, weighted toward familiar ones.
+    fn weapon_picks(&mut self, player: usize) -> Vec<Offer> {
+        let familiar = content().tuning.weapons.familiar_weight;
+        let p: &Player = &self.players[player];
+        let mut pool: Vec<(WeaponId, u32)> = WeaponId::all()
+            .filter(|w| !p.carries(*w))
+            .map(|w| {
+                let k = if p.class.is_familiar(w) {
+                    familiar
+                } else {
+                    1.0
+                };
+                (w, (10.0 * k).round() as u32)
+            })
+            .collect();
+        let mut offers = Vec::new();
+        while offers.len() < CHOICES && !pool.is_empty() {
+            let Some(pick) = self.weighted(&pool) else {
+                break;
+            };
+            pool.retain(|(w, _)| *w != pick);
+            offers.push(Offer {
+                upgrade: Upgrade::NewWeapon(pick),
+                rarity: Rarity::Common,
+            });
+        }
+        offers
+    }
+
+    /// Put the next pending choice on screen: caches first, then levels.
     pub(super) fn offer_level_up(&mut self, events: &mut Vec<GameEvent>) {
         if !matches!(self.state, RunState::Active) {
             return;
@@ -214,45 +284,76 @@ impl Run {
         let Some(player) = self
             .players
             .iter()
-            .position(|p| p.alive() && p.pending_levels > 0)
+            .position(|p| p.alive() && (p.pending_caches > 0 || p.pending_levels > 0))
         else {
             return;
         };
-        self.players[player].pending_levels -= 1;
-        let mut pool = self.perk_pool(player);
-        let mut choices = Vec::new();
-        while choices.len() < 3 && !pool.is_empty() {
-            let Some(pick) = self.weighted(&pool) else {
-                break;
+        let tuning = &content().tuning;
+        let p = &mut self.players[player];
+        let (source, choices) = if p.pending_caches > 0 {
+            p.pending_caches -= 1;
+            let min = tuning.rarity.cache_min;
+            (OfferSource::Cache, self.roll_upgrades(player, min))
+        } else {
+            // The level being offered (several can queue up at once).
+            let level = p.level + 1 - p.pending_levels;
+            p.pending_levels -= 1;
+            let pick = tuning.weapons.pick_levels.contains(&level)
+                && p.weapons.len() < tuning.weapons.max_carried;
+            let picks = if pick {
+                self.weapon_picks(player)
+            } else {
+                Vec::new()
             };
-            let index = pool.iter().position(|(p, _)| *p == pick).unwrap_or(0);
-            choices.push(pool.swap_remove(index).0);
+            if picks.is_empty() {
+                (
+                    OfferSource::LevelUp,
+                    self.roll_upgrades(player, Rarity::Common),
+                )
+            } else {
+                (OfferSource::WeaponPick, picks)
+            }
+        };
+        if choices.is_empty() {
+            return;
         }
         events.push(GameEvent::LevelUp {
             level: self.players[player].level,
         });
-        self.state = RunState::LevelUp { player, choices };
+        self.state = RunState::LevelUp {
+            player,
+            choices,
+            source,
+        };
     }
 
-    pub(super) fn apply_perk(&mut self, player: usize, perk: Perk, events: &mut Vec<GameEvent>) {
-        let tuning = &content().tuning.weapons;
+    pub(super) fn apply_offer(&mut self, player: usize, offer: Offer, events: &mut Vec<GameEvent>) {
+        let max = content().tuning.weapons.max_carried;
         let p = &mut self.players[player];
-        match perk {
-            Perk::NewWeapon(kind) => {
-                if p.weapon_level(kind).is_none() && p.weapons.len() < tuning.max_carried {
+        match offer.upgrade {
+            Upgrade::NewWeapon(kind) => {
+                if !p.carries(kind) && p.weapons.len() < max {
                     p.weapons.push(WeaponSlot::new(kind, 0.2));
                     events.push(GameEvent::WeaponFound { weapon: kind });
                 }
             }
-            Perk::WeaponLevel(kind) => {
+            Upgrade::WeaponMod(kind, m) => {
                 if let Some(w) = p.weapons.iter_mut().find(|w| w.kind == kind) {
-                    w.level = (w.level + 1).min(tuning.max_level);
+                    w.mods.push((m, offer.rarity));
                 }
             }
-            Perk::Field(id) => {
-                let info = id.info();
-                p.apply(info.effect, info.amount);
+            Upgrade::AbilityMod(m) => {
+                p.ability.mods.push((m, offer.rarity));
+                p.refresh_ability();
             }
+            Upgrade::Field(id) => {
+                p.apply(id.info().effect, id.amount(offer.rarity));
+            }
+        }
+        if offer.rarity >= Rarity::Rare {
+            events.push(GameEvent::RareUpgrade {
+                rarity: offer.rarity,
+            });
         }
     }
 }

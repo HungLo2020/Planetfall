@@ -60,7 +60,7 @@ pub struct PlanetDef {
     pub palette: Palette,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WeaponBehavior {
     /// Fast bolts at the nearest target, fanned when `count` > 1.
@@ -75,7 +75,76 @@ pub enum WeaponBehavior {
     Orbit,
 }
 
-/// Per-level weapon numbers.
+/// Upgrade rarity. Higher rarities scale amounts and unlock elements
+/// (rare) and behaviour changes (legendary).
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Rarity {
+    #[default]
+    Common,
+    Uncommon,
+    Rare,
+    Legendary,
+}
+
+impl Rarity {
+    pub const ALL: [Self; 4] = [Self::Common, Self::Uncommon, Self::Rare, Self::Legendary];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Common => "Common",
+            Self::Uncommon => "Uncommon",
+            Self::Rare => "Rare",
+            Self::Legendary => "Legendary",
+        }
+    }
+}
+
+/// On-hit elements (pierce is a weapon stat, not a status).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Element {
+    /// Burn: damage per second for a few seconds.
+    Fire,
+    /// Corrode: damage over time and more damage taken.
+    Acid,
+    /// Chill: slows, and freezes once it builds up.
+    Cold,
+    /// Chance to arc damage to a nearby enemy.
+    Shock,
+}
+
+impl Element {
+    pub const ALL: [Self; 4] = [Self::Fire, Self::Acid, Self::Cold, Self::Shock];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fire => "Fire",
+            Self::Acid => "Acid",
+            Self::Cold => "Cold",
+            Self::Shock => "Shock",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ElementDef {
+    pub kind: Element,
+    pub potency: f32,
+}
+
+/// Base weapon numbers; upgrades stack on top during a drop.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WeaponStats {
@@ -109,7 +178,77 @@ pub struct WeaponDef {
     #[serde(default = "half")]
     pub volume: f32,
     pub color: [f32; 3],
-    pub levels: Vec<WeaponStats>,
+    pub stats: WeaponStats,
+    #[serde(default)]
+    pub element: Option<ElementDef>,
+}
+
+/// What an upgrade card applies to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModTarget {
+    Weapon,
+    Ability,
+}
+
+/// The number an upgrade changes (see `mods.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModStat {
+    Damage,
+    FireRate,
+    Count,
+    Range,
+    Area,
+    Pierce,
+    Element,
+    Cooldown,
+    Power,
+    Reach,
+    Special,
+}
+
+/// Legendary behaviour changes (code archetypes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Special {
+    TwinBarrel,
+    DoubleBlast,
+    Overload,
+    Cluster,
+    SecondRing,
+    MobileSentry,
+    Echo,
+    MoltenBore,
+    ArcFence,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModDef {
+    pub id: String,
+    pub title: String,
+    /// `{amount}` is replaced with the value at the rolled rarity.
+    pub description: String,
+    pub target: ModTarget,
+    pub stat: ModStat,
+    /// Value at each rarity (common, uncommon, rare, legendary).
+    pub amounts: [f32; 4],
+    #[serde(default)]
+    pub element: Option<Element>,
+    #[serde(default)]
+    pub special: Option<Special>,
+    /// Weapon behaviours it applies to (empty: all).
+    #[serde(default)]
+    pub behaviors: Vec<WeaponBehavior>,
+    /// Ability kinds it applies to (empty: all).
+    #[serde(default)]
+    pub abilities: Vec<AbilityKind>,
+    #[serde(default)]
+    pub min_rarity: Rarity,
+    pub weight: u32,
+    #[serde(default)]
+    pub max_stacks: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -209,6 +348,18 @@ pub enum PerkEffect {
     /// Bonus damage against heavy enemies (100+ base health).
     HeavyDamage,
     AbilityCooldown,
+    /// Better upgrade rarities.
+    Luck,
+}
+
+impl PerkEffect {
+    /// Effects that scale by `amount` instead of adding it.
+    pub fn multiplicative(self) -> bool {
+        matches!(
+            self,
+            Self::MoveSpeed | Self::FireRate | Self::DashCooldown | Self::AbilityCooldown
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -389,6 +540,7 @@ impl UpgradeDef {
 pub struct Tuning {
     pub player: PlayerTuning,
     pub weapons: WeaponTuning,
+    pub rarity: RarityTuning,
     pub xp: XpTuning,
     pub horde: HordeTuning,
     pub class: ClassTuning,
@@ -416,11 +568,26 @@ pub struct PlayerTuning {
 #[serde(deny_unknown_fields)]
 pub struct WeaponTuning {
     pub max_carried: usize,
-    pub max_level: u8,
-    pub cache_overflow_damage: f32,
-    pub new_weapon_weight: u32,
-    pub level_up_weight: u32,
+    /// Dive levels that offer a new weapon while a slot is free.
+    pub pick_levels: Vec<u32>,
     pub familiar_weight: f32,
+    /// Damage added per upgrade taken on a weapon.
+    pub growth: f32,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RarityTuning {
+    /// Base odds of common, uncommon, rare and legendary offers.
+    pub weights: [f32; 4],
+    /// Perk amounts at each rarity (multiplicative effects scale their
+    /// change from 1).
+    pub perk_scale: [f32; 4],
+    /// Each point of planet hazard above 1 multiplies tier n's weight by
+    /// (1 + hazard_bonus)^n, as luck does with (1 + luck)^n.
+    pub hazard_bonus: f32,
+    /// Caches offer this rarity or better.
+    pub cache_min: Rarity,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
