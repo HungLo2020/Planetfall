@@ -628,6 +628,26 @@ pub struct Enemy {
     /// Split copies do not split again.
     #[serde(default)]
     pub split: bool,
+    /// A lunger's lunge in progress.
+    #[serde(default)]
+    pub leap: Option<Leap>,
+}
+
+/// One lunge: crouch, leap along `dir`, then stand to recover.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Leap {
+    pub phase: LeapPhase,
+    /// Ticks left in this phase.
+    pub ticks: u32,
+    /// Unit direction of the leap (set when it starts).
+    pub dir: V2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LeapPhase {
+    Windup,
+    Airborne,
+    Recover,
 }
 
 impl Enemy {
@@ -660,6 +680,7 @@ impl Enemy {
             special_ticks: 0,
             wet: 0,
             split: false,
+            leap: None,
         }
     }
 

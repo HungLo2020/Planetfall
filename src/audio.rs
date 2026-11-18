@@ -301,6 +301,12 @@ impl Audio {
                         self.play(sound, 0.45, Some(at), 45);
                     }
                 }
+                // The crouch hisses so a lunge can be heard coming.
+                GameEvent::EnemyLunged { kind, at } => {
+                    if let Some(sound) = &kind.info().alert_sound {
+                        self.play(sound, 0.35, Some(at), 10);
+                    }
+                }
                 GameEvent::Explosion { at, .. } => self.play("explosion", 0.7, Some(at), 4),
                 GameEvent::PlayerHurt { .. } => self.play("player_hurt", 0.65, None, 8),
                 GameEvent::PlayerDied => self.play("player_die", 0.9, None, 0),

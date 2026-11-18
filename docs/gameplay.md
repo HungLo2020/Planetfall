@@ -320,7 +320,7 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
 | Enemy | Notes |
 |---|---|
 | Husk | Infected colonist. Slow, steady melee |
-| Skitter | Fast, fragile, comes in packs and lunges |
+| Skitter | Fragile and comes in packs; walks slower than you, but up close it crouches with a hiss, then leaps in a straight line (sidestep or dash) and needs a moment to recover |
 | Bloater | Slow; detonates on contact or death, also hurting other enemies |
 | Brute | Late-game tank; drops voidstone and ferrite |
 | Spitter | Ranged: keeps its distance and spits |

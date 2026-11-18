@@ -397,7 +397,8 @@ pub enum EnemyBehavior {
     Burrower,
     /// Flies straight over rock; fragile.
     Flyer,
-    /// Like a walker, but speeds up inside `lunge.range`.
+    /// Walks slower than a player, but inside `lunge.range` crouches, then
+    /// leaps in a straight line (`lunge`): sidestep or dash to dodge.
     Lunger,
     /// Detonates on contact and on death (`explosion`).
     Exploder,
@@ -406,8 +407,17 @@ pub enum EnemyBehavior {
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lunge {
+    /// Starts a lunge at a target this close (with a clear line).
     pub range: f32,
+    /// Seconds crouched before leaping: the tell. The leap aims where the
+    /// target is when it ends.
+    pub windup: f32,
+    /// Leap speed (m/s) and how long it lasts (s).
     pub speed: f32,
+    pub time: f32,
+    /// Seconds standing after landing, then seconds before the next lunge.
+    pub recover: f32,
+    pub cooldown: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]

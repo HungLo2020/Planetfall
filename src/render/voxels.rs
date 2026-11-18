@@ -654,8 +654,11 @@ fn materials(gal: &Gpu, palette: &Palette) -> GraphicsResult<VoxelMaterials> {
         })
         .zip(0..tex::COUNT)
         .map(|(look, layer)| match look {
-            tex::LUMITE => MaterialDef::layer(layer).with_emissive([0.05, 0.2, 0.25]),
-            tex::VOIDSTONE => MaterialDef::layer(layer).with_emissive([0.12, 0.04, 0.2]),
+            // A whole ore block glows evenly (Quasar has no emissive
+            // textures), so only a faint tint: the crystals and bright veins
+            // carry the glow.
+            tex::LUMITE => MaterialDef::layer(layer).with_emissive([0.012, 0.05, 0.06]),
+            tex::VOIDSTONE => MaterialDef::layer(layer).with_emissive([0.03, 0.01, 0.05]),
             tex::LAMP => MaterialDef::layer(layer).with_emissive([2.4, 2.0, 1.4]),
             _ => MaterialDef::layer(layer),
         })

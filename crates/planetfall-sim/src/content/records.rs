@@ -79,6 +79,15 @@ impl ContentRecord for EnemyDef {
                 "lungers need a `lunge`",
             )
             .check(
+                self.lunge.is_none_or(|l| {
+                    [l.range, l.windup, l.speed, l.time, l.recover, l.cooldown]
+                        .iter()
+                        .all(|v| v.is_finite() && *v > 0.0)
+                }),
+                "lunge",
+                "lunge times, range and speed must be positive",
+            )
+            .check(
                 self.behavior != EnemyBehavior::Spitter || self.ranged.is_some(),
                 "ranged",
                 "spitters need `ranged`",

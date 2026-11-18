@@ -165,18 +165,20 @@ fn hazards(p: &mut Painter<'_, '_>, run: &Run) {
                 if !h.active() {
                     continue;
                 }
-                // Drifting puffs inside the cloud, lit sickly green.
+                // Drifting puffs inside the cloud, lit sickly green: faint
+                // round halos, so overlaps stay a haze under the bloom
+                // threshold instead of a blown-out block.
                 for k in 0..9 {
                     let a = time * 0.4 + k as f32 * 0.7 + phase;
                     let r = t.spore_radius
                         * (0.25 + 0.6 * ((k as f32 * 0.37 + time * 0.2).sin() * 0.5 + 0.5));
                     let q = h.pos + V2::new(a.cos(), a.sin()) * r;
                     let size = 0.5 + 0.25 * (time * 1.3 + k as f32).sin();
-                    p.ghost(
+                    p.halo(
                         at(q, 0.8 + 0.3 * (time + k as f32).sin())
-                            * s(size * 1.6, size * 1.1, size * 1.6),
+                            * s(size * 1.3, size * 0.8, size * 1.3),
                         [0.6, 0.95, 0.2],
-                        0.38,
+                        0.12,
                     );
                 }
                 for k in 0..6 {
@@ -462,11 +464,16 @@ fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
     }
 }
 
+/// Emission kept on ore crystals (their light does the rest).
+const ORE_GLOW: f32 = 0.45;
+/// Intensity of the light over each lumite and voidstone vein.
+const ORE_LIGHT: f32 = 0.75;
+
 /// Decorations on the voxel terrain (pebbles, ore crystals and their glow)
 /// and the overlay marking the block being drilled.
 fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) {
     let (cx, cy) = Terrain::tile_of(center);
-    let mut glows: Vec<(f32, [f32; 3], [f32; 3])> = Vec::new();
+    let mut glows: Vec<(f32, [f32; 3], [f32; 3], f32)> = Vec::new();
     let style = &run.planet.info().terrain;
     let decor = style.decor.map(|kind| match kind {
         DecorKind::Fungus => (names::FUNGUS, [0.6, 0.35, 1.0]),
@@ -510,6 +517,7 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) {
                             c.distance_squared(run.player().pos),
                             [pos[0], 1.0, pos[1]],
                             light,
+                            1.6,
                         ));
                     }
                 }
@@ -533,14 +541,16 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) {
                         Material::Lumite => (names::LUMITE_ORE, Some([0.3, 0.85, 1.0])),
                         Material::Voidstone => (names::VOIDSTONE_ORE, Some([0.65, 0.3, 1.0])),
                     };
-                    // Crystals erupt from the ore block (the [-1, 1] cube).
-                    // Crystals erupt from the two ore blocks of the column.
-                    p.model(id, at(c, TILE) * s(0.53, 1.04, 0.53));
+                    // Crystals erupt from the two ore blocks of the column
+                    // (the [-1, 1] cube). Their light below lights them, so
+                    // their own glow stays under the bloom threshold.
+                    p.model_dimmed(id, at(c, TILE) * s(0.53, 1.04, 0.53), ORE_GLOW);
                     if let Some(color) = light {
                         glows.push((
                             c.distance_squared(run.player().pos),
                             [c[0], 2.0 * TILE + 0.8, c[1]],
                             color,
+                            ORE_LIGHT,
                         ));
                     }
                 }
@@ -550,9 +560,9 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) {
     }
     glows.sort_by(|a, b| a.0.total_cmp(&b.0));
     // Clustered lighting makes many small lights cheap; keep the nearest.
-    for (_, pos, color) in glows.into_iter().take(40) {
+    for (_, pos, color, power) in glows.into_iter().take(40) {
         let pulse = 1.0 + (p.time * 2.0 + pos[0]).sin() * 0.15;
-        p.point(pos, color, 1.6 * pulse, 7.0);
+        p.point(pos, color, power * pulse, 7.0 * power.sqrt());
     }
     // The drill bit biting into the block: a flickering hot spot on the
     // face (the block itself shows its wear as cracks).

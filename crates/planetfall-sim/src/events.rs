@@ -36,6 +36,11 @@ pub enum GameEvent {
         kind: EnemyId,
         at: V2,
     },
+    /// A lunger crouched to leap (the tell).
+    EnemyLunged {
+        kind: EnemyId,
+        at: V2,
+    },
     Explosion {
         at: V2,
         radius: f32,

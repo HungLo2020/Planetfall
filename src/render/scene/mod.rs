@@ -275,6 +275,15 @@ impl<'a, 's> Painter<'a, 's> {
         self.draws.extend(draws);
     }
 
+    /// A model with its emission scaled by `k` (dims glowing props that sit
+    /// beside lights).
+    fn model_dimmed(&mut self, id: &str, root: Mat4, k: f32) {
+        for mut d in self.models.get(id).draws(root) {
+            d.material.lit.emissive = d.material.lit.emissive.map(|e| e * k);
+            self.draws.push(d);
+        }
+    }
+
     fn model_tinted(&mut self, id: &str, root: Mat4, tint: [f32; 3], emissive: [f32; 3]) {
         for mut d in self.models.get(id).draws(root) {
             for (c, k) in tint.iter().enumerate() {

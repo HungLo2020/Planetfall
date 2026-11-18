@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::render::effects::outline;
+use planetfall_sim::run::{Enemy, LeapPhase};
 
 impl Painter<'_, '_> {
     #[allow(
@@ -106,15 +107,25 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         };
         // Elites stand a quarter taller.
         let k = info.scale * if e.elite.is_some() { 1.25 } else { 1.0 };
-        let root = at(e.pos, rise) * Mat4::rotation_y(e.yaw) * s(k, k, k);
+        let pounce = lunge_pose(e, p.time);
+        let root = at(e.pos, rise + pounce.lift)
+            * Mat4::rotation_y(e.yaw)
+            * Mat4::rotation_x(pounce.pitch)
+            * s(k * pounce.spread, k * pounce.height, k * pounce.spread);
         let mut glow = if e.hit_ticks > 0 {
             e.hit_ticks as f32 / 6.0 * 0.9
         } else {
             0.0
         };
-        let lunge = e.attack_ticks as f32 / 14.0;
+        let lunge = (e.attack_ticks as f32 / 14.0).max(pounce.attack);
         let mut layers = vec![Layer::full("walk", e.walk)];
         let character = p.skins.character(&info.model);
+        // A model with its own `lunge` clip plays it through the pounce.
+        if let Some(phase) = pounce.clip
+            && character.has("lunge")
+        {
+            layers.push(Layer::full("lunge", phase));
+        }
         // Body-only clips (a bloater's pulse) layer over the gait.
         if character.has("pulse") {
             layers.push(Layer::full("pulse", p.time + e.id as f32 * 0.37));
@@ -198,5 +209,83 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         let sink = ((c.ticks as f32 - 30.0) / 20.0).clamp(0.0, 1.0) * 1.2;
         let root = at(c.pos, -sink) * Mat4::rotation_y(c.yaw) * Mat4::rotation_x(k * 1.5);
         p.character(&info.model, root, &[Layer::full("idle", 0.0)], 0.0, None);
+    }
+}
+
+/// How a lunger's body moves through a pounce, over its walk cycle.
+struct Pounce {
+    /// Height of the leap arc (m).
+    lift: f32,
+    /// Nose down (+) or up (-), radians.
+    pitch: f32,
+    /// Squash and stretch: vertical and horizontal scale.
+    height: f32,
+    spread: f32,
+    /// Weight of the `attack` clip (jaws open, legs reaching).
+    attack: f32,
+    /// Time into a `lunge` clip, for models that have one: the crouch runs
+    /// over its first 0.4 s, the leap to 0.75 s, the landing after.
+    clip: Option<f32>,
+}
+
+const STILL: Pounce = Pounce {
+    lift: 0.0,
+    pitch: 0.0,
+    height: 1.0,
+    spread: 1.0,
+    attack: 0.0,
+    clip: None,
+};
+
+/// The pounce pose of `e` (still when it is not lunging): it crouches and
+/// trembles in the windup, arcs nose-first through the leap and settles as
+/// it recovers.
+fn lunge_pose(e: &Enemy, time: f32) -> Pounce {
+    let (Some(leap), Some(lunge)) = (e.leap, e.kind.info().lunge) else {
+        return STILL;
+    };
+    // Progress through the phase, 0 to 1.
+    let progress = |seconds: f32| {
+        let total = (seconds * 60.0).max(1.0);
+        (1.0 - leap.ticks as f32 / total).clamp(0.0, 1.0)
+    };
+    match leap.phase {
+        LeapPhase::Windup => {
+            let t = progress(lunge.windup);
+            let crouch = t * (2.0 - t);
+            let tremble = (time * 70.0 + e.id as f32).sin() * 0.03 * t;
+            Pounce {
+                lift: 0.0,
+                pitch: -0.25 * crouch + tremble,
+                height: 1.0 - 0.3 * crouch,
+                spread: 1.0 + 0.14 * crouch,
+                attack: 0.4 * t,
+                clip: Some(0.4 * t),
+            }
+        }
+        LeapPhase::Airborne => {
+            let t = progress(lunge.time);
+            Pounce {
+                lift: (t * std::f32::consts::PI).sin() * 0.75,
+                pitch: -0.3 + 0.75 * t,
+                height: 1.18 - 0.1 * t,
+                spread: 0.9,
+                attack: 1.0,
+                clip: Some(0.4 + 0.35 * t),
+            }
+        }
+        LeapPhase::Recover => {
+            let t = progress(lunge.recover);
+            // A squash on landing that springs back.
+            let land = (1.0 - t).powi(2);
+            Pounce {
+                lift: 0.0,
+                pitch: 0.2 * land,
+                height: 1.0 - 0.18 * land,
+                spread: 1.0 + 0.1 * land,
+                attack: land,
+                clip: Some(0.75 + 0.35 * t),
+            }
+        }
     }
 }

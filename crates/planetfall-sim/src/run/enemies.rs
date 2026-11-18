@@ -4,9 +4,11 @@
 
 use super::{
     Affix, BARRIER_RADIUS, Blast, BlastKind, Corpse, DeployableKind, Enemy, EnemyShot, Hazard,
-    HazardKind, Hit, PickupKind, Run,
+    HazardKind, Hit, Leap, LeapPhase, PickupKind, Run,
 };
-use crate::content::{BossSpecial, DT, EnemyBehavior, EnemyId, Material, Rarity, content, seconds};
+use crate::content::{
+    BossSpecial, DT, EnemyBehavior, EnemyId, Lunge, Material, Rarity, content, seconds,
+};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
 use crate::terrain::TILE;
@@ -90,12 +92,19 @@ impl Run {
             if dist < reach || e.spawn_ticks > 0 || e.frozen > 0 {
                 speed = 0.0;
             }
-            if let Some(lunge) = info.lunge
-                && info.behavior == EnemyBehavior::Lunger
-                && dist < lunge.range
-                && dist > reach
-            {
-                speed *= lunge.speed;
+            // Lungers crouch, leap and recover instead of walking.
+            let leap = match info.lunge {
+                Some(lunge)
+                    if info.behavior == EnemyBehavior::Lunger
+                        && e.spawn_ticks == 0
+                        && e.frozen == 0 =>
+                {
+                    self.leap(i, lunge, player, dist, reach, events)
+                }
+                _ => None,
+            };
+            if leap.is_some() {
+                speed = 0.0;
             }
             if info.behavior == EnemyBehavior::Spitter
                 && let Some(r) = info.ranged
@@ -104,7 +113,7 @@ impl Run {
             {
                 speed = 0.0;
             }
-            let step = dir * speed * DT + push * 0.35;
+            let step = leap.unwrap_or(dir * speed * DT + push * 0.35);
             let (mut pos, _) = if e.flying() {
                 // Flyers pass over rock, but stay over the map.
                 let edge = self.terrain.world_size() - V2::splat(TILE);
@@ -131,6 +140,13 @@ impl Run {
                     }
                 }
             }
+            // A leap that runs into rock ends there.
+            if let Some(step) = leap
+                && step != V2::ZERO
+                && pos.distance(e.pos + step) > 0.05
+            {
+                self.land(i);
+            }
             let en = &mut self.enemies[i];
             en.pos = pos;
             en.spawn_ticks = en.spawn_ticks.saturating_sub(1);
@@ -138,8 +154,13 @@ impl Run {
             en.attack_ticks = en.attack_ticks.saturating_sub(1);
             en.attack_cooldown = en.attack_cooldown.saturating_sub(1);
             en.drone_cooldown = en.drone_cooldown.saturating_sub(1);
-            if to_player.length() > 1e-3 {
-                en.yaw = math::turn_toward(en.yaw, math::yaw_of(to_player), 0.18);
+            match en.leap {
+                // Mid-air it faces where it is flying.
+                Some(l) if l.phase == LeapPhase::Airborne => en.yaw = math::yaw_of(l.dir),
+                _ if to_player.length() > 1e-3 => {
+                    en.yaw = math::turn_toward(en.yaw, math::yaw_of(to_player), 0.18);
+                }
+                _ => {}
             }
             en.walk += speed * DT * 1.7;
             if !en.alerted && dist < 12.0 {
@@ -151,12 +172,19 @@ impl Run {
                     });
                 }
             }
+            let mut bit = false;
+            let landed_on = en.leap.is_some_and(|l| l.phase == LeapPhase::Airborne) && dist < reach;
             if dist < reach && en.spawn_ticks == 0 && en.frozen == 0 {
+                if landed_on {
+                    // A lunge that connects always bites.
+                    en.attack_cooldown = 0;
+                }
                 if info.behavior == EnemyBehavior::Exploder {
                     detonate.push(i);
                 } else if en.attack_cooldown == 0 {
                     en.attack_cooldown = 60;
                     en.attack_ticks = 14;
+                    bit = landed_on;
                     let frenzy = if en.elite == Some(Affix::Frenzied) {
                         content().tuning.elites.frenzied_damage
                     } else {
@@ -169,6 +197,10 @@ impl Run {
                     }
                 }
             }
+            // A lunge that reached its target lands on it.
+            if bit {
+                self.land(i);
+            }
         }
         for (player, amount) in melee.into_iter().enumerate() {
             if amount > 0.0 {
@@ -180,6 +212,90 @@ impl Run {
         }
         for i in detonate {
             self.enemies[i].health = 0.0;
+        }
+    }
+
+    /// Advance enemy `i`'s lunge at `target`. Returns this tick's movement
+    /// while a lunge is under way (zero while crouched or recovering), or
+    /// `None` when it walks normally.
+    fn leap(
+        &mut self,
+        i: usize,
+        lunge: Lunge,
+        target: V2,
+        dist: f32,
+        reach: f32,
+        events: &mut Vec<GameEvent>,
+    ) -> Option<V2> {
+        let e = self.enemies[i];
+        let aim = (target - e.pos).normalize_or_zero();
+        let Some(mut leap) = e.leap else {
+            // Ready: start when close, not touching and in the open.
+            if e.state_ticks > 0
+                || dist >= lunge.range
+                || dist <= reach
+                || !self.terrain.line_clear(e.pos, target)
+            {
+                return None;
+            }
+            self.enemies[i].leap = Some(Leap {
+                phase: LeapPhase::Windup,
+                ticks: seconds(lunge.windup),
+                dir: aim,
+            });
+            events.push(GameEvent::EnemyLunged {
+                kind: e.kind,
+                at: e.pos,
+            });
+            return Some(V2::ZERO);
+        };
+        leap.ticks = leap.ticks.saturating_sub(1);
+        let step = match leap.phase {
+            LeapPhase::Windup => {
+                if leap.ticks == 0 {
+                    // Commit to where the target is now.
+                    leap.phase = LeapPhase::Airborne;
+                    leap.ticks = seconds(lunge.time);
+                    if aim != V2::ZERO {
+                        leap.dir = aim;
+                    }
+                }
+                V2::ZERO
+            }
+            LeapPhase::Airborne => {
+                let step = leap.dir * lunge.speed * DT;
+                if leap.ticks == 0 {
+                    leap.phase = LeapPhase::Recover;
+                    leap.ticks = seconds(lunge.recover);
+                }
+                step
+            }
+            LeapPhase::Recover => {
+                if leap.ticks == 0 {
+                    self.enemies[i].leap = None;
+                    self.enemies[i].state_ticks = seconds(lunge.cooldown);
+                    return Some(V2::ZERO);
+                }
+                V2::ZERO
+            }
+        };
+        self.enemies[i].leap = Some(leap);
+        Some(step)
+    }
+
+    /// End enemy `i`'s leap early (it hit rock or its target): it stands to
+    /// recover.
+    fn land(&mut self, i: usize) {
+        let recover = self.enemies[i]
+            .kind
+            .info()
+            .lunge
+            .map_or(30, |l| seconds(l.recover));
+        if let Some(leap) = &mut self.enemies[i].leap
+            && leap.phase == LeapPhase::Airborne
+        {
+            leap.phase = LeapPhase::Recover;
+            leap.ticks = recover;
         }
     }
 

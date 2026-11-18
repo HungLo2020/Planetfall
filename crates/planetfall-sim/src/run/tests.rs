@@ -1,5 +1,5 @@
 use super::*;
-use crate::content::{ClassId, ModId, ObjectiveKind, PlanetId, Upgrade};
+use crate::content::{ClassId, EnemyBehavior, ModId, ObjectiveKind, PlanetId, Upgrade};
 use crate::mission::Contract;
 
 fn class(key: &str) -> ClassId {
@@ -1030,4 +1030,59 @@ fn survival_time_probe() {
             );
         }
     }
+}
+
+/// Skitters walk slower than a player, then crouch (standing still), leap
+/// along a fixed line, bite on contact and recover before the next lunge.
+#[test]
+fn skitters_lunge_instead_of_outrunning() {
+    let skitter = EnemyId::from_key("skitter").unwrap();
+    let info = skitter.info();
+    assert_eq!(info.behavior, EnemyBehavior::Lunger);
+    // The fastest normal roll (+15%) still walks slower than a player.
+    assert!(info.speed * 1.15 < content().tuning.player.speed);
+    let lunge = info.lunge.unwrap();
+
+    let mut run = Run::new(config(6));
+    run.spawning_enabled = false;
+    run.invulnerable = false;
+    let player = run.player().pos;
+    let at = [V2::X, V2::Y, -V2::X, -V2::Y]
+        .into_iter()
+        .map(|d| player + d * 3.5)
+        .find(|&p| !run.terrain.solid_at(p) && run.terrain.line_clear(p, player))
+        .expect("open ground beside the landing");
+    run.enemies.push(Enemy {
+        spawn_ticks: 0,
+        ..Enemy::fresh(9000, skitter, at, 5000.0)
+    });
+    let index = run.enemies.len() - 1;
+    let health = run.player().health;
+    let mut phases = Vec::new();
+    let mut crouched_at = None;
+    for _ in 0..(seconds(lunge.windup + lunge.time + lunge.recover) + 30) {
+        run.player_mut().invulnerable_ticks = 0;
+        step(&mut run, GameInput::default(), 1);
+        let e = run.enemies[index];
+        let phase = e.leap.map(|l| l.phase);
+        if phase == Some(LeapPhase::Windup) {
+            // Crouched: it holds its ground.
+            let held = *crouched_at.get_or_insert(e.pos);
+            assert!(e.pos.distance(held) < 1e-4);
+        }
+        if phases.last() != Some(&phase) {
+            phases.push(phase);
+        }
+    }
+    assert_eq!(
+        phases,
+        vec![
+            Some(LeapPhase::Windup),
+            Some(LeapPhase::Airborne),
+            Some(LeapPhase::Recover),
+            None
+        ]
+    );
+    assert!(run.player().health < health, "the lunge should bite");
+    assert!(run.enemies[index].state_ticks > 0, "cooling down after");
 }

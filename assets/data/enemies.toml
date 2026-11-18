@@ -1,7 +1,9 @@
 # Enemies: behaviour archetypes are code; numbers, drops, spawning, model and
 # sounds are data.
 #
-# behavior: "walker" (steady melee), "lunger" (speeds up when close),
+# behavior: "walker" (steady melee), "lunger" (crouches, then leaps at you
+#           in a straight line: `lunge` range, windup s, speed m/s, time s,
+#           recover s, cooldown s),
 #           "exploder" (detonates on contact or death), "spitter" (keeps
 #           its distance and spits: `ranged`), "disruptor" (jamming pulse
 #           that slows weapons and blocks abilities: `pulse`), "burrower"
@@ -38,7 +40,7 @@ id = "skitter"
 name = "Skitter"
 behavior = "lunger"
 health = 10.0
-speed = 5.3
+speed = 4.2
 damage = 5.0
 radius = 0.4
 xp = 1
@@ -46,7 +48,7 @@ model = "skitter"
 blood = [0.45, 0.25, 0.55]
 death_sound = "skitter_die"
 alert_sound = "skitter_alert"
-lunge = { range = 5.0, speed = 1.35 }
+lunge = { range = 4.5, windup = 0.4, speed = 13.0, time = 0.32, recover = 0.6, cooldown = 1.8 }
 spawn = { weight = 0.3, count = [3, 5] }
 drops = [{ material = "ferrite", amount = 1, chance = 0.04 }]
 

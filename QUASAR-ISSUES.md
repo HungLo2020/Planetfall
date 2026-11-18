@@ -113,6 +113,15 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
    would change every seeded run and replay. An integer-weight variant would
    let Planetfall drop its copy.
 
+18. **render-voxel, render-3d: no emissive textures.** A voxel
+   `MaterialDef` has one emissive colour for the whole layer, and model
+   import rejects glTF `emissiveTexture` maps for classic materials, so
+   nothing can glow per texel. Ore blocks therefore keep only a faint even
+   tint while their crystal props and lights carry the glow; lava cracks and
+   ore veins are bright albedo rather than emission. An emissive mask layer
+   in the voxel texture array (and emissive maps on models) would let veins,
+   cracks and eyes glow on their own.
+
 ## 2. Still missing or not adopted
 
 **Deliberately not adopted**
