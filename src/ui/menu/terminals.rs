@@ -22,17 +22,17 @@ impl Menu {
             Some(OfferSource::WeaponPick) => (
                 "level",
                 format!("Level {level} · new weapon"),
-                "Choose a weapon for a free slot. Familiar weapons turn up more often.",
+                "Pick a weapon for a free slot. Familiar weapons turn up more often.",
             ),
             Some(OfferSource::Cache) => (
                 "cargo",
                 "Supply cache".to_owned(),
-                "Choose one rare or better upgrade.",
+                "Pick one rare or better upgrade. Finders keepers.",
             ),
             _ => (
                 "level",
                 format!("Level {level} · upgrade"),
-                "Choose one. Upgrades last until this drop ends.",
+                "Pick one. It lasts until this drop ends.",
             ),
         };
         let w = Self::window(b, 760.0, icon, &title, hint);
@@ -116,17 +116,17 @@ impl Menu {
             RunOutcome::Extracted => (
                 "check",
                 "Extraction successful",
-                "Cargo transferred to the hold.",
+                "Cargo in the hold. Mercy Salvage thanks you.",
             ),
             RunOutcome::Died => (
                 "threat",
                 "Signal lost",
-                "Recovered by suit beacon. All cargo was lost.",
+                "Suit recalled by PENNY. All cargo was lost.",
             ),
             RunOutcome::Abandoned => (
                 "back",
                 "Drop aborted",
-                "Emergency recall. All cargo was lost.",
+                "Recalled early. All cargo was lost. Noted.",
             ),
         };
         let w = Self::window(
@@ -312,7 +312,7 @@ impl Menu {
                     12.0,
                     0.0,
                 );
-                b.label_fit(row, "Ship AI salvage", TextStyle::Small);
+                b.label_fit(row, "PENNY's scrap (one time only)", TextStyle::Small);
                 materials_row(b, row, &summary.salvage, None);
             }
         } else {
@@ -346,7 +346,7 @@ impl Menu {
             760.0,
             "star-map",
             "Navigation",
-            "Plot an FTL jump. Dangerous worlds pay better.",
+            "Plot an FTL jump. Dangerous worlds pay better. Funny how that works.",
         );
         for planet in PlanetId::all() {
             let info = planet.info();
@@ -602,7 +602,7 @@ impl Menu {
             820.0,
             "fabricator",
             "Fabricator",
-            "Build and upgrade ship modules. Upgrades are permanent.",
+            "Build and upgrade ship modules. Upgrades are permanent. So is the bill.",
         );
         let row = b.hrow(
             w.body,

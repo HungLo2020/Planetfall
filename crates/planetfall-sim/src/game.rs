@@ -275,7 +275,7 @@ impl Game {
                     } else {
                         self.events.push(GameEvent::Denied);
                         self.notify(format!(
-                            "The {} has not unlocked the {} yet.",
+                            "The {} hasn't unlocked the {} yet. PENNY doesn't do loans.",
                             self.profile.class.name(),
                             weapon.name()
                         ));
@@ -321,7 +321,7 @@ impl Game {
                 None => {
                     self.events.push(GameEvent::Denied);
                     self.notify(
-                        "No planet below us. Plot a course at the Navigation Console first.",
+                        "There's no planet below us. Plot a course at the Navigation Console first.",
                     );
                 }
             },
@@ -366,7 +366,7 @@ impl Game {
     fn dock(&mut self) {
         if self.profile.docked {
             self.events.push(GameEvent::Denied);
-            self.notify("Already docked at the trade station.");
+            self.notify("Already docked at the Kestrel Exchange.");
             return;
         }
         self.terminal = None;
@@ -397,9 +397,13 @@ impl Game {
                 self.events.push(GameEvent::Denied);
                 self.notify(match e {
                     TradeError::Missing => "Nothing to do that with.",
-                    TradeError::Credits => "Not enough credits.",
+                    TradeError::Credits => {
+                        "Not enough credits. Mercy Salvage does not extend credit."
+                    }
                     TradeError::Materials => "Not enough of that in the hold.",
-                    TradeError::StashFull => "The stash is full. Sell something first.",
+                    TradeError::StashFull => {
+                        "The stash is full. Sell something; PENNY is not a hoarder."
+                    }
                 });
             }
         }
@@ -416,7 +420,7 @@ impl Game {
         }
         if self.profile.orbiting == Some(planet) && !self.profile.docked {
             self.events.push(GameEvent::Denied);
-            self.notify(format!("Already in orbit of {}.", planet.info().name));
+            self.notify(format!("We're already orbiting {}.", planet.info().name));
             return;
         }
         self.terminal = None;
@@ -438,11 +442,14 @@ impl Game {
             }
             Err(PurchaseError::MaxLevel) => {
                 self.events.push(GameEvent::Denied);
-                self.notify(format!("{} is fully upgraded.", upgrade.name()));
+                self.notify(format!(
+                    "{} is fully upgraded. There is no more budget.",
+                    upgrade.name()
+                ));
             }
             Err(PurchaseError::Unaffordable) => {
                 self.events.push(GameEvent::Denied);
-                self.notify("Not enough materials in the hold.");
+                self.notify("Not enough materials in the hold. Go dig some up.");
             }
         }
     }
@@ -840,7 +847,7 @@ impl Game {
                     format!("{{interact}} Deploy to {}", p.info().name)
                 }
                 Some(p) => format!("{{interact}} Mission board: {}", p.info().name),
-                None => "Drop Pod (no planet in orbit)".into(),
+                None => "Drop Pod (nothing to drop onto)".into(),
             },
             kind => format!("{{interact}} {}", kind.label()),
         })

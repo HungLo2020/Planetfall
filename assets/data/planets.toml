@@ -15,7 +15,7 @@
 id = "verdant"
 name = "Verdant-7"
 kind = "Overgrown moon"
-description = "Mossy caverns infested by husks. Rich in ferrite. A good first drop."
+description = "Mossy caverns full of husks and ferrite. The training-wheels moon."
 nav_level = 0
 hazard = 1.0
 ore = { ferrite = 0.16, lumite = 0.07, voidstone = 0.0 }
@@ -52,7 +52,7 @@ spores = 5
 id = "cinder"
 name = "Cinder Reach"
 kind = "Volcanic world"
-description = "Scorched basalt tunnels. Dense lumite veins, aggressive skitter swarms."
+description = "Scorched basalt tunnels. Dense lumite, angry skitters. Hazard pay pending."
 nav_level = 1
 hazard = 1.45
 ore = { ferrite = 0.12, lumite = 0.11, voidstone = 0.015 }
@@ -91,7 +91,7 @@ vent_count = 4
 id = "hollow"
 name = "Hollow Frost"
 kind = "Frozen rogue planet"
-description = "Ice-choked caves. Voidstone seams and brutes in the dark."
+description = "Ice-choked caves. Voidstone seams and brutes in the dark. Bring a scarf."
 nav_level = 2
 hazard = 2.0
 ore = { ferrite = 0.10, lumite = 0.09, voidstone = 0.05 }
@@ -129,7 +129,7 @@ vent_count = 5
 id = "tidewell"
 name = "Tidewell Marsh"
 kind = "Flooded marsh world"
-description = "Knee-deep water and spore-choked caverns. Spitters lurk in the reeds. Shock arcs through anything wet."
+description = "Knee-deep water and spore clouds. Spitters in the reeds. Shock arcs through anything wet, including you."
 nav_level = 3
 hazard = 2.5
 ore = { ferrite = 0.08, lumite = 0.13, voidstone = 0.04 }
@@ -167,7 +167,7 @@ spores = 7
 id = "kharon"
 name = "Kharon's Rest"
 kind = "Airless dead moon"
-description = "Thin air, restless rock and things that tunnel. Rich in voidstone; bring a full tank."
+description = "Thin air, restless rock and things that tunnel. Rich in voidstone. Breathe sparingly."
 nav_level = 4
 hazard = 3.0
 ore = { ferrite = 0.08, lumite = 0.09, voidstone = 0.09 }

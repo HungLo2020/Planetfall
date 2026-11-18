@@ -319,6 +319,6 @@ Each milestone is playable and releasable. Status: stages 1 to 8 are done.
 - Final class names, kits and signature weapons.
 - What exactly an escalation "surge" is and how often it comes.
 - Boss design per planet.
-- Setting and tone beyond the dry ship AI.
+- Setting and tone: see [Voice](voice.md) (Mercy Salvage Ltd., PENNY the ship AI).
 - Research tree contents and how it differs from ship modules.
 - Co-op specifics: shared or separate XP, revives, scaling.

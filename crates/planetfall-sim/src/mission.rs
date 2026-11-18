@@ -114,7 +114,7 @@ impl MutatorId {
     }
 }
 
-/// Hazard level names ("Easy" ... "Lethal").
+/// Hazard level names ("Routine" ... "Lethal").
 pub fn hazard_name(level: u8) -> &'static str {
     let names = &content().tuning.hazard.names;
     &names[usize::from(level.clamp(1, MAX_HAZARD) - 1)]

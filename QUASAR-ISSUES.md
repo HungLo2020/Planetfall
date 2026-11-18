@@ -122,6 +122,15 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
    in the voxel texture array (and emissive maps on models) would let veins,
    cracks and eyes glow on their own.
 
+19. **render-3d: no toon shading or edge-detection post effect.**
+   `ShadingModel` offers unlit, diffuse and Blinn-Phong, and `PostChain`
+   has bloom, tonemap, grade and vignette, so the Borderlands-style look is a
+   Planetfall pass (`src/render/ink.rs`): it copies `SceneTarget`'s colour to
+   a scratch texture each frame and draws ink and cel bands from colour and
+   depth. A banded/ramp shading model and a depth (and normal) edge pass in
+   the post chain would replace it, and normals would let creases follow
+   real surface folds instead of depth slope.
+
 ## 2. Still missing or not adopted
 
 **Deliberately not adopted**
@@ -169,6 +178,9 @@ kept small and in one place so it can be swapped out when Quasar has it.
   sentries each walk straight at a goal they can see and otherwise follow
   `DistanceField::next_cell`. A `quasar-nav` steering helper (goal, a
   visibility test, the field) would remove the three copies.
+- **Ink and cel shading** (`src/render/ink.rs`, issue 19).
+- **Hit-stop**: `desktop.rs` defers ticks for a beat on big hits. A
+  time-scale or freeze-frame helper in `quasar-app` would standardise it.
 - **Camera trauma shake**: `desktop.rs` adds trauma per event and lets it
   decay; `render::camera::CameraRig` turns it into a jitter that grows faster
   than the trauma. Both halves are engine-generic.

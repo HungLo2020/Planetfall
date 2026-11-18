@@ -20,6 +20,7 @@ impl Painter<'_, '_> {
         moving: bool,
         flash: f32,
         weapon: Option<WeaponId>,
+        kick: f32,
     ) {
         // Facing, the walk/idle mix and the lean come from the smoothed
         // pose; `yaw` and `moving` are the raw values it eases toward.
@@ -43,9 +44,11 @@ impl Painter<'_, '_> {
             let k = info.model_scale;
             // Held in the right hand: follow the arm joint, then level the gun.
             let arm = posed.bone("arm_r").unwrap_or(Mat4::IDENTITY);
+            // Recoil: the gun snaps back along the barrel and tips up.
             let gun = root
                 * arm
-                * t(0.0, -0.62, 0.05)
+                * t(0.0, -0.62 + 0.12 * kick, 0.05)
+                * Mat4::rotation_x(-0.35 * kick)
                 * Mat4::rotation_x(1.2)
                 * s(k, k, k)
                 * Mat4::rotation_y(info.model_yaw.to_radians());
@@ -108,10 +111,21 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         // Elites stand a quarter taller.
         let k = info.scale * if e.elite.is_some() { 1.25 } else { 1.0 };
         let pounce = lunge_pose(e, p.time);
-        let root = at(e.pos, rise + pounce.lift)
+        // A hit makes it flinch back from the player and squash, then spring
+        // back over a few frames.
+        let hit = (e.hit_ticks as f32 / 6.0).clamp(0.0, 1.0);
+        let flinch = hit * hit;
+        let back = planetfall_sim::math::from_yaw(e.yaw) * (-0.12 * flinch * info.radius / 0.5);
+        let squash = 1.0 - 0.14 * flinch;
+        let bulge = 1.0 + 0.1 * flinch;
+        let root = at(e.pos + back, rise + pounce.lift)
             * Mat4::rotation_y(e.yaw)
-            * Mat4::rotation_x(pounce.pitch)
-            * s(k * pounce.spread, k * pounce.height, k * pounce.spread);
+            * Mat4::rotation_x(pounce.pitch - 0.18 * flinch)
+            * s(
+                k * pounce.spread * bulge,
+                k * pounce.height * squash,
+                k * pounce.spread * bulge,
+            );
         let mut glow = if e.hit_ticks > 0 {
             e.hit_ticks as f32 / 6.0 * 0.9
         } else {
@@ -207,7 +221,13 @@ pub(super) fn enemies(p: &mut Painter<'_, '_>, run: &Run) {
         }
         let k = (c.ticks as f32 / 14.0).min(1.0);
         let sink = ((c.ticks as f32 - 30.0) / 20.0).clamp(0.0, 1.0) * 1.2;
-        let root = at(c.pos, -sink) * Mat4::rotation_y(c.yaw) * Mat4::rotation_x(k * 1.5);
+        // It swells for a few frames as it bursts, then topples flat.
+        let swell = 1.0 + 0.25 * (1.0 - (c.ticks as f32 / 5.0)).clamp(0.0, 1.0);
+        let flat = 1.0 - 0.35 * k;
+        let root = at(c.pos, -sink)
+            * Mat4::rotation_y(c.yaw)
+            * Mat4::rotation_x(k * 1.5)
+            * s(swell, swell * flat, swell);
         p.character(&info.model, root, &[Layer::full("idle", 0.0)], 0.0, None);
     }
 }

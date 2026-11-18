@@ -121,13 +121,13 @@ impl BuildError {
     pub fn message(self) -> &'static str {
         match self {
             Self::OutOfArea => "Too far from the hull",
-            Self::Reserved => "Reserved for a module room",
+            Self::Reserved => "Reserved for a future module",
             Self::Occupied => "Something is already there",
             Self::NoDeck => "Needs deck plating below",
             Self::NotAttached => "Deck must connect to the ship",
             Self::BlocksAccess => "That would block a station",
-            Self::WouldSplit => "That would cut the ship in two",
-            Self::BaseFloor => "The original decks stay",
+            Self::WouldSplit => "That would cut the ship in two. PENNY objects",
+            Self::BaseFloor => "The original decks are load-bearing",
             Self::NothingThere => "Nothing to remove",
             Self::Unaffordable => "Not enough materials in the hold",
         }

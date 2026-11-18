@@ -11,7 +11,7 @@
 id = "scout-visor"
 name = "Scout Visor"
 slot = "helmet"
-description = "A wide visor tuned to ore glints and XP shards."
+description = "A wide visor tuned to ore glints and XP shards. Scratch-resistant, mostly."
 implicit = { effect = "pickup_range", amount = 1.0 }
 weight = 3
 
@@ -27,7 +27,7 @@ weight = 3
 id = "targeting-helm"
 name = "Targeting Helm"
 slot = "helmet"
-description = "Ballistic overlay for the auto-aim."
+description = "Ballistic overlay for the auto-aim. Does the hard part."
 implicit = { effect = "damage", amount = 0.06 }
 weight = 2
 
@@ -35,7 +35,7 @@ weight = 2
 id = "plated-suit"
 name = "Plated Suit"
 slot = "suit"
-description = "Ceramic plates over the pressure layer."
+description = "Ceramic plates over the pressure layer. Previously owned."
 implicit = { effect = "max_health", amount = 15.0 }
 weight = 3
 
@@ -43,7 +43,7 @@ weight = 3
 id = "medic-suit"
 name = "Medic Weave"
 slot = "suit"
-description = "Nanite-laced fabric that knits wounds."
+description = "Nanite-laced fabric that knits wounds. Itchy."
 implicit = { effect = "regeneration", amount = 0.4 }
 weight = 2
 
@@ -51,7 +51,7 @@ weight = 2
 id = "rig-harness"
 name = "Rig Harness"
 slot = "suit"
-description = "Load-spreading frame that shrugs off blows."
+description = "Load-spreading frame that shrugs off blows, and paperwork."
 implicit = { effect = "armor", amount = 0.05 }
 weight = 2
 
@@ -59,7 +59,7 @@ weight = 2
 id = "runner-boots"
 name = "Runner Boots"
 slot = "boots"
-description = "Sprung soles for long hauls."
+description = "Sprung soles for long hauls and short retreats."
 implicit = { effect = "move_speed", amount = 1.05 }
 weight = 3
 
@@ -67,7 +67,7 @@ weight = 3
 id = "jump-boots"
 name = "Jump Boots"
 slot = "boots"
-description = "Thruster heels that recharge the dash faster."
+description = "Thruster heels that recharge the dash faster. Slightly on fire."
 implicit = { effect = "dash_cooldown", amount = 0.9 }
 weight = 2
 
@@ -75,7 +75,7 @@ weight = 2
 id = "anchor-boots"
 name = "Anchor Boots"
 slot = "boots"
-description = "Mag-locks that hold you in the extraction zone."
+description = "Mag-locks that hold you in the extraction zone. Leaving is optional."
 implicit = { effect = "extraction_speed", amount = 0.15 }
 weight = 2
 
@@ -83,7 +83,7 @@ weight = 2
 id = "salvage-scanner"
 name = "Salvage Scanner"
 slot = "gadget"
-description = "Pings cache signatures: rarer upgrades turn up."
+description = "Pings cache signatures: rarer upgrades turn up. Finders keepers."
 implicit = { effect = "luck", amount = 0.15 }
 weight = 2
 
@@ -91,7 +91,7 @@ weight = 2
 id = "ore-sifter"
 name = "Ore Sifter"
 slot = "gadget"
-description = "Sorts the rubble for extra ore."
+description = "Sorts the rubble for extra ore. Accounting's favourite."
 implicit = { effect = "ore_bonus", amount = 0.15 }
 weight = 2
 
@@ -99,7 +99,7 @@ weight = 2
 id = "capacitor"
 name = "Overclock Capacitor"
 slot = "gadget"
-description = "Feeds the class ability spare power."
+description = "Feeds the class ability spare power. Warranty void."
 implicit = { effect = "ability_cooldown", amount = 0.9 }
 weight = 2
 
@@ -107,7 +107,7 @@ weight = 2
 id = "neural-siphon"
 name = "Neural Siphon"
 slot = "gadget"
-description = "Draws more from every XP shard."
+description = "Draws more from every XP shard. Tastes like copper."
 implicit = { effect = "xp_gain", amount = 0.1 }
 weight = 2
 
@@ -115,7 +115,7 @@ weight = 2
 id = "hunter-module"
 name = "Hunter Module"
 slot = "gadget"
-description = "Marks weak points on heavy targets."
+description = "Marks weak points on heavy targets. Big things, small circles."
 implicit = { effect = "heavy_damage", amount = 0.2 }
 weight = 1
 min_hazard = 2

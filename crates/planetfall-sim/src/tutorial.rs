@@ -68,66 +68,66 @@ impl Tutorial {
     pub fn text(&self, have: u32, need: u32) -> Option<(&'static str, String)> {
         let text = match self.step {
             TutorialStep::Welcome => (
-                "SHIP AI // WELCOME ABOARD",
-                "Commander, this rust bucket is all we have left. Let's make it count. Use {move} to walk around the ship.".into(),
+                "PENNY // WELCOME ABOARD",
+                "Welcome aboard the Mayfly, Contractor. She's held together by rust and optimism. Use {move} to walk around.".into(),
             ),
             TutorialStep::ToConsole => (
-                "SHIP AI // NAVIGATION",
-                "Walk to the Navigation Console on the bridge and press {interact} to use it.".into(),
+                "PENNY // NAVIGATION",
+                "Walk to the Navigation Console on the bridge and press {interact}. Mind the loose panel.".into(),
             ),
             TutorialStep::PlotCourse => (
-                "SHIP AI // PLOT A COURSE",
-                "Verdant-7 is the only world our reactor can reach. Select it to engage the FTL drive.".into(),
+                "PENNY // PLOT A COURSE",
+                "Verdant-7 is the only world our reactor can afford. Select it to engage the FTL drive.".into(),
             ),
             TutorialStep::Jumping => return None,
             TutorialStep::ToPod => (
-                "SHIP AI // DROP BAY",
+                "PENNY // DROP BAY",
                 if self.retry {
-                    "Your suit beacon pulled you out... barely. Whatever you carried is lost. Head back to the drop pod and press {interact} when ready.".into()
+                    "I recalled your suit. The cargo stayed down there, and so did your dignity. Back to the pod; press {interact} when ready.".into()
                 } else {
-                    "We're in orbit. Head down to the drop bay and press {interact} at the pod to deploy.".into()
+                    "We're in orbit. Head to the drop bay and press {interact} at the pod. The pod is rated for one landing. Probably.".into()
                 },
             ),
             TutorialStep::Dropping => return None,
             TutorialStep::Survive => (
-                "SHIP AI // HOSTILES",
-                "Infected colonists incoming. Your weapons aim and fire automatically - just keep moving. Press {dash} to dash through danger.".into(),
+                "PENNY // PESTS",
+                "Infestation incoming. Your weapons aim and fire on their own, so just keep moving. Press {dash} to dash through trouble.".into(),
             ),
             TutorialStep::Mine => (
-                "SHIP AI // MINING",
-                "See that glowing blue lumite in the rock? Walk into a wall to drill through it. Mine the marked lumite vein.".into(),
+                "PENNY // MINING",
+                "See the glowing blue lumite? That's payroll. Walk into a wall to drill it. Mine the marked lumite vein.".into(),
             ),
             TutorialStep::Collect => (
-                "SHIP AI // FIELD UPGRADES",
-                "Fallen hostiles drop green XP shards. Collect them to level up and pick an upgrade: rarer ones are stronger, and legendary ones change how a weapon works. Press {ability} for your class ability when they close in.".into(),
+                "PENNY // FIELD UPGRADES",
+                "Dead bugs drop green XP shards. Collect them to level up and pick an upgrade: rarer is stronger, and legendaries change how a weapon works. Press {ability} for your class ability when they crowd you.".into(),
             ),
             TutorialStep::Cache => (
-                "SHIP AI // SUPPLY CACHE",
-                "I'm reading a supply cache nearby. Walk over it for a rare upgrade. New weapons come as you level: one at levels 5, 10 and 15. Field gear doesn't survive the trip home, so use it.".into(),
+                "PENNY // SUPPLY CACHE",
+                "Supply cache nearby. Walk over it for a rare upgrade. New weapons arrive at levels 5, 10 and 15. Field gear doesn't survive the trip home, so use it up.".into(),
             ),
             TutorialStep::Objective => (
-                "SHIP AI // OBJECTIVE",
-                format!("Gather lumite to fuel our reactor: {have} / {need}. Ferrite and anything else you mine comes home too - if you extract."),
+                "PENNY // WORK ORDER",
+                format!("Gather lumite for the reactor: {have} / {need}. Everything else you mine comes home too, if you do."),
             ),
             TutorialStep::CallPod => (
-                "SHIP AI // EXTRACTION",
-                "That's enough lumite. Press {extract} to call the extraction pod. They'll hear it land, so be ready.".into(),
+                "PENNY // EXTRACTION",
+                "That's quota. Press {extract} to call the extraction pod. It is not quiet, and they will notice.".into(),
             ),
             TutorialStep::HoldZone => (
-                "SHIP AI // HOLD THE ZONE",
-                "The pod lands at your drop site. Get inside the ring and hold until liftoff. Die down there and the cargo is lost.".into(),
+                "PENNY // HOLD THE ZONE",
+                "The pod lands at your drop site. Stand in the ring until liftoff. Die down there and the cargo is lost. And docked.".into(),
             ),
             TutorialStep::Debrief => (
-                "SHIP AI // DEBRIEF",
-                "Everything you carried is now in the ship's hold. Close the report when you're done.".into(),
+                "PENNY // DEBRIEF",
+                "Your haul is in the hold. I've started the paperwork. Close the report when you're done.".into(),
             ),
             TutorialStep::Fabricate => (
-                "SHIP AI // CONSTRUCTION",
-                "Use the Fabricator in the corridor to build our first module. Upgrades are permanent and the ship grows with every one.".into(),
+                "PENNY // CONSTRUCTION",
+                "Use the Fabricator in the corridor to build our first module. Upgrades are permanent; the ship grows with each one.".into(),
             ),
             TutorialStep::Done => (
-                "SHIP AI // YOU'RE ON YOUR OWN",
-                "That's the job: drop, mine, survive, extract, build. Visit the Locker Room to suit up as another class, and upgrade the Reactor to reach more dangerous worlds. Good hunting, Commander.".into(),
+                "PENNY // YOU'RE ON YOUR OWN",
+                "That's the job: drop, mine, survive, extract, build. Try another class in the Locker Room, and upgrade the Reactor for richer, nastier worlds. Mercy Salvage thanks you for your service.".into(),
             ),
         };
         Some(text)

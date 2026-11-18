@@ -16,7 +16,7 @@ Planetfall/
 │   ├── bindings.rs          action bindings + device-aware button prompts
 │   ├── controls.rs          keyboard/mouse + gilrs controllers → GameInput
 │   ├── audio.rs             quasar-audio buses, spatial SFX with variants, footsteps, crossfaded music
-│   ├── render/              frame pipeline, voxels, skinning, scene/ building
+│   ├── render/              frame pipeline, voxels, skinning, ink/cel pass, scene/ building
 │   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay, developer
 │                            console; kit.rs is the shared look (windows, buttons,
 │                            chips, bars, key caps)
@@ -195,6 +195,31 @@ stem (variants `name.v2`, `name.v3`... join their base name), plus the aliases i
 to those names. The astronaut and every enemy model load through a named
 animated loader configuration (skins and clips); props use the static loader.
 
+### Feel ("juice") and look
+
+- **Ink and cel shading** (`render/ink.rs`, `ink.wgsl`): one full-screen
+  pass after blocks, meshes and decals and before translucent draws,
+  particles and post. It reads the scene's colour (copied to a scratch
+  texture) and depth: silhouettes where linear depth jumps, creases where
+  its slope bends (block edges), in a warm near-black ink about two pixels
+  wide at 900p, and mid-range brightness pulled toward four soft bands.
+  Glows above 1.0 are left alone so bloom still works. Quasar has no toon
+  shading or edge detection (QUASAR-ISSUES).
+- **Hit and kill feedback** (`render/effects.rs`): hits spark and spray
+  droplets in the target's blood colour; kills pop with a flash, fling gibs
+  in the body colour, splash goo outward and leave a splat; drilling throws
+  sparks; broken blocks burst into chunks with a ring of grit and an ore
+  flash; every shot gets a muzzle flash plus a casing (scatter, mortar) or
+  a heat puff (energy guns); levelling up rings out light.
+- **Bodies** (`render/scene/characters.rs`): hit enemies flinch back and
+  squash for a few frames; corpses swell as they burst, then topple; the
+  held gun recoils; vacuumed pickups stretch toward the player with a
+  streak (`surface.rs`).
+- **Hit-stop and audio** (`desktop.rs`, `audio.rs`): the simulation holds
+  for 50 ms when a heavy enemy dies, 120 ms for a boss and 35 ms when the
+  player is hurt (at most once every 0.35 s, and only with screen shake on);
+  chained XP pickups climb a pentatonic scale.
+
 ### UI
 
 `ui::Builder` creates `quasar-ui` trees. Cards are panels with a `NodeStyle`
@@ -221,7 +246,8 @@ device family the player last used.
   recording and the whole CPU frame (which includes the offscreen readback),
   plus draws, lights and enemies. Use it before and after performance work,
   for example `--headless --autoplay --fresh --seed 1 --ticks 17800 --bench 600`
-  (a surge of about 50 enemies).
+  (a surge of about 50 enemies). `--record DIR` also saves every benched
+  frame as a PNG, for clips (`ffmpeg -framerate 60 -i DIR/frame-%05d.png`).
 - `--screenshot FILE` renders the final state, HUD, open terminal or
   level-up menu with a headless GPU; `--menu main|saves|settings|controls|pause`
   renders that menu instead (with sample slots; nothing is read from disk).

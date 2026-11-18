@@ -48,6 +48,7 @@ pub use extraction::{extraction_hold, extraction_inbound, extraction_radius};
 pub use hazards::{Hazard, HazardKind, Quake};
 pub use loot::Find;
 pub use mission::{MissionState, Progress, Relay, Rig, Survivor};
+pub use weapons::HEAVY_HEALTH;
 
 /// What one player brings to a drop: their class, its tiers and the weapon
 /// they start with.
@@ -798,7 +799,8 @@ pub struct Pickup {
     pub height: f32,
     vel: V2,
     vy: f32,
-    magnet: bool,
+    /// Being pulled toward a player (presentation stretches it).
+    pub magnet: bool,
     pub age: u32,
 }
 

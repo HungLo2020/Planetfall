@@ -10,7 +10,7 @@
 [[mutator]]
 id = "rich-veins"
 name = "Rich Veins"
-description = "Every vein gives half again as much ore."
+description = "Every vein gives half again as much ore. Don't ask why."
 effect = "rich_veins"
 amount = 1.5
 reward = 0.0
@@ -19,7 +19,7 @@ weight = 2
 [[mutator]]
 id = "double-swarm"
 name = "Double Swarm"
-description = "Twice the horde. Pays 50% more."
+description = "Twice the horde. Pays 50% more. Bring friends you can spare."
 effect = "double_swarm"
 amount = 2.0
 reward = 0.5
@@ -28,7 +28,7 @@ weight = 2
 [[mutator]]
 id = "no-regen"
 name = "Haemophilia"
-description = "No health regeneration. Pays 25% more."
+description = "No health regeneration. Pays 25% more. Try not to bleed."
 effect = "no_regen"
 amount = 0.0
 reward = 0.25
@@ -37,7 +37,7 @@ weight = 1
 [[mutator]]
 id = "low-gravity"
 name = "Low Gravity"
-description = "Move a quarter faster and dash further."
+description = "Move a quarter faster and dash further. Wheee."
 effect = "low_gravity"
 amount = 1.25
 reward = 0.0
@@ -46,7 +46,7 @@ weight = 1
 [[mutator]]
 id = "glass-cannon"
 name = "Glass Cannon"
-description = "Deal and take 50% more damage. Pays 30% more."
+description = "Deal and take 50% more damage. Pays 30% more. Fragile, but loud."
 effect = "glass_cannon"
 amount = 1.5
 reward = 0.3

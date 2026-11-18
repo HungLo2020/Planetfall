@@ -192,6 +192,7 @@ fn bench(
             text: Some(text),
             size,
             frames,
+            record: settings.record.clone(),
         },
         &mut |game| {
             if autoplay {

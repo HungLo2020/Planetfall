@@ -14,7 +14,7 @@
 
 [[perk]]
 id = "reinforced-suit"
-title = "Reinforced Suit"
+title = "Extra Padding"
 description = "+{amount} max health and heal {amount}."
 effect = "max_health"
 amount = 20.0
@@ -38,7 +38,7 @@ weight = 2
 
 [[perk]]
 id = "rapid-cycling"
-title = "Rapid Cycling"
+title = "Hair Trigger"
 description = "Weapons cycle {percent}% faster."
 effect = "fire_rate"
 amount = 0.9
@@ -46,7 +46,7 @@ weight = 2
 
 [[perk]]
 id = "magnetic-field"
-title = "Magnetic Field"
+title = "Sticky Fingers"
 description = "+{amount} m pickup range."
 effect = "pickup_range"
 amount = 1.5
@@ -62,7 +62,7 @@ weight = 1
 
 [[perk]]
 id = "nanite-repair"
-title = "Nanite Repair"
+title = "Nanite Patch"
 description = "Regenerate {amount} health per second."
 effect = "regeneration"
 amount = 1.0
@@ -71,7 +71,7 @@ max = 3.0
 
 [[perk]]
 id = "lucky-charm"
-title = "Lucky Charm"
+title = "Lucky Rivet"
 description = "+{percent}% luck: rarer upgrades turn up more often."
 effect = "luck"
 amount = 0.25
@@ -91,7 +91,7 @@ class = "striker"
 
 [[perk]]
 id = "executioner"
-title = "Executioner"
+title = "Bigger They Are"
 description = "+{percent}% damage against heavy enemies."
 effect = "heavy_damage"
 amount = 0.25
@@ -129,7 +129,7 @@ class = "warden"
 
 [[perk]]
 id = "dug-in"
-title = "Dug In"
+title = "Squatter's Rights"
 description = "Hold the extraction zone {percent}% faster."
 effect = "extraction_speed"
 amount = 0.25
@@ -140,7 +140,7 @@ max = 1.5
 
 [[perk]]
 id = "capacitors"
-title = "Capacitors"
+title = "Spare Batteries"
 description = "Ability recharges {percent}% faster."
 effect = "ability_cooldown"
 amount = 0.85
@@ -149,7 +149,7 @@ class = "engineer"
 
 [[perk]]
 id = "auto-repair"
-title = "Auto-Repair"
+title = "Duct Tape"
 description = "Regenerate {amount} health per second."
 effect = "regeneration"
 amount = 1.5

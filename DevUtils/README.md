@@ -10,6 +10,7 @@ Development scripts. All are Python 3 using only the standard library. Run them 
 | `test_release.py` | Offline tests for `release.py` against a fake GitHub API (`python3 -m unittest DevUtils.test_release`). |
 | `assets/generate_models.py` | Regenerates every GLB in `assets/models/` (deterministic). |
 | `assets/generate_sounds.py` | Regenerates every WAV in `assets/sounds/` (deterministic). |
+| `assets/remaster_sounds.py` | Designed replacements for drafted sounds, built from synthesis, the CC0 recordings in `assets/sources/kenney/` and Sonniss GDC recordings (`--fetch-sources` downloads those into the git-ignored `assets/sources/sonniss/`); lists the remastered sounds, or rewrites the named ones (needs numpy, scipy and ffmpeg). |
 
 The cover art is rendered by the game itself:
 `cargo run --release -- --cover assets/basalt/cover.png`.

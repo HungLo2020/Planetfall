@@ -109,7 +109,7 @@ pub fn build(cx: &HudContext) -> Layer {
                     BAD,
                     "threat",
                     "SIGNAL LOST",
-                    "Suit beacon recalled you. Cargo was not recovered.",
+                    "PENNY recalled your suit. The cargo stays down there.",
                 );
             }
         }
@@ -124,7 +124,7 @@ pub fn build(cx: &HudContext) -> Layer {
                     "Kestrel Exchange · trade station".to_owned(),
                 ),
             };
-            transit(&mut b, root, &icon, "FTL JUMP IN PROGRESS", &line);
+            transit(&mut b, root, &icon, "FTL JUMP · PLEASE HOLD", &line);
         }
         Phase::Descent { .. } => {
             if let Some(run) = &game.run {
@@ -593,11 +593,18 @@ fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
             BAD,
             "surge",
             &format!("SURGE INCOMING · {}s", run.surge.warning.div_ceil(60)),
-            "A wave is coming from every side.",
+            "A wave is coming from every side. Brace.",
         );
         y += 80.0;
     } else if run.surge.active > 0 {
-        b.alert(root, item(y), BAD, "surge", "SURGE", "Hold on.");
+        b.alert(
+            root,
+            item(y),
+            BAD,
+            "surge",
+            "SURGE",
+            "Hold on. This part is billable.",
+        );
         y += 80.0;
     }
     if run.quake.warning > 0 {
@@ -607,7 +614,7 @@ fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
             WARN,
             "hazard",
             &format!("QUAKE · {}s", run.quake.warning.div_ceil(60)),
-            "Rubble will fall nearby.",
+            "Rubble incoming. Hard hats recommended.",
         );
     }
 }
@@ -687,7 +694,7 @@ fn find_banner(b: &mut Builder, root: NodeId, run: &Run) {
     b.item_view(banner, &view, true);
     b.label(
         banner,
-        "Sent to the stash · kept even if you fall",
+        "Sent to the stash · kept even if you aren't",
         TextStyle::Small,
     );
 }
@@ -729,12 +736,12 @@ fn primary_status(run: &Run) -> String {
         }
         ObjectiveKind::Rescue => match m.survivor {
             Some(s) if s.down => "Survivor down! Stand close to revive".into(),
-            Some(s) if s.following => "Escort the survivor to the pod".into(),
-            _ => "Find the stranded survivor".into(),
+            Some(s) if s.following => "Escort the prospector to the pod".into(),
+            _ => "Find the stranded prospector".into(),
         },
         ObjectiveKind::Defend => match m.rig {
             Some(r) if !r.active => "Stand at the drill rig to start it".into(),
-            Some(r) if r.broken() => "The rig is down! Stand close to repair".into(),
+            Some(r) if r.broken() => "The rig is down! Stand close to fix it".into(),
             Some(r) => format!(
                 "Drilling  {}%  ·  rig {:.0}%",
                 r.drilled * 100 / r.need.max(1),

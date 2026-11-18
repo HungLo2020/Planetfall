@@ -192,40 +192,126 @@ impl Effects {
                     let info = kind.info();
                     let blood = info.blood;
                     let exploder = info.behavior == EnemyBehavior::Exploder;
+                    // Bigger bugs burst harder (bosses most of all).
+                    let heft = (info.radius / 0.5).clamp(0.8, 3.0);
+                    let body = info.tint.unwrap_or([0.55, 0.5, 0.45]);
+                    // Pop: a bright flash where it burst.
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 0.8, at[1]],
+                        position_jitter: 0.1,
+                        count: (6.0 * heft) as u32,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: std::f32::consts::PI,
+                        speed: [1.0, 2.5],
+                        life: [0.06, 0.12],
+                        size: [0.8 * heft, 0.25],
+                        color_start: [
+                            blood[0] * 2.5 + 0.6,
+                            blood[1] * 2.5 + 0.6,
+                            blood[2] * 2.5 + 0.6,
+                            1.0,
+                        ],
+                        color_end: [blood[0], blood[1], blood[2], 0.0],
+                    })?;
+                    // Gibs: chunky shell pieces flung up that fall back down.
+                    dust.emit(&ParticleBurst {
+                        position: [at[0], 0.9, at[1]],
+                        position_jitter: info.radius * 0.5,
+                        count: (9.0 * heft) as u32,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.0,
+                        speed: [3.5, 7.5],
+                        life: [0.6, 1.1],
+                        size: [0.3 * heft.sqrt(), 0.2],
+                        color_start: [body[0] * 0.5, body[1] * 0.5, body[2] * 0.5, 1.0],
+                        color_end: [body[0] * 0.3, body[1] * 0.3, body[2] * 0.3, 0.8],
+                    })?;
+                    // Goo: a spray and a low ring splashing outward.
                     dust.emit(&ParticleBurst {
                         position: [at[0], 0.9, at[1]],
                         position_jitter: info.radius * 0.6,
-                        count: if exploder { 10 } else { 18 },
+                        count: (if exploder { 14.0 } else { 22.0 } * heft) as u32,
                         direction: [0.0, 1.0, 0.0],
                         spread: 1.2,
-                        speed: [2.0, 5.0],
+                        speed: [2.0, 5.5],
                         life: [0.45, 0.9],
-                        size: [0.16, 0.05],
+                        size: [0.24, 0.08],
                         color_start: [blood[0], blood[1], blood[2], 1.0],
                         color_end: [blood[0] * 0.6, blood[1] * 0.6, blood[2] * 0.6, 0.0],
                     })?;
+                    dust.emit(&ParticleBurst {
+                        position: [at[0], 0.15, at[1]],
+                        position_jitter: 0.1,
+                        count: (16.0 * heft) as u32,
+                        direction: [0.0, 0.15, 0.0],
+                        spread: std::f32::consts::FRAC_PI_2,
+                        speed: [2.5, 4.5 * heft.sqrt()],
+                        life: [0.25, 0.45],
+                        size: [0.2, 0.06],
+                        color_start: [blood[0], blood[1], blood[2], 0.9],
+                        color_end: [blood[0] * 0.5, blood[1] * 0.5, blood[2] * 0.5, 0.0],
+                    })?;
                     if !exploder {
                         // Decals are not lit: darken to sit on shaded ground.
-                        let tint = [blood[0] * 0.3, blood[1] * 0.3, blood[2] * 0.3, 0.55];
-                        self.mark(MarkKind::Splat, at, 0.7 + info.radius * 1.3, tint);
+                        let tint = [blood[0] * 0.3, blood[1] * 0.3, blood[2] * 0.3, 0.6];
+                        self.mark(MarkKind::Splat, at, 0.9 + info.radius * 1.6, tint);
                     }
                 }
                 GameEvent::EnemyHit { at } => {
                     glow.emit(&ParticleBurst {
                         position: [at[0], 1.0, at[1]],
                         position_jitter: 0.15,
-                        count: 4,
+                        count: 6,
                         direction: [0.0, 1.0, 0.0],
                         spread: 1.4,
-                        speed: [2.0, 4.0],
-                        life: [0.12, 0.25],
-                        size: [0.09, 0.02],
-                        color_start: [2.2, 1.6, 0.9, 1.0],
+                        speed: [2.5, 5.0],
+                        life: [0.1, 0.22],
+                        size: [0.1, 0.02],
+                        color_start: [2.6, 1.9, 1.1, 1.0],
                         color_end: [1.0, 0.3, 0.1, 0.0],
                     })?;
+                    // Goo droplets in the colour of whatever was hit.
+                    let blood = run
+                        .enemies
+                        .iter()
+                        .filter(|e| e.health > 0.0)
+                        .min_by(|a, b| {
+                            a.pos
+                                .distance_squared(at)
+                                .total_cmp(&b.pos.distance_squared(at))
+                        })
+                        .filter(|e| e.pos.distance(at) < 2.0)
+                        .map(|e| e.kind.info().blood);
+                    if let Some(blood) = blood {
+                        dust.emit(&ParticleBurst {
+                            position: [at[0], 0.9, at[1]],
+                            position_jitter: 0.2,
+                            count: 5,
+                            direction: [0.0, 1.0, 0.0],
+                            spread: 1.1,
+                            speed: [1.5, 3.5],
+                            life: [0.3, 0.55],
+                            size: [0.15, 0.05],
+                            color_start: [blood[0], blood[1], blood[2], 1.0],
+                            color_end: [blood[0] * 0.6, blood[1] * 0.6, blood[2] * 0.6, 0.0],
+                        })?;
+                    }
                 }
                 GameEvent::MineHit { at, material } => {
-                    dust.emit(&chips(at, 1.0, rock, 5, 0.12))?;
+                    dust.emit(&chips(at, 1.0, rock, 7, 0.13))?;
+                    // The bit throws hot sparks off the face.
+                    glow.emit(&ParticleBurst {
+                        position: [at[0], 1.0, at[1]],
+                        position_jitter: 0.12,
+                        count: 9,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 1.5,
+                        speed: [3.0, 7.0],
+                        life: [0.12, 0.3],
+                        size: [0.06, 0.01],
+                        color_start: [3.0, 1.7, 0.6, 1.0],
+                        color_end: [1.4, 0.35, 0.05, 0.0],
+                    })?;
                     if let Some(m) = material {
                         glow.emit(&glints(at, 1.0, ore_glow(m), 4))?;
                     }
@@ -262,6 +348,27 @@ impl Effects {
                     burst.position_jitter = 0.7;
                     burst.speed = [2.5, 6.5];
                     dust.emit(&burst)?;
+                    // Chunks: fewer, bigger pieces that arc out and drop.
+                    let mut chunks = chips(at, 1.4, rock, 12, 0.38);
+                    chunks.position_jitter = 0.5;
+                    chunks.speed = [3.0, 6.0];
+                    chunks.life = [0.6, 1.0];
+                    chunks.spread = 0.9;
+                    chunks.color_end = [rock[0] * 0.7, rock[1] * 0.7, rock[2] * 0.7, 0.9];
+                    dust.emit(&chunks)?;
+                    // A ring of grit rolling out along the floor.
+                    dust.emit(&ParticleBurst {
+                        position: [at[0], 0.1, at[1]],
+                        position_jitter: 0.3,
+                        count: 20,
+                        direction: [0.0, 0.1, 0.0],
+                        spread: std::f32::consts::FRAC_PI_2,
+                        speed: [2.0, 4.0],
+                        life: [0.35, 0.6],
+                        size: [0.3, 0.6],
+                        color_start: [rock[0], rock[1], rock[2], 0.4],
+                        color_end: [rock[0], rock[1], rock[2], 0.0],
+                    })?;
                     dust.emit(&ParticleBurst {
                         position: [at[0], 0.6, at[1]],
                         position_jitter: 0.8,
@@ -275,7 +382,21 @@ impl Effects {
                         color_end: [rock[0], rock[1], rock[2], 0.0],
                     })?;
                     if let Some(m) = material {
-                        glow.emit(&glints(at, 1.2, ore_glow(m), 16))?;
+                        glow.emit(&glints(at, 1.2, ore_glow(m), 22))?;
+                        // Ore cracking open flashes its colour.
+                        let c = ore_glow(m);
+                        glow.emit(&ParticleBurst {
+                            position: [at[0], 1.0, at[1]],
+                            position_jitter: 0.05,
+                            count: 4,
+                            direction: [0.0, 1.0, 0.0],
+                            spread: std::f32::consts::PI,
+                            speed: [0.5, 1.0],
+                            life: [0.08, 0.14],
+                            size: [0.9, 0.3],
+                            color_start: [c[0], c[1], c[2], 1.0],
+                            color_end: [c[0] * 0.3, c[1] * 0.3, c[2] * 0.3, 0.0],
+                        })?;
                     }
                 }
                 GameEvent::Impact { weapon, at, height } => {
@@ -431,6 +552,113 @@ impl Effects {
                         size: [0.18, 0.5],
                         color_start: [3.0, 1.4, 0.35, 1.0],
                         color_end: [0.9, 0.12, 0.02, 0.0],
+                    })?;
+                }
+                GameEvent::Fired { weapon, at } => {
+                    let info = weapon.info();
+                    let aim = run
+                        .players
+                        .iter()
+                        .flat_map(|p| p.weapons.iter())
+                        .find(|w| w.kind == weapon && w.since_fired == 0)
+                        .map(|w| w.aim);
+                    if let Some(aim) = aim {
+                        let d = planetfall_sim::math::from_yaw(aim);
+                        let muzzle = [at[0] + d[0] * 0.75, 1.15, at[1] + d[1] * 0.75];
+                        let c = info.color;
+                        glow.emit(&ParticleBurst {
+                            position: muzzle,
+                            position_jitter: 0.03,
+                            count: 5,
+                            direction: [d[0], 0.0, d[1]],
+                            spread: 0.5,
+                            speed: [2.0, 5.0],
+                            life: [0.04, 0.08],
+                            size: [0.5, 0.12],
+                            color_start: [
+                                c[0] * 3.0 + 0.5,
+                                c[1] * 3.0 + 0.5,
+                                c[2] * 3.0 + 0.5,
+                                1.0,
+                            ],
+                            color_end: [c[0], c[1], c[2], 0.0],
+                        })?;
+                        // Physical guns kick out a casing to the side; energy
+                        // guns vent a puff of heat.
+                        let side = [d[1], 0.6, -d[0]];
+                        if matches!(
+                            info.behavior,
+                            WeaponBehavior::Scatter | WeaponBehavior::Mortar
+                        ) {
+                            dust.emit(&ParticleBurst {
+                                position: [at[0] + d[0] * 0.3, 1.1, at[1] + d[1] * 0.3],
+                                position_jitter: 0.02,
+                                count: 1,
+                                direction: side,
+                                spread: 0.3,
+                                speed: [2.5, 3.5],
+                                life: [0.45, 0.6],
+                                size: [0.07, 0.06],
+                                color_start: [0.9, 0.62, 0.22, 1.0],
+                                color_end: [0.6, 0.4, 0.15, 1.0],
+                            })?;
+                        } else {
+                            dust.emit(&ParticleBurst {
+                                position: [at[0] + d[0] * 0.35, 1.15, at[1] + d[1] * 0.35],
+                                position_jitter: 0.03,
+                                count: 2,
+                                direction: [side[0], 1.0, side[2]],
+                                spread: 0.5,
+                                speed: [0.3, 0.8],
+                                life: [0.25, 0.4],
+                                size: [0.1, 0.28],
+                                color_start: [0.75, 0.8, 0.85, 0.25],
+                                color_end: [0.75, 0.8, 0.85, 0.0],
+                            })?;
+                        }
+                    }
+                }
+                GameEvent::LevelUp { .. } => {
+                    let pos = run.player().pos;
+                    // A ring of light bursting outward and a rising column.
+                    glow.emit(&ParticleBurst {
+                        position: [pos[0], 0.3, pos[1]],
+                        position_jitter: 0.1,
+                        count: 60,
+                        direction: [0.0, 0.05, 0.0],
+                        spread: std::f32::consts::FRAC_PI_2,
+                        speed: [5.0, 7.0],
+                        life: [0.35, 0.55],
+                        size: [0.16, 0.04],
+                        color_start: [1.0, 2.2, 3.0, 1.0],
+                        color_end: [0.3, 0.8, 1.6, 0.0],
+                    })?;
+                    glow.emit(&ParticleBurst {
+                        position: [pos[0], 0.2, pos[1]],
+                        position_jitter: 0.5,
+                        count: 40,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 0.15,
+                        speed: [4.0, 9.0],
+                        life: [0.4, 0.8],
+                        size: [0.12, 0.02],
+                        color_start: [1.6, 2.6, 3.0, 1.0],
+                        color_end: [0.4, 1.0, 1.6, 0.0],
+                    })?;
+                }
+                GameEvent::PickedUpXp => {
+                    let pos = run.player().pos;
+                    glow.emit(&ParticleBurst {
+                        position: [pos[0], 1.2, pos[1]],
+                        position_jitter: 0.3,
+                        count: 3,
+                        direction: [0.0, 1.0, 0.0],
+                        spread: 0.8,
+                        speed: [1.0, 2.5],
+                        life: [0.15, 0.3],
+                        size: [0.07, 0.01],
+                        color_start: [0.8, 2.6, 1.6, 1.0],
+                        color_end: [0.2, 1.0, 0.6, 0.0],
                     })?;
                 }
                 GameEvent::Combo { kind, at } => {

@@ -50,7 +50,7 @@ console (`/give weapon sentry`, `/give upgrade sentry mobile-sentry`, `/spawn`,
   signature weapon, familiar weapons, an active ability (blink, bore,
   barrier, shield dome) and a passive. Switch in the ship's locker room; every
   class keeps its own level, unlocks and starting weapon.
-- **Tutorial**: a ship AI walks a new commander from the barebones ship through
+- **Tutorial**: PENNY, the penny-pinching ship AI, walks a new contractor from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
   cache, extraction and the first module build. It only runs once.
 - **Ship hub**: a walkable voxel ship with a navigation console, fabricator
@@ -155,6 +155,8 @@ single rolling `Latest` GitHub Release that Basalt installs from (see
 
 - [Design](docs/design.md): the vision, the three loops, classes, missions,
   equipment and the roadmap for the next stages.
+- [Voice](docs/voice.md): who is talking (Mercy Salvage Ltd., PENNY the ship
+  AI), tone rules and examples for any player-facing text.
 - [Architecture](docs/architecture.md): crates, the simulation/presentation split
   and how Quasar is used.
 - [Gameplay](docs/gameplay.md): the loop, tutorial, planets, weapons, enemies,

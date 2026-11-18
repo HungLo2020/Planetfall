@@ -106,7 +106,19 @@ fn player(p: &mut Painter<'_, '_>, game: &Game, run: &Run, index: usize, pl: &Pl
             .next()
             .unwrap_or(pl.yaw)
     };
-    p.astronaut(pl.class, pl.pos, 0.0, yaw, pl.walk, pl.moving, flash, held);
+    // The held gun kicks for the first frames after any shot.
+    let kick = pl
+        .weapons
+        .iter()
+        .filter(|w| w.kind.info().behavior != WeaponBehavior::Orbit)
+        .map(|w| w.since_fired)
+        .min()
+        .map_or(0.0, |since| {
+            (1.0 - since as f32 / 6.0).clamp(0.0, 1.0).powi(2)
+        });
+    p.astronaut(
+        pl.class, pl.pos, 0.0, yaw, pl.walk, pl.moving, flash, held, kick,
+    );
     // A melee sweep leaves a bright arc for a moment.
     for w in &pl.weapons {
         let info = w.kind.info();
@@ -730,6 +742,31 @@ fn pickups(p: &mut Painter<'_, '_>, run: &Run) {
                 (names::VOIDSTONE_CHUNK, 1.5)
             }
         };
+        if pk.magnet {
+            // Vacuumed in: stretched toward the player with a glow streak.
+            let to = run.player().pos - pk.pos;
+            let yaw = planetfall_sim::math::yaw_of(to);
+            let face = Mat4::rotation_y(yaw);
+            p.model(
+                id,
+                at(pk.pos, pk.height) * face * s(scale * 0.75, scale * 0.75, scale * 1.7),
+            );
+            let tail = pk.pos - to.normalize_or_zero() * 0.45;
+            let color = match pk.kind {
+                planetfall_sim::run::PickupKind::Xp(_) => [0.4, 1.0, 0.7],
+                planetfall_sim::run::PickupKind::Material(m, _) => match m {
+                    Material::Ferrite => [1.0, 0.6, 0.3],
+                    Material::Lumite => [0.35, 0.9, 1.0],
+                    Material::Voidstone => [0.7, 0.35, 1.0],
+                },
+            };
+            p.ghost(
+                at(tail, pk.height) * face * s(0.06, 0.06, 0.45),
+                color,
+                0.35,
+            );
+            continue;
+        }
         p.model(
             id,
             at(pk.pos, pk.height + bob) * spin * s(scale, scale, scale),

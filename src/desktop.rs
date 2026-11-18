@@ -149,6 +149,8 @@ pub fn run(launch: Launch) -> Result<(), String> {
         time: 0.0,
         dt: 1.0 / 60.0,
         shake: 0.0,
+        hitstop: 0.0,
+        hitstop_cooldown: 0.0,
         frame_events: Vec::new(),
         frames: 0,
         size: (size.0 as f32, size.1 as f32),
@@ -200,6 +202,10 @@ struct App {
     time: f32,
     dt: f32,
     shake: f32,
+    /// Seconds of hit-stop left (the simulation holds for a beat on big
+    /// hits), and seconds until another may start.
+    hitstop: f32,
+    hitstop_cooldown: f32,
     /// Game events since the last rendered frame (particles and marks).
     frame_events: Vec<GameEvent>,
     frames: u64,
@@ -517,6 +523,14 @@ impl App {
         None
     }
 
+    /// Hold the simulation for `seconds` (camera effects must be on).
+    fn hit_stop(&mut self, seconds: f32) {
+        if self.prefs.screen_shake && self.hitstop_cooldown <= 0.0 {
+            self.hitstop = self.hitstop.max(seconds);
+            self.hitstop_cooldown = 0.35;
+        }
+    }
+
     fn react(&mut self) {
         // Keep a bounded backlog in case frames stop (minimised window).
         if self.frame_events.len() > 4096 {
@@ -525,6 +539,7 @@ impl App {
         self.frame_events.extend_from_slice(&self.game.events);
         let mut save = false;
         let player = self.game.run.as_ref().map(|r| r.player().pos);
+        let mut stop = 0.0f32;
         for e in &self.game.events {
             match e {
                 GameEvent::ProfileChanged => save = true,
@@ -541,10 +556,25 @@ impl App {
                 GameEvent::SurgeStarted { .. } => self.shake = self.shake.max(0.9),
                 GameEvent::Quake { .. } => self.shake = self.shake.max(1.2),
                 GameEvent::SporeBlast { .. } => self.shake = self.shake.max(0.7),
-                GameEvent::PlayerHurt { .. } => self.shake = self.shake.max(0.6),
+                GameEvent::PlayerHurt { .. } => {
+                    self.shake = self.shake.max(0.6);
+                    stop = stop.max(0.035);
+                }
                 // A little kick as a drilled block cracks further.
                 GameEvent::BlockCracked { stage, .. } => {
                     self.shake = self.shake.max(0.12 + 0.06 * f32::from(*stage));
+                }
+                // Hit-stop: a beat of stillness when something big dies or
+                // you take a hit, rationed so a horde never stutters.
+                GameEvent::EnemyKilled { kind, .. } => {
+                    let info = kind.info();
+                    if info.boss {
+                        stop = stop.max(0.12);
+                        self.shake = self.shake.max(0.8);
+                    } else if info.health >= planetfall_sim::run::HEAVY_HEALTH {
+                        stop = stop.max(0.05);
+                        self.shake = self.shake.max(0.3);
+                    }
                 }
                 GameEvent::Landed | GameEvent::PodLanded { .. } => self.shake = self.shake.max(1.0),
                 GameEvent::Liftoff | GameEvent::FtlStarted { .. } => {
@@ -552,6 +582,9 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        if stop > 0.0 {
+            self.hit_stop(stop);
         }
         if let Some(audio) = &mut self.audio {
             audio.handle(&self.game.events);
@@ -604,6 +637,8 @@ impl Application for App {
         self.size = (c.size.0.max(1) as f32, c.size.1.max(1) as f32);
         self.scale = (self.size.1 / 900.0).clamp(0.75, 2.5);
         self.shake = (self.shake - self.dt * 2.5).max(0.0);
+        self.hitstop = (self.hitstop - self.dt).max(0.0);
+        self.hitstop_cooldown = (self.hitstop_cooldown - self.dt).max(0.0);
         self.controls.begin_frame(c.input);
         if c.input.pressed(quasar_input::Key::F11) {
             self.display.fullscreen = !self.display.fullscreen;
@@ -703,7 +738,7 @@ impl Application for App {
     }
 
     fn tick(&mut self, c: &mut AppContext<'_>) -> Result<Flow, AppError> {
-        if !self.screens.is_empty() {
+        if !self.screens.is_empty() || self.hitstop > 0.0 {
             return Ok(Flow::Deferred);
         }
         // The game holds still under the console, but steps once to apply

@@ -10,20 +10,20 @@
 [[site]]
 id = "stable"
 name = "Stable Caverns"
-description = "Nothing unusual on the scans."
+description = "Nothing unusual on the scans. Suspicious."
 weight = 4
 
 [[site]]
 id = "rich-seams"
 name = "Rich Seams"
-description = "Ore veins run thick here. +40% ore."
+description = "Ore veins run thick here. +40% ore. Accounting is thrilled."
 ore = 1.4
 weight = 2
 
 [[site]]
 id = "infested"
 name = "Infested"
-description = "The hive is close. More of everything, and more skitters."
+description = "The hive is close. More of everything, especially skitters."
 spawn = 1.25
 spawn_weights = { skitter = 1.5 }
 weight = 2
@@ -31,7 +31,7 @@ weight = 2
 [[site]]
 id = "core-heat"
 name = "Near the Core"
-description = "Deep and hot. Tougher creatures, richer ore."
+description = "Deep and hot. Tougher creatures, richer ore, sweatier contractors."
 enemy_health = 1.15
 ore = 1.25
 tint = [1.25, 0.85, 0.7]
@@ -41,7 +41,7 @@ planets = ["verdant", "cinder"]
 [[site]]
 id = "brute-den"
 name = "Brute Den"
-description = "Brutes roam these caves from the start."
+description = "Brutes roam these caves from the start. They are not friendly brutes."
 spawn_weights = { brute = 3.0 }
 weight = 1
 planets = ["cinder", "hollow"]
@@ -49,7 +49,7 @@ planets = ["cinder", "hollow"]
 [[site]]
 id = "restless"
 name = "Restless"
-description = "Seismic noise keeps the horde agitated: the threat climbs faster and quakes bring rubble down."
+description = "Seismic noise riles the horde: the threat climbs faster and quakes bring rubble down."
 threat = 1.3
 quakes = true
 weight = 1
@@ -57,7 +57,7 @@ weight = 1
 [[site]]
 id = "frost-pockets"
 name = "Frost Pockets"
-description = "Freezing air: the horde is slow but thick-skinned."
+description = "Freezing air: the horde is slow but thick-skinned. So are you."
 enemy_health = 1.2
 tint = [0.75, 0.9, 1.25]
 weight = 2
@@ -66,7 +66,7 @@ planets = ["hollow"]
 [[site]]
 id = "thin-air"
 name = "Thin Air"
-description = "A gas pocket with little oxygen: watch the meter, refill at vents and the pod."
+description = "Little oxygen: watch the meter, refill at vents and the pod. Air is extra."
 oxygen = true
 weight = 1
 planets = ["verdant", "cinder", "tidewell"]

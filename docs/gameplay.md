@@ -66,7 +66,7 @@ Warden loses nothing.
   ability (tiers at class levels 4 and 8) and passive (6 and 10), unlock
   familiar starting weapons and add class perks to level-up offers.
 - **Class perks** (two per class, one from class level 3) appear only for
-  their class: e.g. Momentum and Executioner for the Striker, Rich Veins and
+  their class: e.g. Momentum and Bigger They Are for the Striker, Rich Veins and
   Overclocked Drill for the Prospector.
 - New commanders start as the Striker; the tutorial is unchanged.
 
@@ -104,12 +104,12 @@ Numbers live in `tuning.toml` (`[equipment]`, `[trade]`).
 
 ## Tutorial
 
-On a new profile a ship AI walks through: moving → navigation console → plot
+On a new profile PENNY, the ship AI, walks through: moving → navigation console → plot
 Verdant-7 → FTL → drop pod → survive (the horde is held back until now) →
 mine lumite → level up → open a weapon cache → finish the objective → call
 extraction → hold the zone → debrief → build a first module. The tutorial
 drop spawns half as many enemies, guarantees lumite and ferrite near the pod
-and places a weapon cache close by. After the tutorial extraction the ship AI
+and places a weapon cache close by. After the tutorial extraction PENNY
 adds hull salvage to the hold if needed, so the cheapest module is always
 affordable (the debrief shows it). Dying restarts from the drop bay. Prompts
 show keyboard or controller labels depending on the last device used.
@@ -211,7 +211,7 @@ contract is:
 - sometimes a **mutator**: Rich Veins, Double Swarm (+50% pay),
   Haemophilia (no regeneration, +25%), Low Gravity, Glass Cannon (+30%).
 
-Pick a **hazard level** (1 Easy to 5 Lethal) on the board: each level
+Pick a **hazard level** (1 Routine to 5 Lethal) on the board: each level
 raises enemy health (×1 to ×3.1), damage (×1 to ×2.4), spawn pressure
 (×1 to ×2.4) and elite share, shifts upgrade rarities upward, and multiplies
 the banked haul (×1 to ×3.6) and class XP. Hazard 1 is for learning; hazard
@@ -259,7 +259,7 @@ drop is tuned around. The debrief shows the threat reached.
 | Scattergun | Warden signature. Short-range pellet fan | — |
 | Arc Caster | Chain lightning jumping between nearby enemies | Shock |
 | Plasma Mortar | Lobbed shells that burst in an area (arcs over walls) | Fire |
-| Sentry Turrets | Engineer signature. Plants one turret per count near you (re-planted when you move on) that fire with the weapon's upgrades. With Mobile Sentry they patrol a turning ring around you, spaced evenly however many there are, and path around rock to keep up | — |
+| Sentry Turrets | Engineer signature. Plants one turret per count near you (re-planted when you move on) that fire with the weapon's upgrades. With Walkies (`mobile-sentry`) they patrol a turning ring around you, spaced evenly however many there are, and path around rock to keep up | — |
 | Orbit Drones | Blades circling the player | — |
 | Torch | Flamethrower cone; builds heat and locks when it overheats. Ignites spores | Fire |
 | Ripper Disc | A disc that bounces between enemies and off walls | — |
@@ -283,7 +283,7 @@ mortar arcs over walls).
 
 Every other level-up offers three upgrades, each rolled at a **rarity**:
 common, uncommon, rare or legendary (base odds 60/27/10/3; planet hazard and
-the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
+the Luck perk shift them upward). Rarity sets the amount (e.g. Spicy Rounds
 +20/32/48/70% damage) and unlocks more:
 
 - **Weapon mods** (`mods.toml`): damage, fire rate, extra projectiles,
@@ -303,10 +303,10 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
   deals extra), **Conductive** (shock always arcs through every wet enemy
   nearby), **Acid fuel** (burns hurt more on corroded enemies), and fire sets
   off spore clouds. Water douses burning enemies.
-- **Legendary behaviour changes**: Twin Barrel (bolts also fire at a second
-  target), Double Blast (a second fan behind you), Overload (lightning
-  forks), Cluster Shells (shells split into bomblets), Second Ring (a second
-  drone ring), Mobile Sentry (sentry turrets follow you), and for
+- **Legendary behaviour changes**: Buy One Get One (bolts also fire at a second
+  target), Rear Guard (a second fan behind you), Overload (lightning
+  forks), Party Favours (shells split into bomblets), Second Ring (a second
+  drone ring), Walkies (sentry turrets follow you), and for
   abilities Overcharged Dome (the dome zaps enemies inside),
   Echo Step (two blink charges), Molten Bore (wider, burning bore) and Arc
   Fence (barrier posts zap further, with shock).
@@ -343,9 +343,9 @@ sight with voxel raycasts, and mining a block repairs the flow field locally.
 
 ## Field perks
 
-Reinforced Suit (max health and heal), Servo Boots (speed), Overcharge
-(damage), Rapid Cycling (fire rate), Magnetic Field (pickup range), Hardened
-Drill (mining), Nanite Repair (regeneration), Lucky Charm (rarer upgrades),
+Extra Padding (max health and heal), Servo Boots (speed), Overcharge
+(damage), Hair Trigger (fire rate), Sticky Fingers (pickup range), Hardened
+Drill (mining), Nanite Patch (regeneration), Lucky Rivet (rarer upgrades),
 plus two class perks per class. Amounts scale with the rolled rarity.
 
 ## Ship modules (permanent)

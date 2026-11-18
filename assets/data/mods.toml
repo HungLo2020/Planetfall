@@ -29,7 +29,7 @@
 
 [[mod]]
 id = "hotter-rounds"
-title = "Hotter Rounds"
+title = "Spicy Rounds"
 description = "+{amount}% damage"
 target = "weapon"
 stat = "damage"
@@ -38,7 +38,7 @@ weight = 4
 
 [[mod]]
 id = "cycler"
-title = "Cycler"
+title = "Itchy Trigger"
 description = "Fires {amount}% faster"
 target = "weapon"
 stat = "fire_rate"
@@ -48,7 +48,7 @@ max_stacks = 6
 
 [[mod]]
 id = "extra-payload"
-title = "Extra Payload"
+title = "Bulk Discount"
 description = "+{amount} projectiles, pellets, jumps, shells or drones"
 target = "weapon"
 stat = "count"
@@ -69,7 +69,7 @@ max_stacks = 4
 
 [[mod]]
 id = "wide-field"
-title = "Wide Field"
+title = "Elbow Room"
 description = "+{amount}% area"
 target = "weapon"
 stat = "area"
@@ -79,7 +79,7 @@ max_stacks = 4
 
 [[mod]]
 id = "penetrator"
-title = "Penetrator"
+title = "Pass-Through"
 description = "Shots pierce {amount} more enemies"
 target = "weapon"
 stat = "pierce"
@@ -127,7 +127,7 @@ max_stacks = 2
 
 [[mod]]
 id = "capacitor"
-title = "Capacitor"
+title = "Static Cling"
 description = "Hits may arc {amount} damage to a nearby enemy"
 target = "weapon"
 stat = "element"
@@ -141,7 +141,7 @@ max_stacks = 2
 
 [[mod]]
 id = "twin-barrel"
-title = "Twin Barrel"
+title = "Buy One Get One"
 description = "Every shot also fires at a second target"
 target = "weapon"
 stat = "special"
@@ -154,7 +154,7 @@ max_stacks = 1
 
 [[mod]]
 id = "double-blast"
-title = "Double Blast"
+title = "Rear Guard"
 description = "A second fan of pellets fires behind you"
 target = "weapon"
 stat = "special"
@@ -180,7 +180,7 @@ max_stacks = 1
 
 [[mod]]
 id = "cluster-shells"
-title = "Cluster Shells"
+title = "Party Favours"
 description = "Shells split into three bomblets on impact"
 target = "weapon"
 stat = "special"
@@ -238,7 +238,7 @@ max_stacks = 3
 
 [[mod]]
 id = "mobile-sentry"
-title = "Mobile Sentry"
+title = "Walkies"
 description = "Your turrets walk along with you"
 target = "weapon"
 stat = "special"

@@ -27,6 +27,9 @@ pub struct Audio {
     /// Loops fading out after a change.
     fading: Vec<Track>,
     last_played: BTreeMap<String, (u64, usize)>,
+    /// The XP pickup chain: notes climbed so far and the frame of the last.
+    xp_step: u32,
+    xp_frame: u64,
     frame: u64,
     /// Per-play pitch and gain spread (`quasar_audio` Variation).
     variation: Rng,
@@ -82,6 +85,8 @@ impl Audio {
             ambience: None,
             fading: Vec::new(),
             last_played: BTreeMap::new(),
+            xp_step: 0,
+            xp_frame: 0,
             frame: 0,
             variation: Rng::seed_from_u64(0x1234_5678),
             stride: 0,
@@ -112,6 +117,18 @@ impl Audio {
     /// Play a one-shot effect (a random variant, never the same one twice
     /// running); `min_gap` frames throttles rapid repeats.
     pub fn play(&mut self, name: &str, volume: f32, at: Option<V2>, min_gap: u64) {
+        self.play_pitched(name, volume, at, min_gap, 1.0);
+    }
+
+    /// [`Self::play`] at a pitch multiplier (on top of the usual variation).
+    pub fn play_pitched(
+        &mut self,
+        name: &str,
+        volume: f32,
+        at: Option<V2>,
+        min_gap: u64,
+        pitch: f32,
+    ) {
         let last = self.last_played.get(name).copied();
         if let Some((frame, _)) = last
             && self.frame.saturating_sub(frame) < min_gap
@@ -141,10 +158,16 @@ impl Audio {
             PlaybackConfig {
                 bus: self.effects_bus,
                 volume,
+                pitch,
                 spatial,
                 ..PlaybackConfig::default()
             }
-            .with_variation(0.05, 0.06, &mut self.variation),
+            // A tuned note keeps its pitch; everything else varies a little.
+            .with_variation(
+                if pitch == 1.0 { 0.05 } else { 0.0 },
+                0.06,
+                &mut self.variation,
+            ),
         );
     }
 
@@ -328,7 +351,21 @@ impl Audio {
                     };
                     self.play(name, 0.5, Some(at), 3);
                 }
-                GameEvent::PickedUpXp => self.play("pickup_xp", 0.22, None, 3),
+                // Pickups in quick succession climb a pentatonic scale, so
+                // a vacuumed stream of XP rings out a run of notes.
+                GameEvent::PickedUpXp => {
+                    let chained = self.frame.saturating_sub(self.xp_frame) < 30;
+                    self.xp_step = if chained {
+                        (self.xp_step + 1).min(9)
+                    } else {
+                        0
+                    };
+                    self.xp_frame = self.frame;
+                    const SCALE: [f32; 10] =
+                        [0.0, 2.0, 4.0, 7.0, 9.0, 12.0, 14.0, 16.0, 19.0, 21.0];
+                    let pitch = 2f32.powf(SCALE[self.xp_step as usize] / 12.0) * 0.8;
+                    self.play_pitched("pickup_xp", 0.22, None, 3, pitch);
+                }
                 GameEvent::PickedUpMaterial { material, .. } => {
                     let name = match material {
                         Material::Ferrite => "pickup_ferrite",

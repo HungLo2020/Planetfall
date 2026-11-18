@@ -15,6 +15,7 @@
 pub mod camera;
 pub mod effects;
 mod geometry;
+mod ink;
 mod models;
 pub mod scene;
 mod sculpt;
@@ -75,10 +76,13 @@ pub struct Graphics {
     skins: skins::Skins,
     voxels: voxels::VoxelWorld,
     effects: effects::Effects,
+    ink: ink::InkPass,
     rig: CameraRig,
     pose: PlayerPose,
     pub shadows_enabled: bool,
     pub bloom_enabled: bool,
+    /// Comic-book ink lines and cel bands (see `ink`).
+    pub ink_enabled: bool,
     /// What the last frame drew (for `--bench`).
     pub stats: FrameStats,
 }
@@ -140,10 +144,12 @@ impl Graphics {
             skins,
             voxels: voxels::VoxelWorld::new(),
             effects: effects::Effects::new(gal)?,
+            ink: ink::InkPass::new(gal)?,
             rig: CameraRig::default(),
             pose: PlayerPose::default(),
             shadows_enabled: true,
             bloom_enabled: true,
+            ink_enabled: true,
             stats: FrameStats::default(),
         })
     }
@@ -343,6 +349,14 @@ impl Graphics {
         if let Some(decals) = self.effects.prepare_decals(gal, scene, view_projection)? {
             hybrid.push(Stage::Decals, decals)?;
         }
+        // Ink and cel bands over everything opaque (not the FTL tunnel).
+        if self.ink_enabled && !matches!(game.phase, Phase::Ftl { .. }) {
+            let style = ink::InkStyle::default();
+            let commands = self
+                .ink
+                .prepare(gal, scene, camera::NEAR, camera::FAR, &style)?;
+            hybrid.push(Stage::Decals, commands)?;
+        }
         // Translucent: windows, then blended surfaces back to front.
         if out.voxels.is_some()
             && let Some(windows) =
@@ -437,6 +451,7 @@ impl Graphics {
         self.skins.release(gal)?;
         self.voxels.release(gal)?;
         self.effects.release(gal)?;
+        self.ink.release(gal)?;
         self.models.release(gal)?;
         self.cube.release(gal)?;
         self.sphere.release(gal)?;
@@ -504,6 +519,8 @@ pub struct Bench<'a> {
     pub text: Option<TextRenderer>,
     pub size: (u32, u32),
     pub frames: u64,
+    /// Save every frame as `frame-00000.png` here (for clips).
+    pub record: Option<std::path::PathBuf>,
 }
 
 /// Render `frames` consecutive frames offscreen, stepping the game once per
@@ -564,6 +581,11 @@ pub fn bench(
             })
             .map_err(fail)?;
         graphics.submitted(&gal);
+        if let Some(dir) = &bench.record {
+            quasar_frame::Image::new(bench.size.0, bench.size.1, report.rgba)
+                .and_then(|image| image.write_png(dir.join(format!("frame-{frame:05}.png"))))
+                .map_err(fail)?;
+        }
         record.push(recorded);
         draws.push(graphics.stats.draws as u64);
         lights.push(graphics.stats.lights as u64);

@@ -2,3 +2,7 @@
 /data
 /dist
 __pycache__/
+
+# Sonniss GDC recordings (royalty-free for games, not redistributed): fetched by
+# DevUtils/assets/remaster_sounds.py --fetch-sources
+/DevUtils/assets/sources/sonniss/

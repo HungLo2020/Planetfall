@@ -158,7 +158,7 @@ impl CameraRig {
         let eye = target + self.offset;
         let viewport = Viewport::new(width, height.max(1.0));
         let view = quasar_math::look_at(eye, target, Vec3::Y).unwrap_or(Mat4::IDENTITY);
-        let projection = quasar_math::perspective(self.fov, viewport.aspect().max(0.1), 0.3, 400.0)
+        let projection = quasar_math::perspective(self.fov, viewport.aspect().max(0.1), NEAR, FAR)
             .unwrap_or(Mat4::IDENTITY);
         Camera {
             view_projection: projection * view,
@@ -170,3 +170,7 @@ impl CameraRig {
         }
     }
 }
+
+/// Camera clip planes (the ink pass linearises depth with them).
+pub const NEAR: f32 = 0.3;
+pub const FAR: f32 = 400.0;

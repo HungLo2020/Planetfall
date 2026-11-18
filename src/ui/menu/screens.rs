@@ -28,8 +28,8 @@ impl Menu {
             Screen::Main => self.main_menu(b, prompts, context),
             Screen::Saves(mode) => {
                 let (icon, title, hint) = match mode {
-                    SavesMode::New => ("new", "New game", "Choose a slot for the new commander."),
-                    SavesMode::Load => ("load", "Load game", "Continue a saved commander."),
+                    SavesMode::New => ("new", "New game", "Choose a slot for the new contractor."),
+                    SavesMode::Load => ("load", "Load game", "Continue a saved contractor."),
                     SavesMode::Delete => ("trash", "Delete a save", "Choose a save to delete."),
                 };
                 let w = Self::window(b, 700.0, icon, title, hint);
@@ -110,7 +110,7 @@ impl Menu {
                 let w = Self::window(b, 560.0, "hazard", &format!("Overwrite slot {slot}?"), "");
                 b.paragraph(
                     w.body,
-                    "The commander in this slot is replaced by a new game.",
+                    "The contractor in this slot is replaced. PENNY will forget them.",
                     TextStyle::Body,
                 );
                 self.button_bar(
@@ -133,7 +133,7 @@ impl Menu {
                 let w = Self::window(b, 560.0, "trash", &format!("Delete slot {slot}?"), "");
                 b.paragraph(
                     w.body,
-                    "This commander's ship and progress are erased.",
+                    "This contractor's ship and progress are erased.",
                     TextStyle::Body,
                 );
                 self.button_bar(

@@ -244,6 +244,7 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
             pl.moving,
             0.0,
             None,
+            0.0,
         );
     }
     ship_markers(p, game);

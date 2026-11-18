@@ -14,7 +14,7 @@ class suits (`suit-*.glb`) are hand-finished models.
 |---|---|---|---|
 | `data/` | Content and tuning TOML (weapons, enemies, planets, perks, modules, tuning, model aliases) | Hand-written | Original to this project |
 | `models/` | 53 low-poly GLB models: skinned characters (astronaut and the four class suits; husk, brute, skitter, bloater; the role enemies spitter, disruptor, burrower and gnat; the bosses matriarch, magma tyrant, glacier colossus, bog leviathan and deep wyrm) and props (drop pod, the weapons, drone, mines, ore decorations, pickups, beacon, vents, oxygen vents, ship stations and modules, crew lockers, glowcaps, cave decoration (fungus, obsidian crystals, ice spires), trade station, ship exterior, planet) | Drafted by `DevUtils/assets/generate_models.py`; the four class suits are hand-finished | Original to this project |
-| `sounds/` | 93 effects with 187 variant files (every weapon, enemy role, boss, hazard, combo, pickup, loot rarity, footsteps, ship and UI action), 6 ambience loops (ship hum and one per planet) and 4 music tracks (ship, surface, extraction, boss); short effects are WAV, long ones and loops Ogg Vorbis | Drafted by `DevUtils/assets/generate_sounds.py` | Original to this project |
+| `sounds/` | 93 effects with 187 variant files (every weapon, enemy role, boss, hazard, combo, pickup, loot rarity, footsteps, ship and UI action), 6 ambience loops (ship hum and one per planet) and 4 music tracks (ship, surface, extraction, boss); short effects are WAV, long ones and loops Ogg Vorbis | Drafted by `DevUtils/assets/generate_sounds.py`; the [remastered sounds](#remastered-sounds) are designed by `DevUtils/assets/remaster_sounds.py` from synthesis, Kenney recordings and Sonniss #GameAudioGDC 2023 recordings | Original to this project; the Kenney source recordings are CC0 1.0; the Sonniss recordings are used under the royalty-free #GameAudioGDC bundle licence (no attribution required; the raw files are not redistributed) |
 | `ui/` | `icons/` (115 PNG icons, one per name: weapons, gear bases, materials, interface glyphs, objective types, class emblems, abilities, planets, ship modules, and controller and mouse button glyphs for each device family; the game packs them into one atlas at start-up) and `logo.png` (the PLANETFALL wordmark) | Drafted by `DevUtils/assets/generate_icons.py` | Original to this project |
 | `kenney/blaster-kit/` | `blaster-d.glb`, `blaster-f.glb`, `crate-medium.glb`, `crate-wide.glb` + colormap | [Kenney Blaster Kit](https://kenney.nl/assets/blaster-kit), via Quasar's Nightwatch example | CC0 1.0 (`License.txt`) |
 | `kenney/survival-kit/` | `barrel.glb`, `workbench.glb`, `metal-panel.glb` + colormap | [Kenney Survival Kit](https://kenney.nl/assets/survival-kit), via Quasar's Nightwatch example | CC0 1.0 (`License.txt`) |
@@ -111,6 +111,40 @@ basses, pads, plucks, bells and leads sequenced per track and rendered three
 times through the effects, keeping the middle pass, so tails wrap across the
 loop point. Ambience loops are crossfaded into themselves. Every random
 choice is seeded from the sound's name, so output is reproducible.
+
+## Remastered sounds
+
+The drafts are being replaced one by one with designed sounds.
+`DevUtils/assets/remaster_sounds.py` holds each recipe and its `REMASTERED`
+registry: it layers synthesis with CC0 recordings from Kenney's
+[Impact Sounds](https://kenney.nl/assets/impact-sounds) and
+[Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) packs (the takes it
+uses are in `DevUtils/assets/sources/kenney/` with their licenses), then
+saturates, compresses, EQs and matches each variant's loudness to the draft
+it replaced so the mix stays balanced. Some recipes are built on recordings
+from the Sonniss #GameAudioGDC 2023 bundle (royalty-free for games); those
+raw files are not kept in the repository: `--fetch-sources` downloads the
+exact files the recipes use into the git-ignored
+`DevUtils/assets/sources/sonniss/`, checking each checksum. Run the script
+with no arguments to list the remastered sounds, or name one to rewrite its
+files.
+
+The direction is Deep Rock Galactic: Survivor: punchy, crunchy and
+satisfying. New sounds are auditioned as several takes, and the one picked by
+ear becomes the recipe.
+
+| Sound | Plays when | Built from |
+|---|---|---|
+| `blaster` (4 variants) | The pulse blaster and sentry turrets fire | "Heavy pulse" take: a Sonniss heavy sci-fi weapon shot pitched up for rapid fire, with a BB rifle's air snap for a tight mechanical front; short room tail |
+| `enemy_hit` (4) | A shot hits an enemy | A recorded heavy punch and soft impact, a chitin crack, a wet splat cut from a slime recording and an energy fizz |
+| `mine_hit` (4) | The drill bites rock (every 14 ticks while mining) | "Drill bite" take: a burst of a recorded industrial drill motor, a hammer-on-chisel tick and crumbling crushed rock (Sonniss) |
+| `block_break` (4) | A rock block gives way | A recorded crunch over a pitched-down pick hit, a splitting crack, tumbling rubble with low thuds and settling dust |
+| `enemy_die` (4) | A husk dies | A shell crunch, a formant-synthesised gurgling death groan, a wet slime splat and a recorded body fall with debris |
+| `step_rock` (6) | The player walks on a planet | Kenney concrete boot steps, gravel grit, a faint armour tick and a low thump, softened for constant play |
+| `pickup_xp` (3) | An XP shard is collected | A crystal-bar chime on a pentatonic note (E6, G6, A6) so streams of pickups sound musical, a pitched-up Kenney glass tink, a soft octave below and a faint sparkle |
+| `skitter_die` (3) | A skitter dies | A light shell crunch, a short formant-synthesised insect squeal, rattling legs, a small slime splat and a body tap |
+
+Every other sound is still a draft from `generate_sounds.py`.
 
 ## Drafting new assets
 

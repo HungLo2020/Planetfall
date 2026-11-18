@@ -21,7 +21,7 @@
 [[weapon]]
 id = "pulse-blaster"
 name = "Pulse Blaster"
-description = "Rapid bolts at the nearest hostile."
+description = "Rapid bolts at the nearest hostile. Company issue."
 behavior = "bolt"
 model = "blaster"
 model_scale = 0.7
@@ -37,7 +37,7 @@ max_count = 4
 [[weapon]]
 id = "scattergun"
 name = "Scattergun"
-description = "Close-range pellet spread."
+description = "Close-range pellet spread. Diplomacy, abridged."
 behavior = "scatter"
 model = "scattergun"
 model_scale = 0.7
@@ -52,7 +52,7 @@ max_count = 10
 [[weapon]]
 id = "arc-caster"
 name = "Arc Caster"
-description = "Lightning that chains between targets."
+description = "Lightning that chains between targets. Do not lick."
 behavior = "arc"
 element = { kind = "shock", potency = 6.0 }
 model = "arc-caster"
@@ -67,7 +67,7 @@ max_count = 7
 [[weapon]]
 id = "plasma-mortar"
 name = "Plasma Mortar"
-description = "Lobbed plasma that bursts on impact."
+description = "Lobbed plasma that bursts on impact. Aim is a suggestion."
 behavior = "mortar"
 element = { kind = "fire", potency = 6.0 }
 ignores_walls = true
@@ -83,7 +83,7 @@ max_count = 4
 [[weapon]]
 id = "orbit-drones"
 name = "Orbit Drones"
-description = "Blades that circle you and shred anything close."
+description = "Blades that circle you and shred anything close. Personal space, enforced."
 behavior = "orbit"
 model = "blaster"
 model_scale = 0.7
@@ -99,7 +99,7 @@ max_count = 7
 [[weapon]]
 id = "seam-cutter"
 name = "Seam Cutter"
-description = "A short-range cutting beam that punches through lines of enemies."
+description = "A short cutting beam that punches through lines of enemies. Meant for hull plate."
 behavior = "bolt"
 model = "scattergun"
 model_scale = 0.7
@@ -114,7 +114,7 @@ max_count = 4
 [[weapon]]
 id = "torch"
 name = "Torch"
-description = "A short cone of fire. Builds heat; overheats if held too long."
+description = "A short cone of fire. Builds heat; overheats if held too long. Toasty."
 behavior = "flamer"
 element = { kind = "fire", potency = 5.0 }
 model = "torch"
@@ -129,7 +129,7 @@ max_count = 2
 [[weapon]]
 id = "ripper"
 name = "Ripper Disc"
-description = "A spinning disc that bounces between enemies and off walls."
+description = "A spinning disc that bounces between enemies and off walls. Mind your fingers."
 behavior = "ricochet"
 model = "ripper"
 model_scale = 1.0
@@ -143,7 +143,7 @@ max_count = 8
 [[weapon]]
 id = "mine-layer"
 name = "Mine Layer"
-description = "Drops proximity mines behind you as you move."
+description = "Drops proximity mines behind you as you move. Leave a tip."
 behavior = "mines"
 ignores_walls = true
 model = "mine-layer"
@@ -158,7 +158,7 @@ max_count = 10
 [[weapon]]
 id = "breaker"
 name = "Breaker Maul"
-description = "A heavy sweep that knocks everything in front of you back."
+description = "A heavy sweep that knocks everything in front of you back. Technically a tool."
 behavior = "melee"
 model = "breaker"
 model_scale = 1.0
@@ -172,7 +172,7 @@ max_count = 2
 [[weapon]]
 id = "seeker"
 name = "Seeker Pod"
-description = "Missiles that find their own way to the target."
+description = "Missiles that find their own way to the target. Smarter than the last intern."
 behavior = "homing"
 ignores_walls = true
 model = "seeker"
@@ -188,7 +188,7 @@ max_count = 5
 [[weapon]]
 id = "singularity"
 name = "Singularity Projector"
-description = "An orb that collapses into a vortex, dragging the horde in."
+description = "An orb that collapses into a vortex, dragging the horde in. Not covered by insurance."
 behavior = "gravity"
 element = { kind = "cold", potency = 3.0 }
 model = "singularity"
@@ -203,7 +203,7 @@ max_count = 2
 [[weapon]]
 id = "sentry"
 name = "Sentry Turrets"
-description = "Plants turrets that shoot the nearest hostile; they follow when you move on."
+description = "Plants turrets that shoot the nearest hostile and follow when you move on. They work for free."
 behavior = "sentry"
 model = "blaster"
 model_scale = 0.6
