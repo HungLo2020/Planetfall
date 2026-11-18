@@ -43,6 +43,9 @@ fn run() -> Result<(), String> {
         .map_err(|e| format!("data directory: {e}"))?;
     let asset_root = storage.asset_root(settings.asset_root.as_deref());
     install_content(&asset_root)?;
+    // Item icons are looked up while menus are built, before any renderer.
+    #[cfg(feature = "graphics")]
+    ui::icons::load(&asset_root)?;
     storage.migrate_legacy();
     if let Some(path) = &settings.cover {
         return cover(&asset_root, path);
@@ -168,7 +171,7 @@ fn headless(
         if settings.trace {
             let run = game.run.as_ref();
             let state = format!(
-                "phase={:?} menu={} build={:?} surge={} tutorial={:?}",
+                "phase={:?} menu={} build={:?} surge={} finds={} tutorial={:?}",
                 game.phase,
                 menu_name(&game),
                 game.ship.build,
@@ -179,6 +182,7 @@ fn headless(
                 } else {
                     "-"
                 }),
+                run.map_or(0, |r| r.finds.len()),
                 game.tutorial_step(),
             );
             // Count-down phases change every tick; compare their kind only.
@@ -407,6 +411,7 @@ fn layout(
         measure,
         0.0,
     );
+    layer.refresh_overlays(viewport, scale, measure);
 }
 
 /// Basalt cover art: a live surface battle with the title over it (3:4, 900x1200).

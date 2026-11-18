@@ -80,10 +80,13 @@ Plated...). Rarity and the hazard level it dropped at scale every stat; the
 first affix names the item ("Swift Runner Boots"). Gadgets carry the odd
 effects: luck, bonus ore, ability recharge, XP gain, damage against heavies.
 
-- **Finds.** Every supply cache holds a find: gear (uncommon or better) or,
-  sometimes, a familiar weapon blueprint the class still lacks. Elites
+- **Finds.** A supply cache holds a find 40% of the time (always in the
+  tutorial): gear (uncommon or better) or, sometimes, a familiar weapon
+  blueprint the class still lacks. Elites
   sometimes drop gear; bosses and hunted elites always drop rare or better.
-  A banner names each find. **Finds are kept whatever happens**: they reach
+  A banner shows each find with its icon, a small rarity tag and its name
+  in the rarity colour (grey, green, blue, orange), the same way the
+  locker, the station and level-up choices show items. **Finds are kept whatever happens**: they reach
   the stash when the drop ends, even after death or an abort.
 - **The stash** holds 24 items; a find that does not fit is salvaged for
   its credit value. Equip items per class on the locker's **GEAR** tab
@@ -150,8 +153,12 @@ adds oxygen, Restless adds quakes); numbers are in `tuning.toml`
 
 ## Caves
 
-Every drop is a fresh 60 x 60 block cave on one flat floor level (no pits),
-generated from the drop's seed (`cavegen.rs`):
+Every drop is a fresh 120 x 120 cave of 1 m blocks on one flat floor level
+(no pits), generated from the drop's seed: `cavegen.rs` lays the cave out on
+a coarser 60 x 60 grid and `terrain.rs` refines it block by block, chipping
+ragged bites out of every wall, splitting veins into ore blocks and raising
+wall columns two or three blocks tall (taller deeper in, so rock steps up in
+terraces). You drill a tunnel about two blocks wide.
 
 - **Chambers and tunnels.** The landing chamber sits in the middle; the
   mission sites are spread around it and a dozen or so organic chambers fill
@@ -201,8 +208,11 @@ contract is:
   Haemophilia (no regeneration, +25%), Low Gravity, Glass Cannon (+30%).
 
 Pick a **hazard level** (1 Easy to 5 Lethal) on the board: each level
-raises enemy health, damage, spawn pressure and elite share, shifts upgrade
-rarities upward, and multiplies the banked haul (×1 to ×2.7) and class XP.
+raises enemy health (×1 to ×3.1), damage (×1 to ×2.4), spawn pressure
+(×1 to ×2.4) and elite share, shifts upgrade rarities upward, and multiplies
+the banked haul (×1 to ×3.6) and class XP. Hazard 1 is for learning; hazard
+2 is meant to be a real fight, and 4 and 5 need a geared, practised player.
+Hits leave you only 0.4 s of invulnerability and armour absorbs at most 40%.
 Hazard *n* unlocks after completing a primary objective at hazard *n - 1*.
 The HUD shows the objectives, the hazard, site and mutator, and a health bar
 for the boss or hunted elite; beacons mark what still needs doing.
@@ -212,12 +222,13 @@ for the boss or hunted elite; beacons mark what still needs doing.
 Nothing stops you staying after the objective, except that the planet only
 gets worse:
 
-- **Threat level** rises all drop long (0.6 levels a minute, twice that
+- **Threat level** rises all drop long (0.75 levels a minute, twice that
   while the pod is inbound or waiting) and shows on the HUD with the time to
-  the next level. Each level adds spawn pressure (+32%) and makes new
-  spawns tougher and harder-hitting (health +15%, damage +6% per level,
-  growing with threat^1.3, so the late game bites). Bloaters join from
-  threat 1, brutes from threat 3.
+  the next level. Each level adds spawn pressure (+40%) and makes new
+  spawns tougher and harder-hitting (health +18%, damage +8% per level,
+  growing with threat^1.3, so the late game bites). Bloaters and spitters
+  join from threat 1, burrowers from threat 1, disruptors from 1.5 and
+  brutes from 2.
 - **Surges** come every 3 threat levels: the HUD warns 8 seconds ahead,
   then a wave arrives from several sides and spawning runs hot for a few
   seconds.

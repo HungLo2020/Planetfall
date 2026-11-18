@@ -5,7 +5,7 @@ Produces dist/Planetfall-<version>-linux-x64.zip whose root contains only
 app/ (see Basalt STANDARDS.md section 3):
 
     app/bin/planetfall          release executable (mode 755)
-    app/assets/...              content data, models, sounds, fonts and licenses
+    app/assets/...              content data, models, sounds, fonts, UI icons and licenses
     app/basalt/cover.png        3:4 box art
     app/basalt/icon.svg         square emblem
     app/README.txt              runtime notes
@@ -30,7 +30,7 @@ import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-ASSET_DIRS = ["data", "models", "kenney", "sounds", "fonts"]
+ASSET_DIRS = ["data", "models", "kenney", "sounds", "fonts", "ui"]
 MAX_COVER_BYTES = 2 * 1024 * 1024
 
 RUNTIME_NOTES = """Planetfall {version}

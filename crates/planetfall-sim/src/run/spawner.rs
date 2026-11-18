@@ -223,7 +223,7 @@ impl Run {
             let reachable = self
                 .flow
                 .as_ref()
-                .is_some_and(|f| f.distance_at(x, y) < 40.0);
+                .is_some_and(|f| f.distance_at(x, y) < 80.0);
             if reachable {
                 return Some(Terrain::center_of(x, y));
             }

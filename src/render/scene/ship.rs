@@ -31,8 +31,11 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
             } else {
                 1.0
             };
-            let base = V2::new((v.x as f32 + 0.5) * TILE, (v.z as f32 + 0.5) * TILE);
-            let y = v.y as f32 * TILE + height + drop;
+            let base = V2::new(
+                (v.x as f32 + 0.5) * SHIP_TILE,
+                (v.z as f32 + 0.5) * SHIP_TILE,
+            );
+            let y = v.y as f32 * SHIP_TILE + height + drop;
             let color = match id {
                 voxel::DECK => [0.20, 0.22, 0.25],
                 voxel::WINDOW => [0.35, 0.6, 0.85],
@@ -60,7 +63,7 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
     for z in BUILD_AREA.1..=BUILD_AREA.3 {
         for x in BUILD_AREA.0..=BUILD_AREA.2 {
             if ship.layout.wall(x, z) == voxel::LAMP {
-                let c = V2::new((x as f32 + 0.5) * TILE, (z as f32 + 0.5) * TILE);
+                let c = V2::new((x as f32 + 0.5) * SHIP_TILE, (z as f32 + 0.5) * SHIP_TILE);
                 p.point([c.x, 1.6, c.y], [1.0, 0.85, 0.6], 1.4, 9.0);
             }
         }
@@ -75,14 +78,14 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
             [1.0, 0.35, 0.3]
         };
         let layer = block.layer();
-        overlays.push(voxels::block_box(
+        overlays.push(voxels::ship_box(
             x,
             layer,
             z,
             0.02,
             [color[0], color[1], color[2], 1.0],
         ));
-        let c = V2::new((x as f32 + 0.5) * TILE, (z as f32 + 0.5) * TILE);
+        let c = V2::new((x as f32 + 0.5) * SHIP_TILE, (z as f32 + 0.5) * SHIP_TILE);
         let (y, height) = match block {
             ShipBlock::Deck => (-1.0, 1.0),
             ShipBlock::Lamp => (0.45, 0.45),
@@ -214,19 +217,21 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
     // Decor in the base rooms.
     p.model(
         names::CRATE_WIDE,
-        at(V2::new(5.6 * TILE, 14.6 * TILE), 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(5.6 * SHIP_TILE, 14.6 * SHIP_TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         names::BARREL,
-        at(V2::new(9.4 * TILE, 14.7 * TILE), 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(9.4 * SHIP_TILE, 14.7 * SHIP_TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         names::BARREL,
-        at(V2::new(9.0 * TILE, 15.2 * TILE), 0.0) * s(2.2, 2.2, 2.2),
+        at(V2::new(9.0 * SHIP_TILE, 15.2 * SHIP_TILE), 0.0) * s(2.2, 2.2, 2.2),
     );
     p.model(
         names::CRATE_MEDIUM,
-        at(V2::new(5.5 * TILE, 1.6 * TILE), 0.0) * Mat4::rotation_y(0.4) * s(2.0, 2.0, 2.0),
+        at(V2::new(5.5 * SHIP_TILE, 1.6 * SHIP_TILE), 0.0)
+            * Mat4::rotation_y(0.4)
+            * s(2.0, 2.0, 2.0),
     );
     let pl = &ship.player;
     if !matches!(game.phase, Phase::Descent { .. }) {
@@ -246,7 +251,7 @@ pub fn ship<'a>(p: &mut Painter<'a, '_>, game: &Game) -> SceneOutput<'a> {
         p,
         game.profile.orbiting,
         game.profile.docked,
-        V2::new(7.5 * TILE, 8.5 * TILE),
+        V2::new(7.5 * SHIP_TILE, 8.5 * SHIP_TILE),
     );
     SceneOutput {
         draws: std::mem::take(&mut p.draws),

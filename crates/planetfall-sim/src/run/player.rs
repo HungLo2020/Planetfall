@@ -1,7 +1,7 @@
 //! Players: movement, dash, damage taken and auto-mining.
 
 use super::{Mining, PickupKind, Run};
-use crate::content::{DT, Material, MutatorEffect, content};
+use crate::content::{DT, Material, MutatorEffect, content, seconds};
 use crate::events::GameEvent;
 use crate::input::GameInput;
 use crate::math;
@@ -96,16 +96,43 @@ impl Run {
             p.mining = None;
             return;
         };
-        self.mine(i, x, y, tuning.mining_rate, events);
+        // The drill head is about as wide as the suit: it also bites the
+        // block beside the one ahead, so tunnels fit everyone behind you.
+        let forward = movement.normalize_or_zero();
+        let head = p.pos + forward * (tuning.radius + 0.35);
+        let (hx, hy) = Terrain::tile_of(head);
+        let extra = (-1..=1)
+            .flat_map(|dy| (-1..=1).map(move |dx| (hx + dx, hy + dy)))
+            .filter(|&t| t != (x, y) && self.terrain.tile(t.0, t.1).minable())
+            .map(|t| (t, Terrain::center_of(t.0, t.1)))
+            .filter(|(_, c)| {
+                c.distance(head) < 0.9 && (*c - p.pos).normalize_or_zero().dot(forward) > 0.2
+            })
+            .min_by(|a, b| a.1.distance(head).total_cmp(&b.1.distance(head)))
+            .map(|(t, _)| t);
+        self.mine(i, x, y, tuning.mining_rate, true, events);
+        if let Some((tx, ty)) = extra {
+            self.mine(i, tx, ty, tuning.mining_rate, false, events);
+        }
     }
 
-    fn mine(&mut self, i: usize, x: i32, y: i32, rate: f32, events: &mut Vec<GameEvent>) {
+    fn mine(
+        &mut self,
+        i: usize,
+        x: i32,
+        y: i32,
+        rate: f32,
+        main: bool,
+        events: &mut Vec<GameEvent>,
+    ) {
         let p = &mut self.players[i];
         let tile = self.terrain.tile(x, y);
         let amount = rate * p.mining_multiplier * DT;
         let at = Terrain::center_of(x, y);
-        p.mine_sound += 1;
-        if p.mine_sound % 14 == 1 {
+        if main {
+            p.mine_sound += 1;
+        }
+        if main && p.mine_sound % 14 == 1 {
             let material = match tile {
                 Tile::Ore { material, .. } => Some(material),
                 _ => None,
@@ -115,9 +142,12 @@ impl Run {
         }
         match self.terrain.mine(x, y, amount) {
             Some(broken) => {
-                self.players[i].mining = None;
+                if main {
+                    self.players[i].mining = None;
+                }
                 self.block_broken(i, at, broken.was, events);
             }
+            None if !main => {}
             None => {
                 let max = tile.max_hp();
                 let remaining = match self.terrain.tile(x, y) {
@@ -150,16 +180,17 @@ impl Run {
             _ => None,
         };
         events.push(GameEvent::BlockBroken { at, material });
-        let drops: &[(Material, u32)] = match material {
-            Some(Material::Ferrite) => &[(Material::Ferrite, 2), (Material::Ferrite, 2)],
-            Some(Material::Lumite) => &[(Material::Lumite, 1), (Material::Lumite, 1)],
-            Some(Material::Voidstone) => &[(Material::Voidstone, 1)],
+        // Per ore block (a vein is a couple of blocks).
+        let drops: &[(Material, f32)] = match material {
+            Some(Material::Ferrite) => &[(Material::Ferrite, 1.0), (Material::Ferrite, 1.0)],
+            Some(Material::Lumite) => &[(Material::Lumite, 1.0)],
+            Some(Material::Voidstone) => &[(Material::Voidstone, 0.5)],
             None => &[],
         };
         // Site and mutator ore multipliers (fractions roll for one more).
         let k = self.ore_multiplier();
         for &(m, amount) in drops {
-            let scaled = amount as f32 * k;
+            let scaled = amount * k;
             let mut n = scaled.floor() as u32;
             if self.rng.chance(f64::from(scaled.fract())) {
                 n += 1;
@@ -189,13 +220,14 @@ impl Run {
                 .has_mutator(MutatorEffect::GlassCannon)
                 .unwrap_or(1.0);
         let p = &mut self.players[i];
-        let amount = amount * (1.0 - p.armor.clamp(0.0, 0.6));
+        let tuning = &content().tuning.player;
+        let amount = amount * (1.0 - p.armor.clamp(0.0, tuning.armor_cap));
         if self.invulnerable || p.down || p.invulnerable_ticks > 0 || amount <= 0.0 {
             return;
         }
         p.health -= amount;
         p.hurt_ticks = 18;
-        p.invulnerable_ticks = 30;
+        p.invulnerable_ticks = seconds(tuning.hit_invulnerability);
         events.push(GameEvent::PlayerHurt { amount });
     }
 }

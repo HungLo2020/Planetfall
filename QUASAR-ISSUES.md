@@ -41,6 +41,30 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
    value/Perlin/simplex noise, so `cavegen.rs` carries a small seeded value
    noise with fractal octaves for alcoves, ore seams and floor patches. A
    deterministic 2D/3D noise module would replace it.
+7. **ui: no per-label text colour.** Labels take their colour from the
+   theme (`text`, `dim_text`), so rarity-coloured item names are drawn by
+   small overlay `Ui` trees (one per colour) over placeholder spacers in
+   `src/ui/mod.rs`. A colour override on `Widget::Label` (or `NodeStyle`)
+   would remove the overlays.
+8. **voxel-mesh: no neighbourhood-aware bevels.** `CulledModelExtractor`
+   emits a fixed model per block ID, but chamfers that follow which faces
+   are open need the neighbourhood, so `src/render/sculpt.rs` meshes planet
+   rock itself into the same `Quad`s. A bevel or "rounded block" model
+   policy in quasar-voxel-mesh would replace it.
+9. **ui: intrinsic size ignores a child's fixed size.** Auto-sized panels
+   measure children by content, so an empty panel, a spacer or an image
+   holder with a fixed `LayoutItem` size counts as zero, and a button
+   counts its text rather than its fixed width. `ui::kit` adds padded
+   "strut" panels where an exact size must be measured, and sets the
+   theme's `row_height` to the button height.
+10. **ui: no per-widget styling of buttons and checkboxes.** Buttons fill
+   with the theme colour over their `NodeStyle`, so the theme's button
+   colour is transparent and every button carries its own style, with the
+   hover and press tints drawn over it. A checkbox's box uses the theme's
+   track colour, so checkbox rows get a lit background to show it.
+11. **ui: no inline images in text.** Button prompts ("press [F]") are laid
+   out by `kit::rich`: words and key caps in wrapped rows, with line breaks
+   decided from estimated text widths.
 
 ## 2. Still missing or not adopted
 
@@ -66,4 +90,4 @@ blocks, GPU particles, decals, outlines, `ControlsScreen` and content tables.
   and `quasar-jobs` with `RemeshQueue` for background meshing, are available
   but not yet adopted.
 - **Chunk streaming** (`StreamingPlanner`, `RemeshQueue`) is unnecessary for
-  60x60 maps; multi-layer planets will need it.
+  120x120 maps; multi-layer planets will need it.

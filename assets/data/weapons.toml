@@ -38,7 +38,7 @@ model_yaw = 180.0
 sound = "scatter"
 volume = 0.5
 color = [1.0, 0.7, 0.25]
-stats = { cooldown = 1.0, damage = 8.0, range = 8.5, count = 5, speed = 22.0, radius = 0.22, pierce = 0 }
+stats = { cooldown = 0.85, damage = 8.0, range = 9.0, count = 5, speed = 22.0, radius = 0.22, pierce = 1 }
 
 [[weapon]]
 id = "arc-caster"
@@ -89,7 +89,7 @@ behavior = "bolt"
 model = "scattergun"
 model_scale = 0.7
 model_yaw = 180.0
-sound = "blaster"
+sound = "cutter"
 volume = 0.4
 color = [1.0, 0.62, 0.2]
 stats = { cooldown = 0.62, damage = 16.0, range = 9.0, count = 1, speed = 30.0, radius = 0.3, pierce = 2 }

@@ -34,6 +34,7 @@ use planetfall_sim::run::{
     Affix, BlastKind, DeployableKind, Extraction, HazardKind, Player, ProjectileKind, Run,
     extraction_hold, extraction_inbound, extraction_radius,
 };
+use planetfall_sim::ship::TILE as SHIP_TILE;
 use planetfall_sim::ship::{BUILD_AREA, Room, ShipLayout, StationKind};
 use planetfall_sim::terrain::{TILE, Terrain, Tile};
 use planetfall_sim::voxel;

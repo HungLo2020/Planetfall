@@ -167,6 +167,10 @@ impl Run {
     /// otherwise gear.
     fn cache_find(&mut self, player: usize, events: &mut Vec<GameEvent>) {
         let t = &content().tuning.equipment;
+        // The tutorial's cache always has something to show.
+        if !self.tutorial && !self.rng.chance(f64::from(t.cache_find)) {
+            return;
+        }
         let p = &self.players[player];
         let class = p.class;
         let left: Vec<WeaponId> = p

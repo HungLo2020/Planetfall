@@ -452,8 +452,9 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
             .filter(|(dx, dy)| run.terrain.tile(x + dx, y + dy).solid())
             .count()
     };
-    for y in cy - 10 - extra..=cy + 8 + extra {
-        for x in cx - 12 - extra..=cx + 12 + extra {
+    let extra = extra * 2;
+    for y in cy - 20 - extra..=cy + 16 + extra {
+        for x in cx - 24 - extra..=cx + 24 + extra {
             let tile = run.terrain.tile(x, y);
             let c = Terrain::center_of(x, y);
             let h = tile_hash(x, y);
@@ -471,8 +472,8 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
                             toward += V2::new(dx as f32, dy as f32);
                         }
                     }
-                    let size = 0.75 + h * 0.6;
-                    let pos = c + toward.normalize_or_zero() * 0.45;
+                    let size = 0.6 + h * 0.5;
+                    let pos = c + toward.normalize_or_zero() * 0.2;
                     p.model(
                         model,
                         at(pos, 0.0) * Mat4::rotation_y(h * 40.0) * s(size, size, size),
@@ -486,10 +487,10 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
                     }
                 }
                 // Scattered pebbles on open ground.
-                Tile::Floor if h > 0.9 => {
+                Tile::Floor if h > 0.965 => {
                     let off = V2::new(
-                        (tile_hash(x * 5, y) - 0.5) * 1.4,
-                        (tile_hash(x, y * 5) - 0.5) * 1.4,
+                        (tile_hash(x * 5, y) - 0.5) * 0.7,
+                        (tile_hash(x, y * 5) - 0.5) * 0.7,
                     );
                     let size = 0.12 + h * 0.12;
                     p.cube(
@@ -506,11 +507,12 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
                         Material::Voidstone => (names::VOIDSTONE_ORE, Some([0.65, 0.3, 1.0])),
                     };
                     // Crystals erupt from the ore block (the [-1, 1] cube).
-                    p.model(id, at(c, TILE * 0.5) * s(1.02, 1.02, 1.02));
+                    // Crystals erupt from the two ore blocks of the column.
+                    p.model(id, at(c, TILE) * s(0.53, 1.04, 0.53));
                     if let Some(color) = light {
                         glows.push((
                             c.distance_squared(run.player().pos),
-                            [c[0], TILE + 0.8, c[1]],
+                            [c[0], 2.0 * TILE + 0.8, c[1]],
                             color,
                         ));
                     }
@@ -529,13 +531,15 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
     run.player().mining.map(|m| {
         let k = m.progress.clamp(0.0, 1.0);
         let jitter = (p.time * 50.0).sin() * 0.01 * (1.0 + k);
-        voxels::block_box(
+        let mut column = voxels::block_box(
             m.tile.0,
             0,
             m.tile.1,
             0.02 + jitter.abs(),
             [1.0, 0.75 - 0.5 * k, 0.3 - 0.25 * k, 1.0],
-        )
+        );
+        column.max.y += 1.0;
+        column
     })
 }
 

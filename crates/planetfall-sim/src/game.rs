@@ -67,7 +67,7 @@ pub struct RunSummary {
     /// A new hazard level unlocked by this drop.
     pub unlocked: Option<u8>,
     /// Finds banked to the stash (kept whatever the outcome).
-    pub finds: Vec<String>,
+    pub finds: Vec<Find>,
     /// Credits from finds salvaged because the stash was full.
     pub salvaged: u32,
 }
@@ -607,7 +607,7 @@ impl Game {
         let mut finds = Vec::new();
         let credits_before = self.profile.credits;
         for find in &run.finds {
-            finds.push(find.name());
+            finds.push(find.clone());
             match find {
                 Find::Gear(item) => {
                     self.profile.add_gear(item.clone());

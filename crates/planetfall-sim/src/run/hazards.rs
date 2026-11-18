@@ -337,7 +337,16 @@ impl Run {
             {
                 continue;
             }
-            if self.terrain.collapse(x, y) {
+            // A boulder is a ragged clump of a few blocks.
+            let mut fell = false;
+            for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                if (dx, dy) == (1, 1) && self.rng.chance(0.5) {
+                    continue;
+                }
+                fell |= self.terrain.collapse(x + dx, y + dy);
+            }
+            let c = c + V2::splat(0.5 * crate::terrain::TILE);
+            if fell {
                 fallen += 1;
                 events.push(GameEvent::Rubble { at: c });
                 let crush = Hit {

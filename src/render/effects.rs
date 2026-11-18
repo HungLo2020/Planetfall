@@ -674,7 +674,7 @@ impl Effects {
         if self.counter.is_multiple_of(2) {
             let (tx, ty) = Terrain::tile_of(p);
             let n = self.counter as i32;
-            let (x, y) = (tx - 7 + (n * 7) % 15, ty - 6 + (n * 5) % 13);
+            let (x, y) = (tx - 14 + (n * 7) % 29, ty - 12 + (n * 5) % 25);
             if run.terrain.ground(x, y) == Ground::Lava
                 && run.terrain.tile(x, y) == planetfall_sim::terrain::Tile::Floor
             {

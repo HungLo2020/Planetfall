@@ -26,16 +26,17 @@ SHOTS = {
     "ftl": 300,
     "descent": 660,
     "surface": 1800,
-    "construct": 2600,
-    "board": 2664,
-    "levelup": 3487,
-    "surge": 25200,
-    "debrief": 26271,
-    "build": 26400,
-    "locker": 26610,
+    "banner": 900,
+    "construct": 2790,
+    "board": 2858,
+    "levelup": 3073,
+    "surge": 17940,
+    "debrief": 20217,
+    "build": 20300,
+    "locker": 20558,
     # Later worlds on seeds whose autopilot reaches them: (seed, ticks).
-    "tidewell": (5, 109500),
-    "kharon": (9, 147000),
+    "tidewell": (3, 166700),
+    "kharon": (5, 107600),
 }
 
 

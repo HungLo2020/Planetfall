@@ -141,6 +141,7 @@ pub fn run(launch: Launch) -> Result<(), String> {
         text: Some(text),
         controls: Controls::new(),
         audio: None,
+        menu_focus: None,
         gal: None,
         surface: None,
         graphics: None,
@@ -185,6 +186,8 @@ struct App {
     text: Option<TextRenderer>,
     controls: Controls,
     audio: Option<Audio>,
+    /// Focused menu control, for the cursor tick.
+    menu_focus: Option<usize>,
     gal: Option<Gpu>,
     surface: Option<FrameSurface>,
     graphics: Option<Graphics>,
@@ -607,8 +610,21 @@ impl Application for App {
             } else {
                 let input = self.controls.ui_input(c.input);
                 let viewport = Rect::new(0.0, 0.0, self.size.0, self.size.1);
-                self.menu
-                    .update(&input, viewport, self.scale, &self.measure, self.dt)
+                let action = self
+                    .menu
+                    .update(&input, viewport, self.scale, &self.measure, self.dt);
+                // A soft tick when the cursor moves between controls.
+                let focus = self.menu.focus_index();
+                if focus != self.menu_focus {
+                    if self.menu_focus.is_some()
+                        && focus.is_some()
+                        && let Some(audio) = &mut self.audio
+                    {
+                        audio.play("ui_move", 0.35, None, 2);
+                    }
+                    self.menu_focus = focus;
+                }
+                action
             };
             c.input.consume_all();
             self.controls.clear();
@@ -626,7 +642,7 @@ impl Application for App {
         self.controls.end_frame();
         let title = self.screens.first() == Some(&Screen::Main);
         if let Some(audio) = &mut self.audio {
-            audio.set_scene(self.game.phase, title);
+            audio.update(&self.game, title, self.dt);
             let focus = match (&self.game.run, self.game.phase) {
                 (Some(run), Phase::Surface | Phase::Lost { .. }) => run.player().pos,
                 _ => self.game.ship.player.pos,

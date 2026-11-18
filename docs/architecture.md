@@ -14,9 +14,10 @@ Planetfall/
 │   ├── desktop.rs           quasar-app runner: window, ticks, menus, saving
 │   ├── bindings.rs          action bindings + device-aware button prompts
 │   ├── controls.rs          keyboard/mouse + gilrs controllers → GameInput
-│   ├── audio.rs             quasar-audio buses, spatial SFX, music loops
+│   ├── audio.rs             quasar-audio buses, spatial SFX with variants, footsteps, crossfaded music
 │   ├── render/              frame pipeline, voxels, skinning, scene/ building
-│   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay
+│   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay; kit.rs is the
+│                            shared look (windows, buttons, chips, bars, key caps)
 ├── assets/data/             content and tuning as TOML (weapons, enemies, ...)
 ├── assets/                  models, sounds, fonts, Basalt artwork
 ├── DevUtils/                generators, verification and packaging scripts
@@ -38,7 +39,7 @@ headless crates (`quasar-config` parses the content TOML from strings).
 | `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
 | `cavegen` | Cave layout: chamber graph, winding tunnels, noise alcoves and smoothing, set-piece arena, connectivity repair, ore seams and floor patches (value noise is local; see QUASAR-ISSUES) |
 | `terrain` | The cave committed to a voxel volume (ground blocks for patches, lava and water; quake rubble saved in order with mined blocks), mining edits, circle collision, voxel raycast line of sight, horde flow field |
-| `voxel` | Block IDs and the shared volume shape (one `TILE` per voxel; ground at `y = -1`, walls at `y = 0`) |
+| `voxel` | Block IDs and the shared volume shape (one block per voxel: planet blocks are `terrain::TILE` = 1 m, ship blocks `ship::TILE` = 2 m; ground at `y = -1`, walls from `y = 0`) |
 | `profile` | Persistent progress (ship edits, the active class and a `ClassRecord` per class: class XP, starting weapon, found weapon blueprints, equipped gear; the stash, credits, docking and the station shelf), purchase and trade rules, module bonuses and versioned migration |
 | `gear` | Equipment items: rolling bases, rarities and affixes, stat scaling, names, prices, reroll and fuse |
 | `save` | `SaveGame`: a profile plus the resumable `Session` (tick, RNG, tutorial, ship position, a suspended drop) and slot metadata |
@@ -132,7 +133,7 @@ the profile changes, and on pause-quit, suspend and exit.
 | quasar-math | Camera `look_at`/`perspective`/`project`, damping, glam types |
 | quasar-render-2d | HUD canvas: markers, bars, fades |
 | quasar-ui + quasar-text | Retained menus/terminals/HUD with anchored layout, `NodeStyle` cards and wrapped labels; `ControlsScreen` rebinding with `save_bindings`/`load_bindings`; shaped DejaVu fonts |
-| quasar-audio | WAV clips, music/effects buses, spatial panning, per-play pitch/gain `Variation`, looping music and ambience |
+| quasar-audio | WAV and Ogg Vorbis clips, music/effects buses, spatial panning, per-play pitch/gain `Variation`, looping music and ambience (crossfaded with voice volumes) |
 | quasar-config | Common CLI flags (`--resolution`, `--headless`, `--no-audio`, ...); content tables (`ContentRegistry`, validation, references); settings read and written with `load_file_typed`/`save_file_typed` |
 | quasar-storage | Basalt `GamePaths` discovery and atomic JSON writes for save slots |
 | quasar-diagnostics | `--log-level` structured logging (startup paths, phases, save errors) |
@@ -160,8 +161,13 @@ Each frame:
    keeps scorch and blood decals for the current drop, and holds the outline
    styles that mark the player and enemies hidden behind rock.
 5. `render/voxels.rs` swaps the grid between ship and planet and re-meshes
-   chunks whose revision changed (mined rock, placed blocks). Hull walls and
-   windows are native 0.6-high partial blocks (`BlockDef::with_height`).
+   chunks whose revision changed (mined rock, placed blocks). Planet rock is
+   meshed by `render/sculpt.rs`, which chamfers and chips every exposed edge
+   (keeping seams with neighbours closed); ground and liquids stay flat. The
+   ship is laid out in 2 m tiles but drawn in the same 1 m blocks: each ship
+   voxel is refined into 2×2×2 renderer-only pieces (a full wall course under
+   a 0.2 m cap, so walls stay 1.2 m; lamp quarters) and re-meshed whole when
+   the ship changes.
 6. `quasar_render_voxel::HybridFrame` orders the passes and collects the
    voxel submissions: compute (crowd skinning); shadows (mesh casters, then
    voxel casters); opaque (voxels clear the HDR `SceneTarget`, meshes share
@@ -171,8 +177,8 @@ Each frame:
 
 Characters are skinned; props with moving parts (pod door, drone rotor,
 holograms) turn named glTF nodes. Models and sounds are looked up by name:
-every `assets/models/*.glb` and `assets/sounds/*.wav` loads under its file
-stem, plus the aliases in `assets/data/models.toml`, and content data refers
+every `assets/models/*.glb` and `assets/sounds/*.{wav,ogg}` loads under its file
+stem (variants `name.v2`, `name.v3`... join their base name), plus the aliases in `assets/data/models.toml`, and content data refers
 to those names. The astronaut and every enemy model load through a named
 animated loader configuration (skins and clips); props use the static loader.
 

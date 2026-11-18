@@ -286,7 +286,8 @@ mod tests {
         let Some(Terminal::Debrief(summary)) = &game.terminal else {
             panic!("no debrief, phase {:?}", game.phase);
         };
-        assert_eq!(summary.lost.ferrite, 50);
+        // Plus anything picked up before the horde got there.
+        assert!(summary.lost.ferrite >= 50);
         assert_eq!(summary.finds.len(), 2);
         assert_eq!(game.profile.materials.ferrite, 0);
         assert_eq!(game.profile.stash.len(), 1);

@@ -7,11 +7,14 @@ health = 100.0
 pickup_range = 3.0
 mining_rate = 3.0
 # Plain rock drops one ferrite this often.
-rock_ferrite_chance = 0.12
+rock_ferrite_chance = 0.03
 dash_speed = 17.0
 dash_ticks = 11
 dash_cooldown_ticks = 70
 spawn_invulnerability = 2.0
+# Invulnerability after a hit, and the most damage armour can absorb.
+hit_invulnerability = 0.4
+armor_cap = 0.4
 
 [weapons]
 max_carried = 4
@@ -43,8 +46,8 @@ cache_xp = 5
 
 [horde]
 # One group per period at intensity 1 (intensity grows with threat).
-spawn_period = 3.6
-cap = 160
+spawn_period = 3.0
+cap = 240
 tutorial_cap = 45
 tutorial_intensity = 0.5
 
@@ -52,14 +55,14 @@ tutorial_intensity = 0.5
 # The threat level rises for the whole drop (faster during extraction) and drives spawn pressure, enemy toughness, elites
 # and surges. Together with the steeper XP curve it caps how long a drop can
 # last.
-per_minute = 0.6
+per_minute = 0.75
 extraction_rate = 2.0
 # Extra spawn pressure while the pod is inbound or waiting.
 extraction_intensity = 1.6
-spawn_per_level = 0.32
+spawn_per_level = 0.4
 # Health and damage grow with threat^curve: gentle early, harsh late.
-health_per_level = 0.15
-damage_per_level = 0.06
+health_per_level = 0.18
+damage_per_level = 0.08
 curve = 1.3
 # Surges: every `surge_every` levels a burst wave arrives `surge_warning`
 # seconds after the HUD warns, with heavy pressure for `surge_duration`.
@@ -74,16 +77,16 @@ surge_burst_per_level = 1
 # Hazard levels 1 to 5, chosen per contract on the mission board. Level n
 # unlocks after completing a primary objective at level n - 1.
 names = ["Easy", "Normal", "Hard", "Brutal", "Lethal"]
-enemy_health = [1.0, 1.25, 1.55, 1.9, 2.4]
-enemy_damage = [1.0, 1.15, 1.3, 1.5, 1.75]
-spawn = [1.0, 1.15, 1.3, 1.5, 1.7]
+enemy_health = [1.0, 1.4, 1.85, 2.4, 3.1]
+enemy_damage = [1.0, 1.3, 1.6, 1.95, 2.4]
+spawn = [1.0, 1.3, 1.6, 1.95, 2.4]
 # Added elite chance.
-elites = [0.0, 0.03, 0.06, 0.1, 0.15]
+elites = [0.0, 0.06, 0.12, 0.18, 0.25]
 # Shifts upgrade rarity odds like luck.
 rarity = [0.0, 0.25, 0.5, 0.8, 1.2]
 # Banked materials and class XP on extraction.
-reward = [1.0, 1.3, 1.65, 2.1, 2.7]
-class_xp = [1.0, 1.2, 1.45, 1.75, 2.1]
+reward = [1.0, 1.5, 2.1, 2.8, 3.6]
+class_xp = [1.0, 1.3, 1.65, 2.0, 2.5]
 
 [missions]
 # Contracts on the mission board (refreshed after every drop and jump).
@@ -150,16 +153,18 @@ lamp = { ferrite = 1, lumite = 1, voidstone = 0 }
 # Affixes rolled at common, uncommon, rare and legendary.
 affixes = [1, 2, 3, 4]
 # Stat scale per rarity (the implicit stat and every affix).
-scale = [1.0, 1.25, 1.55, 2.0]
+scale = [0.6, 0.8, 1.05, 1.4]
 # Extra stat scale per hazard level above 1.
-hazard_scale = 0.08
+hazard_scale = 0.06
 # Supply caches always hold gear at least this rare (or a weapon blueprint).
 cache_min = "uncommon"
 # Chance a cache holds a familiar weapon blueprint for the class instead,
 # while one is still to be found.
 weapon_find = 0.35
+# Chance a cache holds a find at all.
+cache_find = 0.4
 # Chance an elite drops gear when it dies.
-elite_drop = 0.08
+elite_drop = 0.05
 # Bosses and hunted elites always drop gear this rare or better.
 boss_min = "rare"
 # Stash capacity; finds beyond it are salvaged for their credit value.

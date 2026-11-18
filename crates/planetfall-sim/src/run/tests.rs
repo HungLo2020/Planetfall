@@ -874,8 +874,16 @@ fn survival_time_probe() {
     use crate::autoplay::Autopilot;
     use crate::game::Game;
     let only = std::env::var("PROBE_PLANET").ok();
+    let hazard: u8 = std::env::var("PROBE_HAZARD")
+        .ok()
+        .and_then(|h| h.parse().ok())
+        .unwrap_or(1);
     for planet in PlanetId::all().filter(|p| only.as_deref().is_none_or(|k| k == p.key())) {
+        let class_filter = std::env::var("PROBE_CLASS").ok();
         for key in ["striker", "prospector", "warden", "engineer"] {
+            if class_filter.as_deref().is_some_and(|c| c != key) {
+                continue;
+            }
             let mut minutes = Vec::new();
             for seed in 0..4u64 {
                 // Progress typical of reaching this planet: health and
@@ -888,6 +896,7 @@ fn survival_time_probe() {
                     players: vec![loadout],
                     max_health: 100.0 + 25.0 * nav,
                     damage_multiplier: 1.0 + 0.12 * nav,
+                    hazard,
                     ..config(seed * 7 + 1)
                 });
                 let mut game = Game::new(crate::Profile::default(), 1);

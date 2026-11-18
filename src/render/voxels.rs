@@ -7,9 +7,9 @@
 //! rock, placed ship blocks) and swaps the whole grid when the scene changes
 //! between the ship and a planet.
 
+use crate::render::sculpt::Carve;
 use planetfall_sim::content::{Palette, PlanetId};
-use planetfall_sim::terrain::TILE;
-use planetfall_sim::voxel::{self, Blocks};
+use planetfall_sim::voxel::{self, AIR, Blocks};
 use quasar_frame::{Gpu, GraphicsResult, RenderTarget, error};
 use quasar_math::{DVec3, IVec3, Mat4, Vec3};
 use quasar_render_3d::{Lighting, ShadingModel, ShadowBinding};
@@ -30,7 +30,7 @@ pub const GRID: GridId = GridId(0);
 /// Chunk edge in voxels (`planetfall_sim::voxel::Layout` is `Cube16`).
 const EDGE: i32 = 16;
 /// Texture tile edge in texels.
-const TEXELS: u32 = 16;
+const TEXELS: u32 = 32;
 
 /// Texture layers, one per face look.
 mod tex {
@@ -54,6 +54,49 @@ mod tex {
     pub const COUNT: u32 = 17;
 }
 
+/// Renderer-only block IDs after the simulation's (ship detail pieces).
+const HULL_LOW: u16 = voxel::BLOCK_COUNT;
+const HULL_CAP: u16 = voxel::BLOCK_COUNT + 1;
+const WINDOW_LOW: u16 = voxel::BLOCK_COUNT + 2;
+const WINDOW_CAP: u16 = voxel::BLOCK_COUNT + 3;
+/// Four lamp quarters, `x | z << 1`.
+const LAMP_QUARTER: u16 = voxel::BLOCK_COUNT + 4;
+
+/// The ship is laid out (and built) in 2 m tiles but drawn with the same
+/// 1 m blocks as the planets: every ship voxel becomes 2×2×2 fine ones.
+fn refine_ship(coarse: &Blocks) -> Blocks {
+    let mut fine = Blocks::default();
+    for chunk in coarse.volume.chunk_coords() {
+        for y in 0..EDGE {
+            for z in 0..EDGE {
+                for x in 0..EDGE {
+                    let v = chunk * EDGE + IVec3::new(x, y, z);
+                    let block = coarse.get(v);
+                    if block == AIR {
+                        continue;
+                    }
+                    for k in 0..8 {
+                        let d = IVec3::new(k & 1, k >> 1 & 1, k >> 2 & 1);
+                        let part = match (block, d.y) {
+                            (voxel::HULL, 0) => HULL_LOW,
+                            (voxel::HULL, _) => HULL_CAP,
+                            (voxel::WINDOW, 0) => WINDOW_LOW,
+                            (voxel::WINDOW, _) => WINDOW_CAP,
+                            (voxel::LAMP, 0) => LAMP_QUARTER + (d.x | d.z << 1) as u16,
+                            (voxel::LAMP, _) => AIR,
+                            (b, _) => b,
+                        };
+                        if part != AIR {
+                            fine.set(v * 2 + d, part);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    fine
+}
+
 /// Which world the grid currently holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorldKey {
@@ -65,9 +108,21 @@ pub enum WorldKey {
     },
 }
 
+impl WorldKey {
+    /// Meters per drawn voxel (the ship is refined to planet-sized blocks).
+    fn scale(self) -> f64 {
+        match self {
+            Self::Ship => f64::from(planetfall_sim::ship::TILE) / 2.0,
+            Self::Planet { .. } => f64::from(planetfall_sim::terrain::TILE),
+        }
+    }
+}
+
 /// Block definitions and the per-block tables meshing needs.
 struct Content {
     catalog: BlockCatalog,
+    /// How planet blocks are sculpted, per block ID.
+    carve: Vec<Carve>,
     library: ModelLibrary,
     opaque: Vec<bool>,
 }
@@ -144,19 +199,84 @@ impl Content {
             debug_assert_eq!(added, id, "catalog order matches planetfall_sim::voxel");
         }
         debug_assert_eq!(catalog.defs().len(), voxel::BLOCK_COUNT as usize);
+        // Renderer-only pieces for drawing 2 m ship blocks out of 1 m ones
+        // (see `refine_ship`): a full-height wall course under a short cap
+        // (walls stay 1.2 m), and lamp quarters around the tile centre.
+        let ship_parts = [
+            (
+                HULL_LOW,
+                BlockDef::cube("hull-low", tex::HULL)
+                    .with_materials(sides(tex::HULL, tex::HULL_TOP)),
+            ),
+            (
+                HULL_CAP,
+                BlockDef::cube("hull-cap", tex::HULL)
+                    .with_materials(sides(tex::HULL, tex::HULL_TOP))
+                    .with_height(2.0 * WALL_HEIGHT - 1.0),
+            ),
+            (
+                WINDOW_LOW,
+                BlockDef::cube("window-low", tex::WINDOW).with_layer(Layer::Translucent),
+            ),
+            (
+                WINDOW_CAP,
+                BlockDef::cube("window-cap", tex::WINDOW)
+                    .with_height(2.0 * WALL_HEIGHT - 1.0)
+                    .with_layer(Layer::Translucent),
+            ),
+        ];
+        for (id, def) in ship_parts {
+            let added = catalog.add(def);
+            debug_assert_eq!(added, id);
+        }
+        for q in 0..4u16 {
+            let (qx, qz) = (f32::from(q & 1), f32::from(q >> 1));
+            // The coarse lamp spans 0.3..0.7 of the tile: 0.6..1 of the low
+            // fine cell and 0..0.4 of the high one, 0.9 m tall.
+            let lo = |high: f32| if high > 0.5 { 0.0 } else { 0.6 };
+            let hi = |high: f32| if high > 0.5 { 0.4 } else { 1.0 };
+            let added = catalog.add(
+                BlockDef::partial(
+                    "lamp-quarter",
+                    tex::LAMP,
+                    [lo(qx), 0.0, lo(qz)],
+                    [hi(qx), 0.9, hi(qz)],
+                )
+                .with_emission(14),
+            );
+            debug_assert_eq!(added, LAMP_QUARTER + q);
+        }
         let opaque = opaque_table(&catalog);
+        let carve = (0..catalog.defs().len() as u16)
+            .map(|id| match id {
+                voxel::ROCK
+                | voxel::FERRITE_ORE
+                | voxel::LUMITE_ORE
+                | voxel::VOIDSTONE_ORE
+                | voxel::BEDROCK => Carve::Stone,
+                _ => Carve::Flat,
+            })
+            .collect();
         Self {
             catalog,
+            carve,
             library,
             opaque,
         }
     }
 
-    fn mesh(&self, blocks: &Blocks, chunk: IVec3) -> MeshBuffers {
+    fn mesh(&self, blocks: &Blocks, chunk: IVec3, sculpted: bool) -> MeshBuffers {
         let mut snapshot = Snapshot::new();
         blocks
             .volume
             .snapshot(blocks.block, chunk, 1, &mut snapshot);
+        if sculpted {
+            return crate::render::sculpt::Sculptor {
+                catalog: &self.catalog,
+                carve: &self.carve,
+            }
+            .mesh(&snapshot, chunk);
+        }
         let mut out = MeshBuffers::new();
         CulledModelExtractor::default().extract(
             CulledInput {
@@ -216,23 +336,69 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
                     let shade = |c: [f32; 3], amount: f32| {
                         c.map(|v| v * (1.0 - amount + 2.0 * amount * (0.6 * n + 0.4 * grain)))
                     };
-                    let ore = |vein: [f32; 3]| {
-                        let crystal = hash(x / 3, y / 3, layer + 7) > 0.72;
-                        if crystal {
-                            shade(vein, 0.15)
+                    // Stone sides: sediment strata, hairline cracks and a
+                    // ragged lip of the top growth spilling over the edge.
+                    let strata = |c: [f32; 3]| {
+                        let band =
+                            hash(0, y / 3, layer + 41) * 0.6 + hash(0, y / 7, layer + 43) * 0.4;
+                        let wave = ((x as f32 * 0.35 + band * 6.0).sin() * 0.5 + 0.5) * 0.04;
+                        c.map(|v| v * (0.84 + 0.24 * band + wave))
+                    };
+                    let crack = (0..3u32).any(|k| {
+                        let x0 = hash(k, 1, layer + 51) * TEXELS as f32;
+                        let y0 = hash(k, 2, layer + 51) * TEXELS as f32 * 0.6;
+                        let len = 8.0 + hash(k, 3, layer + 51) * 14.0;
+                        let fy = y as f32;
+                        let drift = (hash(k, y / 4, layer + 53) - 0.5) * 5.0
+                            + (hash(k, y / 4 + 1, layer + 53) - 0.5) * 5.0 * ((y % 4) as f32 / 4.0);
+                        fy >= y0 && fy <= y0 + len && (x as f32 - x0 - drift).abs() < 0.7
+                    });
+                    let lip = y < 3 + (hash(x / 2, 0, layer + 61) * 4.0) as u32;
+                    let side = |c: [f32; 3]| {
+                        if lip {
+                            shade(palette.rock_top, 0.14)
+                        } else if crack {
+                            strata(c).map(|v| v * 0.55)
                         } else {
-                            shade(palette.rock, 0.18)
+                            strata(shade(c, 0.12))
+                        }
+                    };
+                    let ore = |vein: [f32; 3]| {
+                        // Crystal clusters with a bright facet on each.
+                        let cluster = hash(x / 5, y / 5, layer + 7);
+                        let inside = cluster > 0.55 && hash(x / 2, y / 2, layer + 9) > 0.35;
+                        if lip {
+                            shade(palette.rock_top, 0.14)
+                        } else if inside && (x + y) % 5 == 0 {
+                            vein.map(|v| (v * 1.35).min(1.0))
+                        } else if inside {
+                            shade(vein, 0.18)
+                        } else {
+                            side(palette.rock)
+                        }
+                    };
+                    // Tops: the planet's growth in clumps over bare stone,
+                    // with pebbles.
+                    let top = || {
+                        let clump = hash(x / 4, y / 4, layer + 71) * 0.6
+                            + hash(x / 2, y / 2, layer + 73) * 0.4;
+                        if clump < 0.22 {
+                            shade(palette.rock, 0.16)
+                        } else if n > 0.93 {
+                            palette.rock_top.map(|v| v * 0.7)
+                        } else {
+                            shade(palette.rock_top, 0.16)
                         }
                     };
                     let (rgb, alpha) = match layer {
                         tex::GROUND => (shade(palette.floor, 0.12), 1.0),
                         tex::GROUND_ALT => (shade(palette.floor_alt, 0.12), 1.0),
-                        tex::ROCK => (shade(palette.rock, 0.2), 1.0),
-                        tex::ROCK_TOP => (shade(palette.rock_top, 0.12), 1.0),
+                        tex::ROCK => (side(palette.rock), 1.0),
+                        tex::ROCK_TOP => (top(), 1.0),
                         tex::FERRITE => (ore([0.72, 0.42, 0.22]), 1.0),
                         tex::LUMITE => (ore([0.35, 0.95, 1.0]), 1.0),
                         tex::VOIDSTONE => (ore([0.55, 0.25, 0.85]), 1.0),
-                        tex::BEDROCK => (shade(palette.bedrock, 0.25), 1.0),
+                        tex::BEDROCK => (strata(shade(palette.bedrock, 0.2)), 1.0),
                         tex::LAVA => {
                             // Glowing cracks between dark crusted plates.
                             let crack = hash(x / 2, y / 2, layer + 3) > 0.55 || n > 0.8;
@@ -261,7 +427,7 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
                             }
                         }
                         tex::DECK => {
-                            let seam = edge || x == TEXELS / 2;
+                            let seam = edge;
                             let rivet = (x == 2 || x == TEXELS - 3) && (y == 2 || y == TEXELS - 3);
                             let base = [0.20, 0.22, 0.25];
                             if seam {
@@ -295,6 +461,27 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
                             }
                         }
                         _ => (shade([0.18, 0.19, 0.22], 0.1), 1.0),
+                    };
+                    // Rock blocks get chipped, darkened rims so each one
+                    // reads as a block even where the tops run together.
+                    let rocky = matches!(
+                        layer,
+                        tex::ROCK
+                            | tex::ROCK_TOP
+                            | tex::FERRITE
+                            | tex::LUMITE
+                            | tex::VOIDSTONE
+                            | tex::BEDROCK
+                    );
+                    let rim = x.min(y).min(TEXELS - 1 - x).min(TEXELS - 1 - y);
+                    let chip = hash(x, y, layer + 91);
+                    let rgb = if rocky && (rim == 0 && chip > 0.1 || rim == 1 && chip > 0.75) {
+                        rgb.map(|v| v * if rim == 0 { 0.78 } else { 0.9 })
+                    } else if rocky && rim == 1 && (x == 1 || y == 1) {
+                        // A faint lit lip on the upper-left edges.
+                        rgb.map(|v| (v * 1.12).min(1.0))
+                    } else {
+                        rgb
                     };
                     pixels.extend([
                         encode(rgb[0]),
@@ -336,6 +523,8 @@ pub struct VoxelWorld {
     palette: Option<PlanetId>,
     /// Revision each uploaded chunk was meshed at.
     uploaded: BTreeMap<(i32, i32, i32), u64>,
+    /// The ship in 1 m blocks and the ship revision it was refined at.
+    ship: Option<(u64, Blocks)>,
     pending_submissions: Vec<u64>,
 }
 
@@ -367,6 +556,7 @@ impl VoxelWorld {
             key: None,
             palette: None,
             uploaded: BTreeMap::new(),
+            ship: None,
             pending_submissions: Vec::new(),
         }
     }
@@ -376,6 +566,7 @@ impl VoxelWorld {
     /// so stale meshes with matching revisions would otherwise survive.
     pub fn invalidate(&mut self) {
         self.key = None;
+        self.ship = None;
     }
 
     /// Point the grid at `key`'s blocks and re-mesh changed chunks.
@@ -409,7 +600,7 @@ impl VoxelWorld {
                     ..VoxelRendererConfig::default()
                 },
             )?;
-            renderer.set_grid(GRID, GridTransform::default(), f64::from(TILE));
+            renderer.set_grid(GRID, GridTransform::default(), key.scale());
             self.renderer = Some(renderer);
             self.palette = Some(planet);
             self.key = None;
@@ -418,16 +609,36 @@ impl VoxelWorld {
         renderer.retire_completed(gal);
         if self.key != Some(key) {
             renderer.remove_grid(GRID);
-            renderer.set_grid(GRID, GridTransform::default(), f64::from(TILE));
+            renderer.set_grid(GRID, GridTransform::default(), key.scale());
             self.uploaded.clear();
             self.key = Some(key);
+        }
+        if key == WorldKey::Ship {
+            // Ship edits are rare: refine and re-mesh the whole hull.
+            let revision = revisions.map(|(_, r)| r).max().unwrap_or(0);
+            if self.ship.as_ref().map(|(r, _)| *r) != Some(revision) || self.uploaded.is_empty() {
+                let fine = refine_ship(blocks);
+                for (x, y, z) in std::mem::take(&mut self.uploaded).into_keys() {
+                    renderer.remove(ChunkKey::new(GRID, IVec3::new(x, y, z)));
+                }
+                for chunk in fine.volume.chunk_coords() {
+                    let mesh = self.content.mesh(&fine, chunk, false);
+                    let key = ChunkKey::new(GRID, chunk);
+                    renderer.upload(gal, key, ChunkPlacement::new(chunk * EDGE), &mesh)?;
+                    self.uploaded.insert((chunk.x, chunk.y, chunk.z), revision);
+                }
+                self.ship = Some((revision, fine));
+            }
+            return Ok(());
         }
         for (chunk, revision) in revisions {
             let id = (chunk.x, chunk.y, chunk.z);
             if self.uploaded.get(&id) == Some(&revision) {
                 continue;
             }
-            let mesh = self.content.mesh(blocks, chunk);
+            let mesh = self
+                .content
+                .mesh(blocks, chunk, matches!(key, WorldKey::Planet { .. }));
             let key = ChunkKey::new(GRID, chunk);
             renderer.remove(key);
             renderer.upload(gal, key, ChunkPlacement::new(chunk * EDGE), &mesh)?;
@@ -529,6 +740,13 @@ pub fn camera(eye: Vec3, target: Vec3, projection: Mat4) -> GraphicsResult<Voxel
 }
 
 /// Overlay box around one block (`grow` pads it outward).
+/// The overlay box around a 2 m ship tile at ship voxel `(x, y, z)`.
+pub fn ship_box(x: i32, y: i32, z: i32, grow: f32, color: [f32; 4]) -> OverlayBox {
+    let mut b = block_box(x * 2, y * 2, z * 2, grow, color);
+    b.max += Vec3::splat(1.0);
+    b
+}
+
 pub fn block_box(x: i32, y: i32, z: i32, grow: f32, color: [f32; 4]) -> OverlayBox {
     let min = Vec3::new(x as f32, y as f32, z as f32) - Vec3::splat(grow);
     OverlayBox {

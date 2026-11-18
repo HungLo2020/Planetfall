@@ -55,8 +55,7 @@ impl Run {
                 continue;
             }
             let e = self.enemies[i];
-            let direct =
-                (dist < TILE * 2.5 && self.terrain.line_clear(e.pos, player)) || e.flying();
+            let direct = (dist < 5.0 && self.terrain.line_clear(e.pos, player)) || e.flying();
             let goal = if direct {
                 player
             } else {

@@ -10,7 +10,7 @@ use crate::input::{Command, GameInput};
 use crate::math::V2;
 use crate::run::Extraction;
 use crate::ship::StationKind;
-use crate::terrain::TILE;
+use crate::ship::TILE;
 
 #[derive(Default)]
 pub struct Autopilot {

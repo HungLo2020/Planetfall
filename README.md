@@ -67,7 +67,8 @@ Rebind keys and buttons under Settings → Controls.
   quotas, boss kills, rescues, drill defence, salvage and elite hunts, with
   optional secondary objectives, site conditions, mutators and hazard levels
   1 to 5 that unlock as you succeed.
-- **Surface runs**: organic voxel caves of minable blocks (winding tunnels,
+- **Surface runs**: organic voxel caves of minable 1 m blocks, chamfered and
+  chipped like cut stone and stepping up in terraces (winding tunnels,
   looping chambers, a pillared set-piece arena, ore seams, per-planet floor
   patches and props); ferrite,
   lumite and voidstone ore; eight enemy types by role (husks, skitters,
@@ -98,13 +99,18 @@ Rebind keys and buttons under Settings → Controls.
   GPU-skinned crowds and authored clips, a suit per class and a silhouette
   per enemy role and boss, per-planet weather (spores, ash, snow, fireflies,
   dust), embers over lava, splashes, frost and drips on frozen and wet
-  enemies, element combo bursts, voxel terrain and hull with fog on
+  enemies, element combo bursts, sculpted voxel rock and a plated hull with fog on
   blocks and meshes alike, directional shadows over meshes and voxels,
   clustered point lights, GPU particles (blood, rock dust, ore glints,
   explosions), scorch and blood decals, outlines on characters hidden behind
   rock, HDR bloom, filmic tonemapping and see-through effects, FTL and drop-pod
-  cinematics, synthesized sound effects and music, and a shaped-font HUD and
-  menus with device-aware button prompts.
+  cinematics, original synthesized audio (layered effects with variants,
+  footsteps, per-planet ambience, and ship, surface, extraction and boss
+  music that crossfade with the situation), and an "industrial salvage"
+  interface: a generated logo, framed windows with icon headers, styled
+  buttons, a HUD with icon meters and a weapon bar, more than 100 generated
+  icons, rarity-coloured item names, and button prompts drawn as key caps or
+  controller glyphs that follow your bindings and device.
 
 ## Command line
 

@@ -696,6 +696,8 @@ pub struct EquipmentTuning {
     /// Chance a cache holds a familiar weapon blueprint instead of gear
     /// (while the class has some left to find).
     pub weapon_find: f32,
+    /// Chance a cache holds a find at all (gear or a blueprint).
+    pub cache_find: f32,
     /// Chance an elite drops gear.
     pub elite_drop: f32,
     /// Bosses and hunted elites always drop gear at least this rare.
@@ -1014,6 +1016,10 @@ pub struct PlayerTuning {
     pub dash_ticks: u32,
     pub dash_cooldown_ticks: u32,
     pub spawn_invulnerability: f32,
+    /// Seconds of invulnerability after taking a hit.
+    pub hit_invulnerability: f32,
+    /// Most damage armour can absorb (a fraction).
+    pub armor_cap: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]

@@ -43,7 +43,7 @@ loops = 0.4
 alcoves = 0.55
 patches = 0.7
 decor = "fungus"
-decor_density = 0.2
+decor_density = 0.1
 
 [planet.hazards]
 spores = 5
@@ -80,7 +80,7 @@ loops = 0.3
 alcoves = 0.4
 patches = 0.5
 decor = "crystal"
-decor_density = 0.14
+decor_density = 0.07
 
 [planet.hazards]
 lava = 0.07
@@ -119,7 +119,7 @@ loops = 0.45
 alcoves = 0.6
 patches = 0.6
 decor = "ice"
-decor_density = 0.18
+decor_density = 0.09
 
 [planet.hazards]
 vents = "cold"
@@ -157,7 +157,7 @@ loops = 0.5
 alcoves = 0.55
 patches = 0.6
 decor = "fungus"
-decor_density = 0.22
+decor_density = 0.11
 
 [planet.hazards]
 water = 0.2
@@ -195,7 +195,7 @@ loops = 0.4
 alcoves = 0.45
 patches = 0.4
 decor = "crystal"
-decor_density = 0.15
+decor_density = 0.07
 
 [planet.hazards]
 oxygen = true

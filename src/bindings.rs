@@ -154,15 +154,12 @@ impl Prompts {
         self.family != DeviceFamily::KeyboardMouse
     }
 
-    /// `{action}` → `[name]` for the active family; `{move}` names the
-    /// movement controls as a whole.
+    /// `{action}` → `[name]` for the active family; `{move}` becomes the
+    /// bound movement keys (`[W][A][S][D]`) or the left stick (`[LS]`). The
+    /// HUD and menus draw each `[name]` as a key cap or button glyph (see
+    /// [`glyph`] and `ui::kit`).
     pub fn format(&self, template: &str) -> String {
-        let movement = if self.gamepad() {
-            "the left stick"
-        } else {
-            "WASD"
-        };
-        let mut text = template.replace("{move}", movement);
+        let mut text = template.replace("{move}", &self.movement());
         for action in ["interact", "dash", "extract", "build", "ability"] {
             text = text.replace(&format!("{{{action}}}"), &format!("[{{{action}}}]"));
         }
@@ -172,6 +169,99 @@ impl Prompts {
             &self.keyboard
         };
         bindings.format_prompt(&text, self.family)
+    }
+
+    /// The movement controls as prompt tokens.
+    fn movement(&self) -> String {
+        if self.gamepad() {
+            return "[LS]".to_owned();
+        }
+        // First keyboard axis of each: "W / S" and "A / D".
+        let pair = |action: &str| {
+            self.keyboard
+                .display_name(action, DeviceFamily::KeyboardMouse)
+                .and_then(|n| {
+                    n.split_once(" / ")
+                        .map(|(a, b)| (a.to_owned(), b.to_owned()))
+                })
+        };
+        match (pair("move_z"), pair("move_x")) {
+            (Some((up, down)), Some((left, right))) => format!("[{up}][{left}][{down}][{right}]"),
+            _ => "[W][A][S][D]".to_owned(),
+        }
+    }
+
+    /// Menu navigation hints ("[Enter] select   [Esc] back").
+    pub fn menu_hints(&self) -> String {
+        let (bindings, family) = if self.gamepad() {
+            (&self.gamepad, self.family)
+        } else {
+            (&self.keyboard, DeviceFamily::KeyboardMouse)
+        };
+        let name = |action: &str, fallback: &str| {
+            bindings
+                .display_name(action, family)
+                .unwrap_or_else(|| fallback.to_owned())
+        };
+        format!(
+            "[{}] select    [{}] back",
+            name("ui_activate", "Enter"),
+            name("ui_cancel", "Esc")
+        )
+    }
+}
+
+/// The atlas glyph for a prompt token, when it has one: controller face
+/// buttons by family, shoulders, sticks, the d-pad, start/select and mouse
+/// buttons. Keyboard keys have none (they are drawn as key caps).
+pub fn glyph(label: &str, family: DeviceFamily) -> Option<&'static str> {
+    use DeviceFamily::*;
+    let face = match (family, label) {
+        (Xbox | GenericGamepad, "A" | "South") => Some("xbox-a"),
+        (Xbox | GenericGamepad, "B" | "East") => Some("xbox-b"),
+        (Xbox | GenericGamepad, "X" | "West") => Some("xbox-x"),
+        (Xbox | GenericGamepad, "Y" | "North") => Some("xbox-y"),
+        (Nintendo, "A") => Some("nin-a"),
+        (Nintendo, "B") => Some("nin-b"),
+        (Nintendo, "X") => Some("nin-x"),
+        (Nintendo, "Y") => Some("nin-y"),
+        (_, "Cross") => Some("ps-cross"),
+        (_, "Circle") => Some("ps-circle"),
+        (_, "Square") => Some("ps-square"),
+        (_, "Triangle") => Some("ps-triangle"),
+        _ => None,
+    };
+    if face.is_some() {
+        return face;
+    }
+    Some(match label {
+        "LB" | "L1" | "L" | "Left Bumper" => "pad-lb",
+        "RB" | "R1" | "R" | "Right Bumper" => "pad-rb",
+        "LT" | "L2" | "ZL" | "Left Trigger" => "pad-lt",
+        "RT" | "R2" | "ZR" | "Right Trigger" => "pad-rt",
+        "LS" | "L3" | "Left Stick X" | "Left Stick Y" => "pad-ls",
+        "RS" | "R3" | "Right Stick X" | "Right Stick Y" => "pad-rs",
+        "Menu" | "Options" | "Plus" | "Start" => "pad-start",
+        "View" | "Create" | "Minus" | "Select" => "pad-select",
+        "Left Mouse" => "mouse-left",
+        "Right Mouse" => "mouse-right",
+        "Middle Mouse" => "mouse-middle",
+        l if l.starts_with("D-Pad") => "pad-dpad",
+        _ => return None,
+    })
+}
+
+/// Short key-cap text for a keyboard key label.
+pub fn keycap_text(label: &str) -> String {
+    match label {
+        "Up" => "↑".into(),
+        "Down" => "↓".into(),
+        "Left" => "←".into(),
+        "Right" => "→".into(),
+        "Left Shift" | "Right Shift" => "Shift".into(),
+        "Left Ctrl" | "Right Ctrl" => "Ctrl".into(),
+        "Left Alt" | "Right Alt" => "Alt".into(),
+        other => other.to_owned(),
     }
 }
 
@@ -183,10 +273,13 @@ mod tests {
     fn prompts_follow_the_device_family() {
         let mut prompts = Prompts::default();
         assert_eq!(prompts.format("press {interact}"), "press [E]");
-        assert_eq!(prompts.format("{move} to walk"), "WASD to walk");
+        assert_eq!(prompts.format("{move} to walk"), "[W][A][S][D] to walk");
+        assert_eq!(glyph("E", DeviceFamily::KeyboardMouse), None);
         prompts.family = DeviceFamily::Xbox;
         assert_eq!(prompts.format("press {interact}"), "press [A]");
-        assert_eq!(prompts.format("{move}"), "the left stick");
+        assert_eq!(prompts.format("{move}"), "[LS]");
+        assert_eq!(glyph("A", DeviceFamily::Xbox), Some("xbox-a"));
+        assert!(prompts.menu_hints().contains("[A]"));
         prompts.family = DeviceFamily::PlayStation;
         assert_ne!(prompts.format("{dash}"), prompts.format("{interact}"));
     }

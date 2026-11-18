@@ -15,8 +15,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// World size of one block, in meters.
-pub const TILE: f32 = 2.0;
-pub const MAP_SIZE: u32 = 60;
+pub const TILE: f32 = 1.0;
+/// Blocks per side of a planet map.
+pub const MAP_SIZE: u32 = 120;
+/// The cave layout is generated on a coarser grid (`cavegen`), one cell per
+/// `CAVE_SCALE`² blocks, then refined block by block with ragged edges.
+pub const CAVE_SCALE: i32 = 2;
+/// Wall columns are 2 or 3 blocks tall (the bedrock rim 4).
+pub const WALL_LAYERS: i32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tile {
@@ -36,21 +42,21 @@ impl Tile {
     }
 
     fn rock() -> Self {
-        Self::Rock { hp: 2.4 }
+        Self::Rock { hp: 1.2 }
     }
 
     fn ore(material: Material) -> Self {
         let hp = match material {
-            Material::Ferrite => 3.2,
-            Material::Lumite => 3.8,
-            Material::Voidstone => 5.5,
+            Material::Ferrite => 1.6,
+            Material::Lumite => 1.9,
+            Material::Voidstone => 2.75,
         };
         Self::Ore { material, hp }
     }
 
     pub fn max_hp(self) -> f32 {
         match self {
-            Self::Rock { .. } => 2.4,
+            Self::Rock { .. } => Self::rock().hp(),
             Self::Ore { material, .. } => Self::ore(material).hp(),
             _ => 0.0,
         }
@@ -152,9 +158,9 @@ pub struct Terrain {
 }
 
 /// Layout facts the run needs from generation.
-/// Lumite veins every non-tutorial layout guarantees (ore quotas reach 14
+/// Lumite blocks every non-tutorial layout guarantees (ore quotas reach 14
 /// at hazard 5).
-pub const MIN_LUMITE: usize = 16;
+pub const MIN_LUMITE: usize = 32;
 
 /// Mission sites every layout provides.
 pub const SITES: usize = 4;
@@ -262,18 +268,21 @@ impl Terrain {
             return false;
         }
         self.collapsed.push((self.broken.len(), (x, y)));
-        self.set_wall(x, y, voxel::ROCK);
+        self.set_wall(x, y, voxel::ROCK, 2);
         true
     }
 
     /// Clear a wall block and propagate the edit to nav and re-meshing.
     fn break_block(&mut self, x: i32, y: i32) {
-        self.set_wall(x, y, AIR);
+        self.set_wall(x, y, AIR, WALL_LAYERS);
     }
 
-    fn set_wall(&mut self, x: i32, y: i32, block: u16) {
+    /// Set a wall column `layers` blocks tall (air clears the whole column).
+    fn set_wall(&mut self, x: i32, y: i32, block: u16, layers: i32) {
         let mut batch = EditBatch::new();
-        batch.set(self.blocks.block, voxel::voxel(x, y, 0), block);
+        for layer in 0..layers {
+            batch.set(self.blocks.block, voxel::voxel(x, y, layer), block);
+        }
         let result = self.blocks.volume.apply(&batch, EditOptions::default());
         self.revision += 1;
         for chunk in &result.dirty {
@@ -298,10 +307,23 @@ impl Terrain {
     pub fn resolve_circle(&self, mut p: V2, radius: f32) -> (V2, Option<(i32, i32)>) {
         let mut hit = None;
         let mut deepest = 0.0f32;
+        let span = (radius / TILE).ceil() as i32;
         for _ in 0..2 {
             let (cx, cy) = Self::tile_of(p);
-            for y in cy - 1..=cy + 1 {
-                for x in cx - 1..=cx + 1 {
+            // Buried (rubble, a shove into rock): step out to the nearest
+            // open block rather than being pushed by every block around.
+            if self.tile(cx, cy).solid() {
+                if let Some(out) = self.nearest_open(p, 4) {
+                    p = out;
+                }
+                if hit.is_none() {
+                    hit = Some((cx, cy));
+                    deepest = radius;
+                }
+                continue;
+            }
+            for y in cy - span..=cy + span {
+                for x in cx - span..=cx + span {
                     if !self.tile(x, y).solid() {
                         continue;
                     }
@@ -316,10 +338,10 @@ impl Terrain {
                     if dist > 1e-5 {
                         p += d / dist * depth;
                     } else {
-                        // Center inside the block: push toward the tile we came from.
+                        // Exactly on the block's edge: step straight off it.
                         let away = (p - Self::center_of(x, y)).normalize_or_zero();
                         let away = if away == V2::ZERO { V2::Y } else { away };
-                        p += away * (radius + TILE * 0.5);
+                        p += away * depth;
                     }
                     if depth > deepest {
                         deepest = depth;
@@ -329,6 +351,16 @@ impl Terrain {
             }
         }
         (p, hit)
+    }
+
+    /// The centre of the open block nearest `p` within `reach` blocks.
+    fn nearest_open(&self, p: V2, reach: i32) -> Option<V2> {
+        let (cx, cy) = Self::tile_of(p);
+        (-reach..=reach)
+            .flat_map(|dy| (-reach..=reach).map(move |dx| (cx + dx, cy + dy)))
+            .filter(|&(x, y)| !self.tile(x, y).solid())
+            .map(|(x, y)| Self::center_of(x, y))
+            .min_by(|a, b| a.distance_squared(p).total_cmp(&b.distance_squared(p)))
     }
 
     /// Whether a straight segment at waist height stays out of solid blocks
@@ -365,26 +397,68 @@ impl Terrain {
     pub fn generate(planet: PlanetId, seed: u64, tutorial: bool) -> (Self, Layout) {
         let mut rng = Rng::seed_from_u64(seed);
         let (w, h) = (MAP_SIZE as i32, MAP_SIZE as i32);
-        let cave = cavegen::generate(planet, w, &mut rng, seed, SITES, tutorial);
+        let coarse = w / CAVE_SCALE;
+        let cave = cavegen::generate(planet, coarse, &mut rng, seed, SITES, tutorial);
         let idx = |x: i32, y: i32| (y * w + x) as usize;
-        let (lx, ly) = cave.landing;
-        let mut tiles: Vec<Tile> = cave
-            .cells
-            .iter()
-            .map(|c| match c {
+        let cidx = |x: i32, y: i32| ((y / CAVE_SCALE) * coarse + x / CAVE_SCALE) as usize;
+        // A coarse cell's center is the shared corner of its four blocks.
+        let refine = |(x, y): (i32, i32)| (x * CAVE_SCALE + 1, y * CAVE_SCALE + 1);
+        let (lx, ly) = refine(cave.landing);
+        let mut tiles: Vec<Tile> = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .map(|(x, y)| match cave.cells[cidx(x, y)] {
                 Cell::Floor => Tile::Floor,
-                Cell::Rock => Tile::rock(),
-                Cell::Ore(m) => Tile::ore(*m),
+                Cell::Rock | Cell::Ore(_) => Tile::rock(),
                 Cell::Bedrock => Tile::Bedrock,
             })
             .collect();
-        let sites = cave.sites.clone();
-        let exposed = |tiles: &Vec<Tile>, x: i32, y: i32| {
-            [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|(dx, dy)| {
-                let (nx, ny) = (x + dx, y + dy);
-                nx >= 0 && ny >= 0 && nx < w && ny < h && tiles[idx(nx, ny)] == Tile::Floor
-            })
+        let floor_at = |tiles: &Vec<Tile>, x: i32, y: i32| {
+            x >= 0 && y >= 0 && x < w && y < h && tiles[idx(x, y)] == Tile::Floor
         };
+        let exposed = |tiles: &Vec<Tile>, x: i32, y: i32| {
+            [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .iter()
+                .any(|(dx, dy)| floor_at(tiles, x + dx, y + dy))
+        };
+        let edge_noise = cavegen::Noise::new(seed, 0x5eed);
+        let height_noise = cavegen::Noise::new(seed, 0x7a11);
+        let floor_noise = cavegen::Noise::new(seed, 0xf100);
+        // Ragged edges: chip noisy bites out of the rock along every wall
+        // (only ever carving, so the cave stays connected).
+        let edge: Vec<(i32, i32)> = (1..h - 1)
+            .flat_map(|y| (1..w - 1).map(move |x| (x, y)))
+            .filter(|&(x, y)| matches!(tiles[idx(x, y)], Tile::Rock { .. }))
+            .filter(|&(x, y)| exposed(&tiles, x, y))
+            .collect();
+        for (x, y) in edge {
+            let n = edge_noise.fbm(x as f32, y as f32, 0.35, 2);
+            if n + rng.range_f32(0.0..0.35) > 0.78 {
+                tiles[idx(x, y)] = Tile::Floor;
+            }
+        }
+        // Ore veins: each coarse ore cell becomes two ore blocks, the ones
+        // facing open floor first.
+        for cy in 0..coarse {
+            for cx in 0..coarse {
+                let Cell::Ore(material) = cave.cells[(cy * coarse + cx) as usize] else {
+                    continue;
+                };
+                let mut blocks: Vec<(i32, i32)> = (0..CAVE_SCALE * CAVE_SCALE)
+                    .map(|i| {
+                        (
+                            cx * CAVE_SCALE + i % CAVE_SCALE,
+                            cy * CAVE_SCALE + i / CAVE_SCALE,
+                        )
+                    })
+                    .filter(|&(x, y)| matches!(tiles[idx(x, y)], Tile::Rock { .. }))
+                    .collect();
+                blocks.sort_by_key(|&(x, y)| !exposed(&tiles, x, y));
+                for (x, y) in blocks.into_iter().take(2) {
+                    tiles[idx(x, y)] = Tile::ore(material);
+                }
+            }
+        }
+        let sites: Vec<(i32, i32)> = cave.sites.iter().copied().map(refine).collect();
         let floor: Vec<(i32, i32)> = (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
             .filter(|&(x, y)| tiles[idx(x, y)] == Tile::Floor)
@@ -401,7 +475,7 @@ impl Terrain {
                 .count();
             let mut needed = count.saturating_sub(have);
             let mut guard = 0;
-            while needed > 0 && guard < 20_000 {
+            while needed > 0 && guard < 40_000 {
                 guard += 1;
                 let (x, y) = if let Some((cx, cy, r)) = near {
                     (
@@ -428,38 +502,66 @@ impl Terrain {
         };
         // Enough lumite for the largest ore quota, with room to spare.
         let objective = if tutorial { 4 } else { MIN_LUMITE };
-        ensure(&mut tiles, &mut rng, Material::Lumite, 3, Some((lx, ly, 7)));
+        ensure(
+            &mut tiles,
+            &mut rng,
+            Material::Lumite,
+            6,
+            Some((lx, ly, 14)),
+        );
         ensure(
             &mut tiles,
             &mut rng,
             Material::Ferrite,
-            4,
-            Some((lx, ly, 7)),
+            8,
+            Some((lx, ly, 14)),
         );
-        ensure(&mut tiles, &mut rng, Material::Lumite, objective + 8, None);
-        ensure(&mut tiles, &mut rng, Material::Ferrite, 14, None);
+        ensure(&mut tiles, &mut rng, Material::Lumite, objective + 16, None);
+        ensure(&mut tiles, &mut rng, Material::Ferrite, 28, None);
 
-        // Commit the tiles to voxels: ground under everything, walls above,
-        // and a taller bedrock rim.
+        // Commit the tiles to voxels: ground under everything, wall columns
+        // of uneven height above (taller deeper into the rock), and a tall
+        // bedrock rim.
         let mut blocks = Blocks::default();
         for y in 0..h {
             for x in 0..w {
                 let tile = tiles[idx(x, y)];
-                let ground = if cave.lava[idx(x, y)] {
+                let c = cidx(x, y);
+                let ground = if tile == Tile::Floor && cave.lava[c] {
                     voxel::LAVA
-                } else if cave.water[idx(x, y)] {
+                } else if tile == Tile::Floor && cave.water[c] {
                     voxel::WATER
-                } else if cave.patches[idx(x, y)] {
+                } else if cave.patches[c] {
                     voxel::GROUND_PATCH
-                } else if (x + y) % 2 == 0 {
+                } else if floor_noise.hash(x, y) * 0.5
+                    + floor_noise.fbm(x as f32, y as f32, 0.15, 2)
+                    > 0.75
+                {
                     voxel::GROUND
                 } else {
                     voxel::GROUND_ALT
                 };
                 blocks.set(voxel::voxel(x, y, -1), ground);
-                blocks.set(voxel::voxel(x, y, 0), tile.block());
-                if tile == Tile::Bedrock {
-                    blocks.set(voxel::voxel(x, y, 1), voxel::BEDROCK);
+                let layers = match tile {
+                    Tile::Floor => 0,
+                    Tile::Bedrock => WALL_LAYERS,
+                    // Terraced rock: low at the cave edge, stepping up in
+                    // noisy shelves further in.
+                    _ => {
+                        let n = height_noise.fbm(x as f32, y as f32, 0.12, 3)
+                            + 0.25 * height_noise.hash(x, y);
+                        let deep = !exposed(&tiles, x, y);
+                        if deep && n > 0.55 { 3 } else { 2 }
+                    }
+                };
+                for layer in 0..layers {
+                    // Ore shows in the lower blocks; rock caps the column.
+                    let block = if layer >= 2 && tile.block() != voxel::BEDROCK {
+                        voxel::ROCK
+                    } else {
+                        tile.block()
+                    };
+                    blocks.set(voxel::voxel(x, y, layer), block);
                 }
             }
         }
@@ -474,7 +576,9 @@ impl Terrain {
             .map(|c| ((c.x, c.y, c.z), 0))
             .collect();
 
-        let landing = Self::center_of(lx, ly);
+        // The landing and sites sit on block corners (coarse cell centers).
+        let corner = |(x, y): (i32, i32)| V2::new(x as f32, y as f32) * TILE;
+        let landing = corner((lx, ly));
         // Weapon caches: one close by (always in the tutorial), the rest far apart.
         let mut caches: Vec<V2> = Vec::new();
         let mut candidates: Vec<V2> = floor.iter().map(|&(x, y)| Self::center_of(x, y)).collect();
@@ -525,10 +629,7 @@ impl Terrain {
             Layout {
                 landing,
                 caches,
-                sites: sites
-                    .into_iter()
-                    .map(|(x, y)| Self::center_of(x, y))
-                    .collect(),
+                sites: sites.into_iter().map(corner).collect(),
                 spots,
             },
         )
@@ -682,19 +783,22 @@ mod tests {
                     let arena = layout.sites[0];
                     assert!(arena.distance(layout.landing) > 30.0);
                     let (ax, ay) = Terrain::tile_of(arena);
-                    let open = (-3..=3)
-                        .flat_map(|dy| (-3..=3).map(move |dx| (dx, dy)))
+                    let open = (-6..=6)
+                        .flat_map(|dy| (-6..=6).map(move |dx| (dx, dy)))
                         .filter(|&(dx, dy)| t.tile(ax + dx, ay + dy) == Tile::Floor)
                         .count();
-                    assert!(open >= 40, "{planet:?} seed {seed}: arena has {open} floor");
+                    assert!(
+                        open >= 140,
+                        "{planet:?} seed {seed}: arena has {open} floor"
+                    );
                     let floor = t.tiles().filter(|(_, t)| *t == Tile::Floor).count();
                     assert!(
-                        (500..1800).contains(&floor),
+                        (2000..7500).contains(&floor),
                         "{planet:?} seed {seed} tutorial {tutorial}: {floor} floor"
                     );
                     if !tutorial {
                         assert!(t.count_ore(Material::Lumite) >= MIN_LUMITE);
-                        assert!(t.count_ore(Material::Ferrite) >= 10);
+                        assert!(t.count_ore(Material::Ferrite) >= 20);
                     }
                 }
             }
@@ -746,8 +850,8 @@ mod tests {
         let a = layout.landing;
         assert!(t.line_clear(a, a + V2::new(1.0, 0.0)));
         // Into the bedrock rim from inside the map.
-        let edge = Terrain::center_of(0, 10);
-        assert!(!t.line_clear(Terrain::center_of(3, 10), edge));
+        let edge = Terrain::center_of(0, 20);
+        assert!(!t.line_clear(Terrain::center_of(6, 20), edge));
     }
 
     #[test]
@@ -756,8 +860,8 @@ mod tests {
         let mut field = FlowField::new(&t, layout.landing);
         // Break every rock touching open floor near the landing site.
         let (lx, ly) = Terrain::tile_of(layout.landing);
-        for y in ly - 6..=ly + 6 {
-            for x in lx - 6..=lx + 6 {
+        for y in ly - 12..=ly + 12 {
+            for x in lx - 12..=lx + 12 {
                 if matches!(t.tile(x, y), Tile::Rock { .. }) {
                     while t.mine(x, y, 10.0).is_none() {}
                 }

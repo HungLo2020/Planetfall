@@ -17,6 +17,7 @@ pub mod effects;
 mod geometry;
 mod models;
 pub mod scene;
+mod sculpt;
 mod skins;
 mod voxels;
 
@@ -103,6 +104,15 @@ impl Graphics {
         }
         let models = models::Models::load(gal, asset_root)?;
         let skins = skins::Skins::new(gal, &models)?;
+        // Item icons for the HUD and menus.
+        let mut textures_2d = Textures::default();
+        crate::ui::icons::load(asset_root).map_err(error)?;
+        let atlas = quasar_render_2d::Image::load_png(crate::ui::icons::image_path(asset_root))
+            .map_err(|e| error(e.to_string()))?;
+        ui.set_texture(crate::ui::icons::ATLAS, textures_2d.insert(atlas));
+        let logo = quasar_render_2d::Image::load_png(crate::ui::icons::logo_path(asset_root))
+            .map_err(|e| error(e.to_string()))?;
+        ui.set_texture(crate::ui::icons::LOGO, textures_2d.insert(logo));
         Ok(Self {
             world,
             post: PostChain::new(gal)?,
@@ -110,7 +120,7 @@ impl Graphics {
             shadows,
             shadow_target: None,
             two_d: RenderState2D::new(gal).map_err(|e| error(e.to_string()))?,
-            textures_2d: Textures::default(),
+            textures_2d,
             ui,
             cube: geometry::cube(gal)?,
             sphere: geometry::sphere(gal)?,
@@ -355,9 +365,11 @@ impl Graphics {
             Canvas::new(target.width, target.height).map_err(|e| error(e.to_string()))?;
         (frame.overlay)(&mut canvas, &camera);
         for layer in frame.layers {
-            self.ui
-                .prepare_text(&mut self.two_d, gal, &mut self.textures_2d, &layer.ui)?;
-            self.ui.draw(&mut canvas, &layer.ui);
+            for tree in layer.trees() {
+                self.ui
+                    .prepare_text(&mut self.two_d, gal, &mut self.textures_2d, tree)?;
+                self.ui.draw(&mut canvas, tree);
+            }
         }
         let hud = self.two_d.prepare(
             gal,

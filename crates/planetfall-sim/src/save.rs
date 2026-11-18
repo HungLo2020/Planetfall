@@ -20,11 +20,13 @@ use serde::{Deserialize, Serialize};
 /// - 5: contracts: objectives, set pieces, hazard levels.
 /// - 6: the organic cave generator (terrain regenerates from its seed, so
 ///   older drops would rebuild a different map).
+/// - 7: 1 m planet blocks on a 120x120 grid (mined-block coordinates and
+///   the map changed).
 ///
 /// A drop in progress from an older version cannot be resumed; the app
 /// strips it before parsing ([`SaveGame::strip_stale_run`]) and the slot
 /// resumes on the ship.
-pub const SAVE_VERSION: u32 = 6;
+pub const SAVE_VERSION: u32 = 7;
 /// Selectable save slots.
 pub const SLOTS: usize = 5;
 

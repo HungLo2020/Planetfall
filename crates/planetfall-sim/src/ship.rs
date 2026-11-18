@@ -7,10 +7,12 @@
 use crate::content::{DT, Materials, ShipBlock, UpgradeId};
 use crate::math::{self, V2};
 use crate::profile::{Profile, ShipEdit};
-use crate::terrain::TILE;
 use crate::voxel::{self, AIR, Blocks};
 use quasar_math::IVec3;
 use quasar_voxel::{Face, split_check};
+
+/// World size of one ship block, in meters (planet blocks are smaller).
+pub const TILE: f32 = 2.0;
 
 pub const SHIP_W: i32 = 15;
 pub const SHIP_H: i32 = 17;
