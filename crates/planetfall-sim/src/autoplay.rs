@@ -451,17 +451,8 @@ fn trade_action(game: &Game) -> Option<Command> {
 fn ore_clear_of(run: &crate::run::Run, avoid: V2, clear: f32) -> Option<V2> {
     let player = run.player().pos;
     run.terrain
-        .tiles()
-        .filter(|(_, t)| {
-            matches!(
-                t,
-                crate::terrain::Tile::Ore {
-                    material: Material::Lumite,
-                    ..
-                }
-            )
-        })
-        .map(|((x, y), _)| crate::terrain::Terrain::center_of(x, y))
+        .ores(Material::Lumite)
+        .map(|(x, y)| crate::terrain::Terrain::center_of(x, y))
         .filter(|p| p.distance(avoid) >= clear)
         .min_by(|a, b| a.distance(player).total_cmp(&b.distance(player)))
 }

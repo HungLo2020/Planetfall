@@ -16,6 +16,9 @@ pub struct Settings {
     pub seed: u64,
     /// Headless: render the final state to a PNG (needs a GPU, no window).
     pub screenshot: Option<PathBuf>,
+    /// Headless: after `ticks`, render this many frames offscreen and print
+    /// their timings.
+    pub bench: Option<u64>,
     /// Headless screenshots: show this app screen (main, saves, pause, settings).
     pub menu: Option<String>,
     /// Render Basalt cover art (900x1200) to a PNG and exit.
@@ -42,6 +45,8 @@ const GAME_HELP: &str = "Planetfall options:
   --ticks N              Headless: simulation ticks to run (default 3600)
   --seed N               World seed (default: time-based when windowed, 1 headless)
   --screenshot FILE      Headless: render the final frame to FILE (PNG)
+  --bench N              Headless: after --ticks, render N frames offscreen (stepping the
+                         game each frame) and print simulation, UI and render timings
   --cover FILE           Render 900x1200 Basalt cover art to FILE and exit
   --trace                Print the tick of every phase, menu, build, surge and tutorial change
   --menu NAME            With --screenshot: draw the main, saves, settings, controls or pause
@@ -76,6 +81,7 @@ impl Settings {
             trace: false,
             seed: if headless { 1 } else { time_seed() },
             screenshot: None,
+            bench: None,
             cover: None,
             menu: None,
             asset_root: None,
@@ -110,6 +116,7 @@ impl Settings {
                 "--ticks" => settings.ticks = parse_num(&value("--ticks")?)?,
                 "--seed" => settings.seed = parse_num(&value("--seed")?)?,
                 "--screenshot" => settings.screenshot = Some(value("--screenshot")?.into()),
+                "--bench" => settings.bench = Some(parse_num(&value("--bench")?)?),
                 "--cover" => settings.cover = Some(value("--cover")?.into()),
                 "--menu" => {
                     let name = value("--menu")?;

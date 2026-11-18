@@ -19,6 +19,7 @@ use crate::content::{
 use crate::events::GameEvent;
 use crate::gear::{self, Gear};
 use crate::math::{FloatExt, V2};
+use crate::random::weighted;
 use serde::{Deserialize, Serialize};
 
 /// Something found on a dive that survives death.
@@ -129,26 +130,6 @@ impl Run {
                 }
             }
         }
-    }
-
-    /// Pick from weighted choices with the run's RNG.
-    fn weighted<T: Copy>(&mut self, choices: &[(T, u32)]) -> Option<T> {
-        let total: u32 = choices.iter().map(|(_, w)| w).sum();
-        if total == 0 {
-            return None;
-        }
-        let mut roll = self.rng.range_u32(0..total);
-        choices
-            .iter()
-            .find(|(_, w)| {
-                if roll < *w {
-                    true
-                } else {
-                    roll -= w;
-                    false
-                }
-            })
-            .map(|(c, _)| *c)
     }
 
     /// Equipment for `player` at the drop's hazard, at least `min` rare.
@@ -328,7 +309,7 @@ impl Run {
                     .into_iter()
                     .filter(|(u, _)| offers.iter().all(|o| o.upgrade != *u))
                     .collect();
-                if let Some(upgrade) = self.weighted(&pool) {
+                if let Some(upgrade) = weighted(&mut self.rng, &pool) {
                     offers.push(Offer { upgrade, rarity });
                     break;
                 }
@@ -354,7 +335,7 @@ impl Run {
             .collect();
         let mut offers = Vec::new();
         while offers.len() < CHOICES && !pool.is_empty() {
-            let Some(pick) = self.weighted(&pool) else {
+            let Some(pick) = weighted(&mut self.rng, &pool) else {
                 break;
             };
             pool.retain(|(w, _)| *w != pick);

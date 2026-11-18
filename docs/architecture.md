@@ -8,7 +8,8 @@ Quasar crates are pinned by git tag (`v0.2.25`) in the root `Cargo.toml`.
 Planetfall/
 ├── crates/planetfall-sim/   game rules (no window, GPU, audio or file I/O)
 ├── src/                     the `planetfall` binary: presentation + platform
-│   ├── main.rs              entry: desktop, headless sim, offscreen renders
+│   ├── main.rs              entry: content install, desktop or headless
+│   ├── headless.rs          headless sim summary, --trace, --bench, screenshots, cover
 │   ├── settings.rs          CLI (quasar-config CommonArgs + game flags)
 │   ├── storage.rs           Basalt data layout: save slots, TOML settings
 │   ├── desktop.rs           quasar-app runner: window, ticks, menus, saving
@@ -39,16 +40,17 @@ headless crates (`quasar-config` parses the content TOML from strings).
 | `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations (nav console, fabricator, locker room, drop pod, modules), module assembly, free-form building rules |
 | `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, shield domes, sentry turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `cheats` (console commands on a drop), `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
 | `cavegen` | Cave layout: chamber graph, winding tunnels, noise alcoves and smoothing, set-piece arena, connectivity repair, ore seams and floor patches (value noise is local; see QUASAR-ISSUES) |
-| `terrain` | The cave committed to a voxel volume (ground blocks for patches, lava and water; quake rubble saved in order with mined blocks), mining edits, circle collision, voxel raycast line of sight, horde flow field |
+| `terrain` | The cave committed to a voxel volume (ground blocks for patches, lava and water; quake rubble saved in order with mined blocks), an index of remaining ore blocks (so nearest-ore searches skip the map scan), mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one block per voxel: planet blocks are `terrain::TILE` = 1 m, ship blocks `ship::TILE` = 2 m; ground at `y = -1`, walls from `y = 0`) |
 | `profile` | Persistent progress (ship edits, the active class and a `ClassRecord` per class: class XP, starting weapon, found weapon blueprints, equipped gear; the stash, credits, docking and the station shelf), purchase and trade rules, module bonuses and versioned migration |
 | `gear` | Equipment items: rolling bases, rarities and affixes, stat scaling, names, prices, reroll and fuse |
 | `save` | `SaveGame`: a profile plus the resumable `Session` (tick, RNG, tutorial, ship position, a suspended drop) and slot metadata |
 | `mission` | Contracts (primary, secondary, site, mutator), the mission board generator, hazard levels |
 | `tutorial` | Step definitions and prompt text |
-| `content` | The content registry: definitions parsed and validated from `assets/data/*.toml`, string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`, `ClassId`, `ModId`), class levels, `Offer` (an `Upgrade` at a `Rarity`) |
+| `content` | The content registry: definitions parsed from `assets/data/*.toml` (`defs`) and validated per table (`records`), string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`, `ClassId`, `ModId`), class levels, `Offer` (an `Upgrade` at a `Rarity`) |
 | `autoplay` | An autopilot that plays the entire loop, including building (headless runs, soak tests, CI) |
 | `cheats` | Developer console commands: parsing and validation against the game, Minecraft-style suggestions, and applying them through `Command::Cheat` (`run::cheats` for drop commands) |
+| `random` | Integer-weighted choices over `quasar-core`'s `Rng` (loot, gear affixes, contracts) |
 | `math` | Ground-plane conventions (`V2` = glam `Vec2`, +Z-facing yaw) over `quasar-math` |
 | `events` | `GameEvent`s emitted per tick for sound, effects and saving |
 
@@ -200,6 +202,12 @@ animated loader configuration (skins and clips); props use the static loader.
 prompts and hints stack upward from the bottom edge as word-wrapped labels.
 The HUD is rebuilt every frame (small tree); menus rebuild only when a
 signature of what they display changes, preserving keyboard/gamepad focus.
+`ui::menu` holds the menu state, shared widgets and dispatch, with one
+submodule per group of screens: `screens` (title, saves, settings, controls,
+pause), `terminals` (level-up, navigation, mission board, fabricator,
+debrief), `locker` (classes and gear, plus the shared tabs and pager) and
+`trade`. The developer console (`ui::console`) edits its line with
+`quasar-ui`'s `TextInput` rules and draws the log, suggestions and usage.
 Prompts such as `{interact}` are formatted by `bindings::Prompts` for the
 device family the player last used.
 
@@ -207,6 +215,13 @@ device family the player last used.
 
 - `--headless [--autoplay] --ticks N` runs only the simulation and prints a
   summary (with `--no-default-features` the binary has no graphics code).
+- `--bench N` then renders N more frames offscreen at 1600x900, stepping the
+  game each frame, and prints `quasar-profile` distributions (mean, p50,
+  p95, p99, max) for the autopilot, the simulation tick, the UI build, render
+  recording and the whole CPU frame (which includes the offscreen readback),
+  plus draws, lights and enemies. Use it before and after performance work,
+  for example `--headless --autoplay --fresh --seed 1 --ticks 17800 --bench 600`
+  (a surge of about 50 enemies).
 - `--screenshot FILE` renders the final state, HUD, open terminal or
   level-up menu with a headless GPU; `--menu main|saves|settings|controls|pause`
   renders that menu instead (with sample slots; nothing is read from disk).

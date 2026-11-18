@@ -60,7 +60,7 @@ impl Painter<'_, '_> {
     }
 }
 
-impl Painter<'_, '_> {
+impl<'s> Painter<'_, 's> {
     /// A class suit; the visor and lamps glow in the class colour.
     pub(super) fn suit(
         &mut self,
@@ -69,7 +69,7 @@ impl Painter<'_, '_> {
         layers: &[Layer],
         flash: f32,
         outline: Option<u8>,
-    ) -> Posed {
+    ) -> Posed<'s> {
         // The suits are painted in their class colours; only the glow
         // (visor and lamps) takes the class colour here.
         let c = class.info().color;

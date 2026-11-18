@@ -10,6 +10,7 @@ use crate::content::{
     EnemyId, MutatorEffect, MutatorId, ObjectiveId, ObjectiveKind, ObjectiveRole, PlanetId, SiteId,
     content,
 };
+use crate::random::weighted;
 use quasar_core::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -119,25 +120,6 @@ pub fn hazard_name(level: u8) -> &'static str {
     &names[usize::from(level.clamp(1, MAX_HAZARD) - 1)]
 }
 
-fn pick<T: Copy>(rng: &mut Rng, choices: &[(T, u32)]) -> Option<T> {
-    let total: u32 = choices.iter().map(|(_, w)| w).sum();
-    if total == 0 {
-        return None;
-    }
-    let mut roll = rng.range_u32(0..total);
-    choices
-        .iter()
-        .find(|(_, w)| {
-            if roll < *w {
-                true
-            } else {
-                roll -= w;
-                false
-            }
-        })
-        .map(|(c, _)| *c)
-}
-
 /// A fresh board of contracts for `planet`, all with different primaries
 /// where the data allows.
 pub fn board(rng: &mut Rng, planet: PlanetId) -> Vec<Contract> {
@@ -160,23 +142,23 @@ pub fn board(rng: &mut Rng, planet: PlanetId) -> Vec<Contract> {
     let secondaries = objectives(ObjectiveRole::Secondary);
     let mut board = Vec::new();
     for _ in 0..tuning.board {
-        let Some(primary) = pick(rng, &primaries) else {
+        let Some(primary) = weighted(rng, &primaries) else {
             break;
         };
         if primaries.len() > 1 {
             primaries.retain(|(o, _)| *o != primary);
         }
         let secondary = if rng.chance(f64::from(tuning.secondary_chance)) {
-            pick(rng, &secondaries)
+            weighted(rng, &secondaries)
         } else {
             None
         };
         let mutator = if rng.chance(f64::from(tuning.mutator_chance)) {
-            pick(rng, &mutators)
+            weighted(rng, &mutators)
         } else {
             None
         };
-        let Some(site) = pick(rng, &sites) else {
+        let Some(site) = weighted(rng, &sites) else {
             break;
         };
         // Boss contracts name a boss from the planet's pool.

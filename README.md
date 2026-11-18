@@ -131,7 +131,7 @@ cargo run --release -- --cover assets/basalt/cover.png
 cargo run --no-default-features -- --headless --autoplay
 ```
 
-Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
+Other flags: `--seed N`, `--bench N` (after `--ticks`, render N frames offscreen and print frame timings), `--fresh` (new unsaved game, skipping the menu),
 `--slot N` (load slot N, skipping the menu; with `--headless` it runs or renders that save read-only), `--no-save`,
 `--trace` (print the tick of every phase and menu change), `--menu main|saves|settings|controls|pause|gear|trade|console` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship, console the developer console mid-command), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.

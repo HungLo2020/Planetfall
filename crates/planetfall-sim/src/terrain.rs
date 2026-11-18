@@ -147,6 +147,9 @@ pub struct Terrain {
     blocks: Blocks,
     /// Damage dealt to partially mined blocks.
     damage: BTreeMap<(i32, i32), f32>,
+    /// Every ore block, keyed `(y, x)` so it iterates in the same row-major
+    /// order as [`Self::tiles`] (searches break ties identically).
+    ores: BTreeMap<(i32, i32), Material>,
     /// Standable cells, one layer deep (`quasar_nav::voxel::walkable_grid`).
     nav: Grid<3>,
     /// Incremented whenever a block is broken.
@@ -181,6 +184,9 @@ impl Terrain {
             return Tile::Bedrock;
         }
         let tile = Tile::from_block(self.blocks.get(voxel::voxel(x, y, 0)));
+        if !tile.minable() || self.damage.is_empty() {
+            return tile;
+        }
         match (tile, self.damage.get(&(x, y))) {
             (Tile::Rock { hp }, Some(d)) => Tile::Rock { hp: hp - d },
             (Tile::Ore { material, hp }, Some(d)) => Tile::Ore {
@@ -189,6 +195,15 @@ impl Terrain {
             },
             (tile, _) => tile,
         }
+    }
+
+    /// Every remaining ore block of `material`, in row-major order (as
+    /// [`Self::tiles`] would find them, without scanning the map).
+    pub fn ores(&self, material: Material) -> impl Iterator<Item = (i32, i32)> + '_ {
+        self.ores
+            .iter()
+            .filter(move |(_, m)| **m == material)
+            .map(|(&(y, x), _)| (x, y))
     }
 
     pub fn tiles(&self) -> impl Iterator<Item = ((i32, i32), Tile)> + '_ {
@@ -288,6 +303,7 @@ impl Terrain {
 
     /// Clear a wall block and propagate the edit to nav and re-meshing.
     fn break_block(&mut self, x: i32, y: i32) {
+        self.ores.remove(&(y, x));
         self.set_wall(x, y, AIR, WALL_LAYERS);
     }
 
@@ -401,9 +417,7 @@ impl Terrain {
     }
 
     pub fn count_ore(&self, material: Material) -> usize {
-        self.tiles()
-            .filter(|(_, t)| matches!(t, Tile::Ore { material: m, .. } if *m == material))
-            .count()
+        self.ores(material).count()
     }
 
     /// Generate a cave for `planet` (see `cavegen`). Deterministic for a
@@ -596,11 +610,7 @@ impl Terrain {
         // Weapon caches: one close by (always in the tutorial), the rest far apart.
         let mut caches: Vec<V2> = Vec::new();
         let mut candidates: Vec<V2> = floor.iter().map(|&(x, y)| Self::center_of(x, y)).collect();
-        // Deterministic shuffle.
-        for i in (1..candidates.len()).rev() {
-            let j = rng.range_usize(0..i + 1);
-            candidates.swap(i, j);
-        }
+        rng.shuffle(&mut candidates);
         let spots: Vec<V2> = candidates
             .iter()
             .copied()
@@ -624,22 +634,31 @@ impl Terrain {
                 caches.push(c);
             }
         }
+        let mut terrain = Self {
+            width: MAP_SIZE,
+            height: MAP_SIZE,
+            planet,
+            seed,
+            tutorial,
+            broken: Vec::new(),
+            collapsed: Vec::new(),
+            ores: BTreeMap::new(),
+            blocks,
+            damage: BTreeMap::new(),
+            nav,
+            revision: 0,
+            chunk_revisions,
+            nav_dirty: Vec::new(),
+        };
+        terrain.ores = terrain
+            .tiles()
+            .filter_map(|((x, y), tile)| match tile {
+                Tile::Ore { material, .. } => Some(((y, x), material)),
+                _ => None,
+            })
+            .collect();
         (
-            Self {
-                width: MAP_SIZE,
-                height: MAP_SIZE,
-                planet,
-                seed,
-                tutorial,
-                broken: Vec::new(),
-                collapsed: Vec::new(),
-                blocks,
-                damage: BTreeMap::new(),
-                nav,
-                revision: 0,
-                chunk_revisions,
-                nav_dirty: Vec::new(),
-            },
+            terrain,
             Layout {
                 landing,
                 caches,
@@ -845,6 +864,30 @@ mod tests {
         assert_eq!(field.distance_at(lx, ly), 0.0);
         // The broken block is now on the field (reachable or walled off by rock).
         assert!(field.distance_at(x, y) >= 0.0);
+    }
+
+    #[test]
+    fn ore_index_matches_a_full_scan() {
+        let scan = |t: &Terrain, material| -> Vec<(i32, i32)> {
+            t.tiles()
+                .filter(|(_, tile)| matches!(tile, Tile::Ore { material: m, .. } if *m == material))
+                .map(|(c, _)| c)
+                .collect()
+        };
+        let (mut t, _) = Terrain::generate(PlanetId::first(), 5, false);
+        let (x, y) = t.ores(Material::Lumite).next().unwrap();
+        while t.mine(x, y, 1.0).is_none() {}
+        let saved = serde_json::to_string(&t).unwrap();
+        let loaded: Terrain = serde_json::from_str(&saved).unwrap();
+        for material in Material::ALL {
+            for terrain in [&t, &loaded] {
+                assert_eq!(
+                    terrain.ores(material).collect::<Vec<_>>(),
+                    scan(terrain, material)
+                );
+            }
+        }
+        assert!(!t.ores(Material::Lumite).any(|c| c == (x, y)));
     }
 
     #[test]

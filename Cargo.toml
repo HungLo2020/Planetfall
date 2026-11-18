@@ -28,6 +28,7 @@ quasar-render-voxel = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.
 quasar-render-2d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
 quasar-sim = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
 quasar-render-3d = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
+quasar-profile = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
 quasar-spatial = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
 quasar-storage = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25" }
 quasar-text = { git = "https://github.com/HungLo2020/Quasar", tag = "v0.2.25", default-features = false }
@@ -55,6 +56,7 @@ graphics = [
   "dep:quasar-frame",
   "dep:quasar-input",
   "dep:quasar-math",
+  "dep:quasar-profile",
   "dep:quasar-render-2d",
   "dep:quasar-render-3d",
   "dep:quasar-render-voxel",
@@ -90,6 +92,7 @@ quasar-core = { workspace = true, optional = true }
 quasar-frame = { workspace = true, optional = true, features = ["vulkan", "png"] }
 quasar-input = { workspace = true, optional = true }
 quasar-math = { workspace = true, optional = true }
+quasar-profile = { workspace = true, optional = true, features = ["frame"] }
 quasar-render-2d = { workspace = true, optional = true, features = ["gpu", "vulkan", "png", "text"] }
 quasar-render-3d = { workspace = true, optional = true, features = ["vulkan", "model-assets", "visibility"] }
 quasar-render-voxel = { workspace = true, optional = true, features = ["vulkan"] }

@@ -1873,6 +1873,7 @@ dependencies = [
  "quasar-frame",
  "quasar-input",
  "quasar-math",
+ "quasar-profile",
  "quasar-render-2d",
  "quasar-render-3d",
  "quasar-render-voxel",
@@ -2094,6 +2095,14 @@ source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.25#31e71c665ac40e430
 dependencies = [
  "quasar-math",
  "quasar-voxel",
+]
+
+[[package]]
+name = "quasar-profile"
+version = "0.2.25"
+source = "git+https://github.com/HungLo2020/Quasar?tag=v0.2.25#31e71c665ac40e4300827c95214fe8094b01a238"
+dependencies = [
+ "quasar-frame",
 ]
 
 [[package]]

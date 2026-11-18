@@ -6,6 +6,7 @@
 //! in the locker room and traded at the station.
 
 use crate::content::{AffixId, GearId, GearSlot, PerkEffect, Rarity, content};
+use crate::random::weighted;
 use quasar_core::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -111,21 +112,6 @@ impl Gear {
             })
             .sum()
     }
-}
-
-fn weighted<T: Copy>(rng: &mut Rng, choices: &[(T, u32)]) -> Option<T> {
-    let total: u32 = choices.iter().map(|(_, w)| w).sum();
-    if total == 0 {
-        return None;
-    }
-    let mut roll = rng.range_u32(0..total);
-    for &(c, w) in choices {
-        if roll < w {
-            return Some(c);
-        }
-        roll -= w;
-    }
-    None
 }
 
 /// Rarity odds shift toward rarer tiers with hazard and luck; `min` zeroes

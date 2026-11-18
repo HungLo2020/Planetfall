@@ -86,7 +86,7 @@ impl Character {
 
     /// Sample and combine `layers` into a skeleton pose; returns the joint
     /// palette and each bone's model-space matrix.
-    pub fn pose(&self, layers: &[Layer]) -> Posed {
+    pub fn pose(&self, layers: &[Layer]) -> Posed<'_> {
         let mut pose: Option<Pose> = None;
         for layer in layers {
             let Some(clip) = self.clips.get(layer.clip) else {
@@ -107,30 +107,27 @@ impl Character {
             .map(Mat4)
             .collect();
         let bones = self.binding.bone_world(&skeleton_pose);
-        let names = self
-            .skeleton
-            .bones()
-            .iter()
-            .map(|b| b.name.to_string())
-            .zip(bones.into_iter().map(Mat4))
-            .collect();
         Posed {
             palette,
-            bones: names,
+            bones,
+            skeleton: &self.skeleton,
         }
     }
 }
 
 /// A sampled pose ready for the GPU.
-pub struct Posed {
+pub struct Posed<'a> {
     pub palette: Vec<Mat4>,
-    bones: Vec<(String, Mat4)>,
+    /// Model-space matrix of each skeleton bone, in skeleton order.
+    bones: Vec<[[f32; 4]; 4]>,
+    skeleton: &'a Skeleton,
 }
 
-impl Posed {
+impl Posed<'_> {
     /// Model-space matrix of a bone, for attachments (held weapons).
     pub fn bone(&self, name: &str) -> Option<Mat4> {
-        self.bones.iter().find(|(n, _)| n == name).map(|(_, m)| *m)
+        let index = self.skeleton.bones().iter().position(|b| b.name == name)?;
+        self.bones.get(index).copied().map(Mat4)
     }
 }
 

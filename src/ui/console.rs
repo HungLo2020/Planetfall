@@ -1,15 +1,19 @@
 //! Developer console: `/` opens a command line for testing (`/give weapon
 //! sentry`). It suggests completions for the word being typed as you type
 //! (Tab or a click-free Up/Down picks one), keeps a history and a short
-//! log. Parsing and suggestions come from `planetfall_sim::cheats`; the
-//! game holds still while it is open.
+//! log. Line editing (cursor, Home/End, Delete, IME text) is a
+//! `quasar-ui` `TextInput`; parsing and suggestions come from
+//! `planetfall_sim::cheats`. The game holds still while it is open.
 
 use super::kit::{ACCENT, BAD, DIM, PANEL, TEXT};
 use super::{Builder, Layer};
 use planetfall_sim::cheats::{self, Parsed};
 use planetfall_sim::{Command, Game};
 use quasar_input::{FrameInput, Key};
-use quasar_ui::{Anchor, Color, Edges, LayoutItem, Length, TextMeasure, TextStyle, Vec2};
+use quasar_ui::{
+    Anchor, Color, Edges, Layer as UiLayer, LayoutItem, Length, Rect, TextMeasure, TextStyle,
+    Theme, Ui, UiBindings, UiText, Vec2, Widget, from_frame_input,
+};
 
 /// Log lines kept on screen.
 const LOG_LINES: usize = 8;
@@ -25,6 +29,8 @@ pub enum ConsoleAction {
 #[derive(Default)]
 pub struct Console {
     line: String,
+    /// Caret position in characters.
+    cursor: usize,
     history: Vec<String>,
     /// Position while browsing history with Up/Down (no suggestions shown).
     browsing: Option<usize>,
@@ -37,7 +43,7 @@ pub struct Console {
 
 impl Console {
     pub fn open(&mut self) {
-        self.line = "/".into();
+        self.set_line("/");
         self.selected = 0;
         self.browsing = None;
         self.fresh = true;
@@ -56,12 +62,84 @@ impl Console {
                 });
             }
         }
-        console.line = typing.to_owned();
+        console.set_line(typing);
         console
     }
 
+    /// Replace the line, caret at the end.
+    fn set_line(&mut self, line: &str) {
+        self.line = line.to_owned();
+        self.cursor = self.line.chars().count();
+    }
+
+    /// Apply this frame's typing, caret keys and deletes through a
+    /// one-field `quasar-ui` tree. Returns whether the text changed.
+    fn edit(&mut self, input: &FrameInput, measure: &dyn TextMeasure) -> bool {
+        let mut ui = Ui::new(Theme::modern());
+        let field = ui.add_root(
+            Widget::TextInput {
+                text: self.line.clone(),
+                placeholder: UiText::literal(""),
+                cursor: self.cursor,
+                anchor: self.cursor,
+                max_len: 200,
+                password: false,
+                action: None,
+            },
+            LayoutItem::size(Length::fixed(600.0), Length::fixed(30.0)),
+            UiLayer::Normal,
+            false,
+        );
+        ui.focus(Some(field));
+        // The console owns navigation and draws no selection.
+        let edits = quasar_ui::UiInput {
+            pointer: None,
+            up: false,
+            down: false,
+            left: input.pressed(Key::ArrowLeft),
+            right: input.pressed(Key::ArrowRight),
+            next: false,
+            previous: false,
+            activate: false,
+            cancel: false,
+            shift: false,
+            select_all: false,
+            ..from_frame_input(input, &UiBindings::default())
+        };
+        let edits = if self.fresh {
+            quasar_ui::UiInput {
+                text: String::new(),
+                ..edits
+            }
+        } else {
+            edits
+        };
+        ui.update(
+            &edits,
+            Rect::new(0.0, 0.0, 800.0, 100.0),
+            1.0,
+            Edges::ZERO,
+            measure,
+            0.0,
+        );
+        let Some(Widget::TextInput { text, cursor, .. }) = ui.node(field).map(|n| &n.widget) else {
+            return false;
+        };
+        self.cursor = *cursor;
+        let changed = *text != self.line;
+        if changed {
+            self.line = text.clone();
+        }
+        changed
+    }
+
     /// Edit the line from this frame's keys and text.
-    pub fn update(&mut self, input: &FrameInput, game: &Game) -> Option<ConsoleAction> {
+    pub fn update(
+        &mut self,
+        input: &FrameInput,
+        game: &Game,
+        measure: &dyn TextMeasure,
+    ) -> Option<ConsoleAction> {
         if input.pressed(Key::Escape) {
             return Some(ConsoleAction::Close);
         }
@@ -69,9 +147,10 @@ impl Console {
         let count = suggestions.items.len().min(SHOWN);
         if input.pressed(Key::Tab) {
             if let Some((word, _)) = suggestions.items.get(self.selected.min(count.max(1) - 1)) {
-                self.line.truncate(suggestions.from);
-                self.line.push_str(word);
-                self.line.push(' ');
+                let mut line = self.line[..suggestions.from].to_owned();
+                line.push_str(word);
+                line.push(' ');
+                self.set_line(&line);
                 self.selected = 0;
             }
             return None;
@@ -93,29 +172,20 @@ impl Console {
                     (Some(i), false) if i < last => i + 1,
                     (Some(_), false) => {
                         self.browsing = None;
-                        self.line = "/".into();
+                        self.set_line("/");
                         return None;
                     }
                 };
                 self.browsing = Some(at);
-                self.line = self.history[at].clone();
+                let line = self.history[at].clone();
+                self.set_line(&line);
             }
             return None;
         }
         if input.pressed(Key::Enter) || input.pressed(Key::NumpadEnter) {
             return self.submit(game);
         }
-        let mut edited = false;
-        if input.pressed(Key::Backspace) {
-            self.line.pop();
-            edited = true;
-        }
-        if !self.fresh {
-            for c in input.text().chars().filter(|c| !c.is_control()) {
-                self.line.push(c);
-                edited = true;
-            }
-        }
+        let edited = self.edit(input, measure);
         self.fresh = false;
         if edited {
             self.selected = 0;
@@ -126,7 +196,7 @@ impl Console {
 
     fn submit(&mut self, game: &Game) -> Option<ConsoleAction> {
         let line = self.line.trim().to_owned();
-        self.line = "/".into();
+        self.set_line("/");
         self.selected = 0;
         self.browsing = None;
         if line.trim_start_matches('/').is_empty() {
@@ -251,10 +321,22 @@ impl Console {
             8.0,
         );
         b.style(input, PANEL, Some((1.0, ACCENT)), 3.0);
-        let cursor = if (time * 2.0).fract() < 0.5 { "_" } else { " " };
+        // The caret sits between the text before and after it.
+        let split = self
+            .line
+            .char_indices()
+            .nth(self.cursor)
+            .map_or(self.line.len(), |(i, _)| i);
+        let (before, after) = self.line.split_at(split);
+        // Blink only at the end of the line, where it cannot shift text.
+        let caret = if !after.is_empty() || (time * 2.0).fract() < 0.5 {
+            "|"
+        } else {
+            ""
+        };
         b.tinted(
             input,
-            format!("{}{cursor}", self.line),
+            format!("{before}{caret}{after}"),
             TextStyle::Body,
             TEXT,
         );
@@ -267,10 +349,50 @@ impl Console {
         b.style(keys, Color::rgba(5, 9, 15, 200), None, 3.0);
         b.tinted(
             keys,
-            "Tab complete · Up/Down choose · Enter run · Esc close",
+            "Tab complete · Up/Down choose · Left/Right move · Enter run · Esc close",
             TextStyle::Small,
             DIM,
         );
         b.finish_laid_out(size, scale, measure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quasar_input::InputState;
+    use quasar_ui::MonospaceMeasure;
+
+    /// One frame with `keys` pressed and `text` typed.
+    fn frame(keys: &[Key], text: &str) -> FrameInput {
+        let mut state = InputState::default();
+        for &key in keys {
+            state.key(key, true);
+        }
+        state.text = text.to_owned();
+        let mut input = FrameInput::default();
+        input.capture(&state, 1);
+        input
+    }
+
+    #[test]
+    fn edits_mid_line_and_completes() {
+        let game = Game::new(planetfall_sim::Profile::default(), 1);
+        let measure = MonospaceMeasure;
+        let mut console = Console::default();
+        console.open();
+        // The key press that opened the console types nothing.
+        console.update(&frame(&[], "/"), &game, &measure);
+        console.update(&frame(&[], "gve"), &game, &measure);
+        for _ in 0..2 {
+            console.update(&frame(&[Key::ArrowLeft], ""), &game, &measure);
+        }
+        console.update(&frame(&[], "i"), &game, &measure);
+        assert_eq!((console.line.as_str(), console.cursor), ("/give", 3));
+        console.update(&frame(&[Key::End], " wea"), &game, &measure);
+        console.update(&frame(&[Key::Tab], ""), &game, &measure);
+        assert_eq!(console.line, "/give weapon ");
+        console.update(&frame(&[Key::Home, Key::Delete], ""), &game, &measure);
+        assert_eq!((console.line.as_str(), console.cursor), ("give weapon ", 0));
     }
 }

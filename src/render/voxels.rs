@@ -677,29 +677,17 @@ pub type Wear = BTreeMap<(i32, i32), u8>;
 fn wear_marks(wear: &Wear) -> BTreeMap<(i32, i32, i32), u64> {
     let mut marks = BTreeMap::new();
     for (&(x, y), &stage) in wear {
-        let mut chunks: Vec<(i32, i32, i32)> = Vec::new();
-        for layer in 0..WALL_LAYERS {
-            let v = voxel::voxel(x, y, layer);
-            for (dx, dy) in [-1, 0, 1]
-                .into_iter()
-                .flat_map(|a| [-1, 0, 1].map(|b| (a, b)))
-            {
-                for dz in -1..=1 {
-                    let c = (
-                        (v.x + dx).div_euclid(EDGE),
-                        (v.y + dy).div_euclid(EDGE),
-                        (v.z + dz).div_euclid(EDGE),
-                    );
-                    if !chunks.contains(&c) {
-                        chunks.push(c);
-                    }
+        // The worn column (layers 0..WALL_LAYERS) and its one-voxel border.
+        let lo = voxel::voxel(x - 1, y - 1, -1);
+        let hi = voxel::voxel(x + 1, y + 1, WALL_LAYERS);
+        let mark = (x as u64 & 0xffff) << 24 ^ (y as u64 & 0xffff) << 8 ^ u64::from(stage);
+        for cx in lo.x.div_euclid(EDGE)..=hi.x.div_euclid(EDGE) {
+            for cy in lo.y.div_euclid(EDGE)..=hi.y.div_euclid(EDGE) {
+                for cz in lo.z.div_euclid(EDGE)..=hi.z.div_euclid(EDGE) {
+                    let m: &mut u64 = marks.entry((cx, cy, cz)).or_default();
+                    *m = m.rotate_left(7) ^ mark.wrapping_mul(0x9e37_79b9_7f4a_7c15);
                 }
             }
-        }
-        let mark = (x as u64 & 0xffff) << 24 ^ (y as u64 & 0xffff) << 8 ^ u64::from(stage);
-        for c in chunks {
-            let m: &mut u64 = marks.entry(c).or_default();
-            *m = m.rotate_left(7) ^ mark.wrapping_mul(0x9e37_79b9_7f4a_7c15);
         }
     }
     marks
@@ -716,6 +704,9 @@ pub struct VoxelWorld {
     uploaded: BTreeMap<(i32, i32, i32), (u64, u64)>,
     /// The ship in 1 m blocks and the ship revision it was refined at.
     ship: Option<(u64, Blocks)>,
+    /// The wear last synced and its per-chunk marks (rebuilt only when a
+    /// block cracks further or breaks).
+    wear: (Wear, BTreeMap<(i32, i32, i32), u64>),
     pending_submissions: Vec<u64>,
 }
 
@@ -748,6 +739,7 @@ impl VoxelWorld {
             palette: None,
             uploaded: BTreeMap::new(),
             ship: None,
+            wear: Default::default(),
             pending_submissions: Vec::new(),
         }
     }
@@ -824,10 +816,12 @@ impl VoxelWorld {
             }
             return Ok(());
         }
-        let marks = wear_marks(wear);
+        if self.wear.0 != *wear {
+            self.wear = (wear.clone(), wear_marks(wear));
+        }
         for (chunk, revision) in revisions {
             let id = (chunk.x, chunk.y, chunk.z);
-            let mark = marks.get(&id).copied().unwrap_or(0);
+            let mark = self.wear.1.get(&id).copied().unwrap_or(0);
             if self.uploaded.get(&id) == Some(&(revision, mark)) {
                 continue;
             }

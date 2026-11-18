@@ -297,7 +297,7 @@ impl<'a, 's> Painter<'a, 's> {
         layers: &[Layer],
         flash: f32,
         outline: Option<u8>,
-    ) -> Posed {
+    ) -> Posed<'s> {
         self.character_tinted(id, root, layers, flash, outline, [1.0; 3], [1.0; 3])
     }
 
@@ -316,11 +316,12 @@ impl<'a, 's> Painter<'a, 's> {
         outline: Option<u8>,
         tint: [f32; 3],
         glow: [f32; 3],
-    ) -> Posed {
-        let posed = self.skins.character(id).pose(layers);
+    ) -> Posed<'s> {
+        let mut posed = self.skins.character(id).pose(layers);
         self.skinned.push(SkinRequest {
             id,
-            palette: posed.palette.clone(),
+            // Callers only read bones; the palette moves to the GPU request.
+            palette: std::mem::take(&mut posed.palette),
             root,
             flash,
             outline,

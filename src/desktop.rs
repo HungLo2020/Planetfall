@@ -621,7 +621,7 @@ impl Application for App {
         // The developer console takes every key while open.
         if self.console_open {
             use crate::ui::console::ConsoleAction;
-            match self.console.update(c.input, &self.game) {
+            match self.console.update(c.input, &self.game, &self.measure) {
                 Some(ConsoleAction::Close) => self.console_open = false,
                 Some(ConsoleAction::Run(command)) => self.console_command = Some(command),
                 None => {}

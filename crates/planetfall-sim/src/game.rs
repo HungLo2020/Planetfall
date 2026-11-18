@@ -11,7 +11,7 @@ use crate::mission::Contract;
 use crate::profile::{Profile, PurchaseError};
 use crate::run::{Extraction, Find, Run, RunConfig, RunOutcome, RunState};
 use crate::ship::{Ship, StationKind};
-use crate::terrain::{Terrain, Tile};
+use crate::terrain::Terrain;
 use crate::tutorial::{Prompt, Tutorial, TutorialStep};
 use quasar_core::Rng;
 use quasar_sim::{Simulation, StateHash, StateHasher, Tick};
@@ -868,9 +868,8 @@ impl Game {
 pub fn nearest_ore(run: &Run, material: Material) -> Option<V2> {
     let player = run.player().pos;
     run.terrain
-        .tiles()
-        .filter(|(_, t)| matches!(t, Tile::Ore { material: m, .. } if *m == material))
-        .map(|((x, y), _)| Terrain::center_of(x, y))
+        .ores(material)
+        .map(|(x, y)| Terrain::center_of(x, y))
         .min_by(|a, b| {
             (*a).distance_squared(player)
                 .total_cmp(&(*b).distance_squared(player))

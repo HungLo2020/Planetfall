@@ -79,6 +79,16 @@ pub struct Graphics {
     pose: PlayerPose,
     pub shadows_enabled: bool,
     pub bloom_enabled: bool,
+    /// What the last frame drew (for `--bench`).
+    pub stats: FrameStats,
+}
+
+/// Counts from the last recorded frame.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameStats {
+    /// Mesh draws submitted (opaque and translucent, after skinning).
+    pub draws: usize,
+    pub lights: usize,
 }
 
 impl Graphics {
@@ -134,6 +144,7 @@ impl Graphics {
             pose: PlayerPose::default(),
             shadows_enabled: true,
             bloom_enabled: true,
+            stats: FrameStats::default(),
         })
     }
 
@@ -185,6 +196,10 @@ impl Graphics {
         if out.draws.len() > MAX_DRAWS {
             out.draws.truncate(MAX_DRAWS);
         }
+        self.stats = FrameStats {
+            draws: out.draws.len() + out.transparent.len(),
+            lights: out.lights.len(),
+        };
         // Terrain or hull blocks: swap worlds and re-mesh edited chunks.
         if let Some(world) = &out.voxels {
             match (world.key, &game.run) {
@@ -481,4 +496,117 @@ pub fn screenshot(
     image.write_png(path).map_err(|e| e.to_string())?;
     graphics.release(&gal).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Inputs to [`bench`] beyond the game itself.
+pub struct Bench<'a> {
+    pub asset_root: &'a Path,
+    pub text: Option<TextRenderer>,
+    pub size: (u32, u32),
+    pub frames: u64,
+}
+
+/// Render `frames` consecutive frames offscreen, stepping the game once per
+/// frame with `pilot`'s input and building the UI with `layers`, and summarise the
+/// costs (`quasar-profile`). CPU frame time includes the PNG-free readback
+/// that offscreen rendering needs; `record` is the scene, voxel and UI work
+/// the desktop loop also does.
+pub fn bench(
+    game: &mut Game,
+    bench: Bench,
+    pilot: &mut dyn FnMut(&Game) -> planetfall_sim::GameInput,
+    layers: &mut dyn FnMut(&Game) -> Vec<Layer>,
+    overlay: &dyn Fn(&Game, &mut Canvas, &Camera),
+) -> Result<String, String> {
+    use quasar_profile::{Distribution, FrameProfiler, FrameSample};
+    use std::time::Instant;
+    let fail = |e: quasar_frame::GraphicsError| e.to_string();
+    let gal = Gpu::headless().map_err(|e| format!("headless GPU: {e}"))?;
+    let mut graphics = Graphics::new(&gal, bench.asset_root, bench.text).map_err(fail)?;
+    let target =
+        quasar_frame::OffscreenTarget::new(&gal, bench.size.0, bench.size.1).map_err(fail)?;
+    let mut profiler = FrameProfiler::new(bench.frames.max(1) as usize);
+    let (mut input, mut sim, mut ui, mut record, mut draws, mut lights, mut enemies) =
+        (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+    let nanos = |start: Instant| start.elapsed().as_nanos() as u64;
+    for frame in 0..bench.frames {
+        let start = Instant::now();
+        let chosen = pilot(game);
+        input.push(nanos(start));
+        let start = Instant::now();
+        game.update(&chosen);
+        sim.push(nanos(start));
+        let start = Instant::now();
+        let built = layers(game);
+        let refs: Vec<&Layer> = built.iter().collect();
+        ui.push(nanos(start));
+        let game = &*game;
+        let draw_overlay = |c: &mut Canvas, camera: &Camera| overlay(game, c, camera);
+        let mut recorded = 0;
+        let report = target
+            .render(&gal, |gpu, target| {
+                let start = Instant::now();
+                let commands = graphics.commands(
+                    gpu,
+                    target,
+                    &Frame {
+                        game,
+                        time: game.tick as f32 / 60.0,
+                        dt: 1.0 / 60.0,
+                        shake: 0.0,
+                        events: &game.events,
+                        layers: &refs,
+                        overlay: &draw_overlay,
+                    },
+                );
+                recorded = nanos(start);
+                commands
+            })
+            .map_err(fail)?;
+        graphics.submitted(&gal);
+        record.push(recorded);
+        draws.push(graphics.stats.draws as u64);
+        lights.push(graphics.stats.lights as u64);
+        enemies.push(game.run.as_ref().map_or(0, |r| r.enemies.len() as u64));
+        profiler.record(FrameSample::from_frame_report(frame, &report.profile));
+    }
+    target.release(&gal).map_err(fail)?;
+    graphics.release(&gal).map_err(fail)?;
+    let summary = profiler.summary();
+    let ms = |d: &Distribution| {
+        format!(
+            "mean {:.2} p50 {:.2} p95 {:.2} p99 {:.2} max {:.2} ms",
+            d.mean / 1e6,
+            d.p50 as f64 / 1e6,
+            d.p95 as f64 / 1e6,
+            d.p99 as f64 / 1e6,
+            d.max as f64 / 1e6
+        )
+    };
+    let ms = |d: &Distribution| {
+        if d.samples == 0 {
+            "unavailable".to_owned()
+        } else {
+            ms(d)
+        }
+    };
+    let count = |d: &Distribution| format!("mean {:.0} max {}", d.mean, d.max);
+    let mut out = format!(
+        "bench frames={} size={}x{}\n",
+        bench.frames, bench.size.0, bench.size.1
+    );
+    for (name, line) in [
+        ("autopilot", ms(&Distribution::from_values(input))),
+        ("sim tick", ms(&Distribution::from_values(sim))),
+        ("ui build", ms(&Distribution::from_values(ui))),
+        ("record", ms(&Distribution::from_values(record))),
+        ("cpu frame", ms(&summary.cpu_frame)),
+        ("gpu frame", ms(&summary.gpu_frame)),
+        ("draws", count(&Distribution::from_values(draws))),
+        ("lights", count(&Distribution::from_values(lights))),
+        ("enemies", count(&Distribution::from_values(enemies))),
+    ] {
+        out += &format!("  {name:<10} {line}\n");
+    }
+    Ok(out)
 }

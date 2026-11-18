@@ -18,6 +18,7 @@ pub mod input;
 pub mod math;
 pub mod mission;
 pub mod profile;
+pub mod random;
 pub mod run;
 pub mod save;
 pub mod ship;

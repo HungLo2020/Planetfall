@@ -920,7 +920,7 @@ fn mark_texture(
             let n = 0.5
                 + 0.25 * (angle * 3.0 + 0.7).sin()
                 + 0.15 * (angle * 7.0 + 1.9).sin()
-                + 0.1 * hash(x, y);
+                + 0.1 * super::geometry::tile_hash(x as i32, y as i32);
             let (rgb, a) = pixel(d, n.clamp(0.0, 1.0));
             for c in rgb {
                 data.push((c.clamp(0.0, 1.0) * 255.0).round() as u8);
@@ -948,12 +948,4 @@ fn mark_texture(
     );
     let view = texture.create_view(&Default::default());
     Ok((texture, view))
-}
-
-fn hash(x: u32, y: u32) -> f32 {
-    let mut h = x.wrapping_mul(0x8da6_b343) ^ y.wrapping_mul(0xd816_3841);
-    h ^= h >> 13;
-    h = h.wrapping_mul(0x85eb_ca6b);
-    h ^= h >> 16;
-    (h & 0xffff) as f32 / 65535.0
 }

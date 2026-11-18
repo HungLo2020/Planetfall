@@ -389,7 +389,8 @@ Press `/` (keyboard) for a command line for testing; the game holds still
 while it is open and each command applies on one tick through
 `Command::Cheat`, so it is deterministic. Suggestions list what fits the
 word being typed (Tab completes, Up/Down chooses, Up/Down on an empty list
-browses history); a command is checked against the game before it runs
+browses history; Left/Right, Home, End and Delete edit within the line); a
+command is checked against the game before it runs
 (`planetfall_sim::cheats`).
 
 | Command | Does |
