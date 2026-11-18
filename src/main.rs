@@ -12,6 +12,8 @@ mod bindings;
 mod controls;
 #[cfg(feature = "desktop")]
 mod desktop;
+#[cfg(feature = "desktop")]
+mod interp;
 #[cfg(feature = "graphics")]
 mod render;
 mod settings;

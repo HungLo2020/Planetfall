@@ -141,6 +141,7 @@ pub fn run(launch: Launch) -> Result<(), String> {
         text: Some(text),
         controls: Controls::new(),
         audio: None,
+        prev: None,
         menu_focus: None,
         gal: None,
         surface: None,
@@ -186,6 +187,8 @@ struct App {
     text: Option<TextRenderer>,
     controls: Controls,
     audio: Option<Audio>,
+    /// Positions before the latest tick, for render interpolation.
+    prev: Option<crate::interp::Snapshot>,
     /// Focused menu control, for the cursor tick.
     menu_focus: Option<usize>,
     gal: Option<Gpu>,
@@ -513,14 +516,24 @@ impl App {
         }
         self.frame_events.extend_from_slice(&self.game.events);
         let mut save = false;
+        let player = self.game.run.as_ref().map(|r| r.player().pos);
         for e in &self.game.events {
             match e {
                 GameEvent::ProfileChanged => save = true,
-                GameEvent::Explosion { .. } => self.shake = self.shake.max(0.6),
+                // Explosions add a little trauma by size and fade with
+                // distance, so a volley of small missiles hums instead of
+                // shaking the screen apart.
+                GameEvent::Explosion { at, radius } => {
+                    let near = player.map_or(1.0, |p| {
+                        1.0 - ((p.distance(*at) - 4.0) / 14.0).clamp(0.0, 1.0)
+                    });
+                    let add = (0.04 + radius * 0.03).min(0.18) * near;
+                    self.shake = (self.shake + add).min(0.55).max(self.shake);
+                }
                 GameEvent::SurgeStarted { .. } => self.shake = self.shake.max(0.9),
-                GameEvent::Quake { .. } => self.shake = self.shake.max(1.4),
+                GameEvent::Quake { .. } => self.shake = self.shake.max(1.2),
                 GameEvent::SporeBlast { .. } => self.shake = self.shake.max(0.7),
-                GameEvent::PlayerHurt { .. } => self.shake = self.shake.max(0.45),
+                GameEvent::PlayerHurt { .. } => self.shake = self.shake.max(0.6),
                 GameEvent::Landed | GameEvent::PodLanded { .. } => self.shake = self.shake.max(1.0),
                 GameEvent::Liftoff | GameEvent::FtlStarted { .. } => {
                     self.shake = self.shake.max(0.5)
@@ -660,6 +673,7 @@ impl Application for App {
             Some(pilot) => pilot.input(&self.game),
             None => self.controls.take_game_input(c.input),
         };
+        self.prev = Some(crate::interp::Snapshot::capture(&self.game));
         self.game.update(&input);
         self.tick_count += 1;
         if self.tick_count >= AUTOSAVE_SECONDS * 60 {
@@ -682,57 +696,21 @@ impl Application for App {
         Ok(Flow::Continue)
     }
 
-    fn render(&mut self, _c: &mut AppContext<'_>) -> Result<Flow, AppError> {
-        let menu_open = self.menu.is_open();
-        let hud = self.hud(menu_open && self.content() != Some(Content::Terminal));
-        let (Some(gal), Some(surface), Some(graphics)) =
-            (&mut self.gal, &mut self.surface, &mut self.graphics)
-        else {
-            return Ok(Flow::Continue);
-        };
-        let mut layers: Vec<&Layer> = Vec::with_capacity(2);
-        let show_hud = !matches!(self.screens.first(), Some(Screen::Main));
-        if show_hud {
-            layers.push(&hud);
-        }
-        if let Some(menu) = self.menu.layer() {
-            layers.push(menu);
-        }
-        let game = &self.game;
-        let time = self.time;
-        let overlay = |canvas: &mut quasar_render_2d::Canvas, camera: &Camera| {
-            if show_hud {
-                overlay::draw(canvas, camera, game, time);
-            }
-        };
-        let shake = if self.prefs.screen_shake {
-            self.shake
+    fn render(&mut self, c: &mut AppContext<'_>) -> Result<Flow, AppError> {
+        // Draw moving things between the last two ticks (see `interp`),
+        // except while a menu holds the game still.
+        let now = if self.screens.is_empty() {
+            self.prev
+                .as_ref()
+                .and_then(|prev| crate::interp::apply(&mut self.game, prev, c.interpolation as f32))
         } else {
-            0.0
+            None
         };
-        let events = std::mem::take(&mut self.frame_events);
-        let frame = Frame {
-            game,
-            time,
-            dt: self.dt,
-            shake,
-            events: &events,
-            layers: &layers,
-            overlay: &overlay,
-        };
-        let report = surface
-            .render(gal, CompletionPolicy::Poll, |gal, target| {
-                graphics.commands(gal, target, &frame)
-            })
-            .map_err(|e| AppError(format!("render: {e}")))?;
-        graphics.submitted(gal);
-        if report.is_some() {
-            self.frames += 1;
-            if self.settings.frames.is_some_and(|n| self.frames >= n) {
-                return Ok(Flow::Exit);
-            }
+        let result = self.render_frame(c);
+        if let Some(now) = now {
+            crate::interp::restore(&mut self.game, now);
         }
-        Ok(Flow::Continue)
+        result
     }
 
     fn suspended(&mut self, _c: &mut AppContext<'_>) -> Result<(), AppError> {
@@ -807,5 +785,61 @@ impl DesktopApplication for App {
             }
         }
         Ok(())
+    }
+}
+
+impl App {
+    /// One frame (see `Application::render`, which interpolates around it).
+    fn render_frame(&mut self, _c: &mut AppContext<'_>) -> Result<Flow, AppError> {
+        let menu_open = self.menu.is_open();
+        let hud = self.hud(menu_open && self.content() != Some(Content::Terminal));
+        let (Some(gal), Some(surface), Some(graphics)) =
+            (&mut self.gal, &mut self.surface, &mut self.graphics)
+        else {
+            return Ok(Flow::Continue);
+        };
+        let mut layers: Vec<&Layer> = Vec::with_capacity(2);
+        let show_hud = !matches!(self.screens.first(), Some(Screen::Main));
+        if show_hud {
+            layers.push(&hud);
+        }
+        if let Some(menu) = self.menu.layer() {
+            layers.push(menu);
+        }
+        let game = &self.game;
+        let time = self.time;
+        let overlay = |canvas: &mut quasar_render_2d::Canvas, camera: &Camera| {
+            if show_hud {
+                overlay::draw(canvas, camera, game, time);
+            }
+        };
+        let shake = if self.prefs.screen_shake {
+            self.shake
+        } else {
+            0.0
+        };
+        let events = std::mem::take(&mut self.frame_events);
+        let frame = Frame {
+            game,
+            time,
+            dt: self.dt,
+            shake,
+            events: &events,
+            layers: &layers,
+            overlay: &overlay,
+        };
+        let report = surface
+            .render(gal, CompletionPolicy::Poll, |gal, target| {
+                graphics.commands(gal, target, &frame)
+            })
+            .map_err(|e| AppError(format!("render: {e}")))?;
+        graphics.submitted(gal);
+        if report.is_some() {
+            self.frames += 1;
+            if self.settings.frames.is_some_and(|n| self.frames >= n) {
+                return Ok(Flow::Exit);
+            }
+        }
+        Ok(Flow::Continue)
     }
 }

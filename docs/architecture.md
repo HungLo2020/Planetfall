@@ -36,7 +36,7 @@ headless crates (`quasar-config` parses the content TOML from strings).
 |---|---|
 | `game` | Top-level state machine: `Ship → Ftl → Ship (orbit) → Descent → Surface → Ascent/Lost → Ship (debrief)`; terminals; build mode; tutorial driver; banking cargo; `quasar_sim::Simulation` impl |
 | `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations (nav console, fabricator, locker room, drop pod, modules), module assembly, free-form building rules |
-| `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
+| `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, shield domes, sentry turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
 | `cavegen` | Cave layout: chamber graph, winding tunnels, noise alcoves and smoothing, set-piece arena, connectivity repair, ore seams and floor patches (value noise is local; see QUASAR-ISSUES) |
 | `terrain` | The cave committed to a voxel volume (ground blocks for patches, lava and water; quake rubble saved in order with mined blocks), mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one block per voxel: planet blocks are `terrain::TILE` = 1 m, ship blocks `ship::TILE` = 2 m; ground at `y = -1`, walls from `y = 0`) |
@@ -94,7 +94,7 @@ CLI and a missing data folder use.
 
 Behaviour stays in code as small archetype enums: `WeaponBehavior` (bolt,
 scatter, arc, mortar, orbit), `EnemyBehavior` (walker, lunger, exploder),
-`AbilityKind` (bore, barrier, blink, turret), `PerkEffect` (shared by perks
+`AbilityKind` (bore, barrier, blink, dome), `PerkEffect` (shared by perks
 and class passives), `ModStat`, `Element` and `Special` (legendary
 behaviours) and `UpgradeEffect`. A new weapon that fits an archetype is a
 TOML entry; a new kind of behaviour is a new variant plus its system code.
@@ -118,6 +118,11 @@ resumed drop hashes and plays identically to one never interrupted.
 `desktop.rs` implements `quasar_app::Application`: `frame_update` handles
 menus, pause and input latching once per frame; `tick` advances the game at a
 fixed 60 Hz (deferred while a menu pauses play); `render` submits one frame.
+Rendering interpolates between the last two ticks (`src/interp.rs`): the
+player, enemies and pickups are drawn at the in-between positions so motion
+stays smooth on high-refresh displays, and the exact simulated values are
+restored before the next tick. The renderer also smooths the player's
+facing, walk/idle blend and lean (`scene::PlayerPose`).
 The game opens on the main menu (continue, new game, load, settings) with the
 ship idling behind it; the active slot autosaves every minute of play, when
 the profile changes, and on pause-quit, suspend and exit.

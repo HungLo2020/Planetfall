@@ -1204,6 +1204,30 @@ PAD_ICONS = {
 }
 
 
+
+def w_sentry(i):
+    i.glow_at(98, 46, 14, GREEN)
+    for x0, x1 in ((40, 20), (64, 64), (88, 108)):
+        i.line([(64, 78), (x1, 116)], GUNMETAL, 4)
+    i.rect(40, 66, 88, 84, DARK, 4)
+    i.rect(34, 34, 92, 66, rgb("#4caf62"), 8)
+    i.rect(88, 42, 118, 54, STEEL, 3)
+    i.circle(56, 50, 7, GREEN, light=False, line=5)
+
+
+def a_dome(i):
+    i.glow_at(64, 70, 34, rgb("#7ff0a0"))
+    img = Image.new("RGBA", (W, W), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    box_ = [14 * SS, 26 * SS, 114 * SS, 126 * SS]
+    d.pieslice(box_, 180, 360, fill=(127, 240, 160, 90))
+    d.arc(box_, 180, 360, fill=OUTLINE, width=int(9 * SS))
+    d.arc(box_, 180, 360, fill=rgb("#9ff5b8"), width=int(5 * SS))
+    i.image.alpha_composite(img)
+    i.rect(10, 74, 118, 86, GUNMETAL, 4)
+    i.circle(64, 60, 10, WHITE, light=False)
+
+
 ICONS = {
     # Weapons (ids from weapons.toml).
     "pulse-blaster": pulse_blaster,
@@ -1238,6 +1262,8 @@ ICONS = {
     "lumite": lumite,
     "voidstone": voidstone,
     "upgrade": upgrade,
+    "sentry": w_sentry,
+    "ability-dome": a_dome,
     **UI_ICONS,
     **PAD_ICONS,
 }

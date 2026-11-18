@@ -1,17 +1,28 @@
 //! Class abilities: one button with charges and a cooldown, each a code
 //! archetype with its numbers from `classes.toml` at the player's tier,
 //! scaled by ability upgrades (`mods.toml`), plus the things they leave in
-//! the world (barrier posts and turrets).
+//! the world (barrier posts, shield domes), and the sentry turrets the
+//! Engineer's Sentry weapon keeps planted.
 
 use super::weapons::Shot;
 use super::{BARRIER_RADIUS, Deployable, DeployableKind, Hit, Run};
-use crate::content::{AbilityKind, DT, Element, Special, WeaponId, content, seconds};
+use crate::content::{AbilityKind, DT, Element, Special, content, seconds};
 use crate::events::GameEvent;
 use crate::math::{self, V2};
 use crate::terrain::{TILE, Terrain};
 
 /// Barrier posts zap enemies touching them this often (ticks).
 const BARRIER_PULSE: u32 = 15;
+/// Share of damage a shield dome stops for players inside it.
+pub const DOME_PROTECTION: f32 = 0.6;
+/// Enemies inside a dome move at this share of their speed.
+pub const DOME_SLOW: f32 = 0.55;
+/// An overcharged dome shocks enemies inside it this often (ticks).
+const DOME_PULSE: u32 = 30;
+/// A sentry farther than this from its owner is re-planted at their side.
+const SENTRY_LEASH: f32 = 10.0;
+/// Seconds between plantings.
+const SENTRY_REPLANT: f32 = 0.8;
 
 impl Run {
     /// Player `i` pressed the ability button.
@@ -42,7 +53,7 @@ impl Run {
         };
         let molten = p.ability.has(Special::MoltenBore);
         let fence = p.ability.has(Special::ArcFence);
-        let mobile = p.ability.has(Special::MobileSentry);
+        let overcharge = p.ability.has(Special::Overcharge);
         let to = match kind {
             AbilityKind::Bore => {
                 let mut width = tier.width;
@@ -62,37 +73,29 @@ impl Run {
                 self.raise_barrier(i, from, facing, tier.count, tier.duration, zap, hit);
                 from + facing * 2.2
             }
-            AbilityKind::Turret => {
-                let weapon = tier
-                    .weapon
-                    .as_deref()
-                    .and_then(WeaponId::from_key)
-                    .unwrap_or_else(|| class.signature());
-                let ahead = from + facing * 1.2;
-                let at = if self.terrain.solid_at(ahead) {
-                    from
-                } else {
-                    ahead
-                };
+            AbilityKind::Dome => {
                 let total = seconds(tier.duration).max(1);
-                // One turret per player: a new one replaces the old.
+                if overcharge {
+                    hit.elements.add(Element::Shock, 4.0 * power);
+                }
+                // One dome per player: a new one replaces the old.
                 self.deployables
-                    .retain(|d| d.owner != i || !matches!(d.kind, DeployableKind::Turret { .. }));
+                    .retain(|d| d.owner != i || !matches!(d.kind, DeployableKind::Dome { .. }));
                 self.deployables.push(Deployable {
-                    kind: DeployableKind::Turret { weapon, mobile },
+                    kind: DeployableKind::Dome { overcharge },
                     owner: i,
-                    pos: at,
-                    yaw: self.players[i].yaw,
+                    pos: from,
+                    yaw: 0.0,
                     ttl: total,
                     total,
                     damage: hit.damage,
                     range: tier.range,
                     heavy: hit.heavy,
                     elements: hit.elements,
-                    cooldown: 0.4,
+                    cooldown: 0.0,
                     since_fired: 999,
                 });
-                at
+                from
             }
         };
         let p = &mut self.players[i];
@@ -248,6 +251,88 @@ impl Run {
         }
     }
 
+    /// Whether `at` is inside a shield dome.
+    pub(super) fn in_dome(&self, at: V2) -> bool {
+        self.deployables
+            .iter()
+            .any(|d| matches!(d.kind, DeployableKind::Dome { .. }) && d.pos.distance(at) < d.range)
+    }
+
+    /// The Sentry weapon in `slot`: keep `count` turrets planted near the
+    /// player, re-planting the farthest one when they move on. `timer` is
+    /// the weapon's cooldown, reused as the planting timer.
+    pub(super) fn tend_sentries(&mut self, player: usize, slot: usize, timer: f32) {
+        let p = &self.players[player];
+        let w = &p.weapons[slot];
+        let (weapon, stats, mobile, pos) = (w.kind, w.stats(), w.has(Special::MobileSentry), p.pos);
+        self.players[player].weapons[slot].cooldown = timer;
+        if timer > 0.0 {
+            return;
+        }
+        let mine: Vec<usize> = (0..self.deployables.len())
+            .filter(|&d| {
+                let dep = &self.deployables[d];
+                dep.owner == player
+                    && matches!(dep.kind, DeployableKind::Turret { weapon: k, .. } if k == weapon)
+            })
+            .collect();
+        // Upgrades take effect on the turrets already planted.
+        for &d in &mine {
+            self.deployables[d].kind = DeployableKind::Turret { weapon, mobile };
+        }
+        let farthest = mine.iter().copied().max_by(|&a, &b| {
+            let da = self.deployables[a].pos.distance_squared(pos);
+            let db = self.deployables[b].pos.distance_squared(pos);
+            da.total_cmp(&db)
+        });
+        let replant = if (mine.len() as u32) < stats.count {
+            None
+        } else {
+            match farthest {
+                Some(d) if !mobile && self.deployables[d].pos.distance(pos) > SENTRY_LEASH => {
+                    Some(d)
+                }
+                _ => return,
+            }
+        };
+        // Plant beside the player, away from the other turrets.
+        let spot = (0..8)
+            .map(|k| {
+                let a = k as f32 * std::f32::consts::TAU / 8.0;
+                pos + V2::new(a.cos(), a.sin()) * 1.4
+            })
+            .filter(|&c| !self.terrain.solid_at(c))
+            .max_by(|a, b| {
+                let gap = |c: V2| {
+                    mine.iter()
+                        .filter(|&&d| Some(d) != replant)
+                        .map(|&d| self.deployables[d].pos.distance(c))
+                        .fold(f32::INFINITY, f32::min)
+                };
+                gap(*a).total_cmp(&gap(*b))
+            })
+            .unwrap_or(pos);
+        let turret = Deployable {
+            kind: DeployableKind::Turret { weapon, mobile },
+            owner: player,
+            pos: spot,
+            yaw: self.players[player].yaw,
+            ttl: u32::MAX,
+            total: u32::MAX,
+            damage: 0.0,
+            range: stats.range,
+            heavy: 0.0,
+            elements: Default::default(),
+            cooldown: 0.3,
+            since_fired: 999,
+        };
+        match replant {
+            Some(d) => self.deployables[d] = turret,
+            None => self.deployables.push(turret),
+        }
+        self.players[player].weapons[slot].cooldown = SENTRY_REPLANT;
+    }
+
     /// Age deployables; turrets shoot (and mobile ones follow their owner)
     /// and barrier posts zap what touches them.
     pub(super) fn update_deployables(&mut self, events: &mut Vec<GameEvent>) {
@@ -258,10 +343,35 @@ impl Run {
             let dep = *dep;
             match dep.kind {
                 DeployableKind::Turret { weapon, mobile } => {
+                    // A sentry fires with its owner's weapon as upgraded now.
+                    let owner = &self.players[dep.owner];
+                    let Some(w) = owner.weapons.iter().find(|w| w.kind == weapon) else {
+                        self.deployables[d].ttl = 0;
+                        continue;
+                    };
+                    let stats = w.stats();
+                    let hit = Hit {
+                        damage: stats.damage * owner.damage_multiplier,
+                        heavy: owner.heavy_damage,
+                        elements: w.elements(),
+                        secondary: false,
+                    };
+                    let twin = w.has(Special::TwinBarrel);
+                    let rate = owner.cooldown_multiplier;
                     if mobile {
-                        let to = self.players[dep.owner].pos - dep.pos;
-                        if to.length() > 2.5 {
-                            let step = to.normalize_or_zero() * 5.5 * DT;
+                        // Mobile sentries trot along, spread around their owner.
+                        let index = self.deployables[..d]
+                            .iter()
+                            .filter(|o| {
+                                o.owner == dep.owner
+                                    && matches!(o.kind, DeployableKind::Turret { .. })
+                            })
+                            .count();
+                        let a = index as f32 * 2.1 + 0.6;
+                        let goal = owner.pos + V2::new(a.cos(), a.sin()) * 1.8;
+                        let to = goal - dep.pos;
+                        if to.length() > 0.4 {
+                            let step = to.normalize_or_zero() * 6.0_f32.min(to.length() / DT) * DT;
                             let (pos, _) = self.terrain.resolve_circle(dep.pos + step, 0.35);
                             self.deployables[d].pos = pos;
                         }
@@ -272,38 +382,55 @@ impl Run {
                     if cooldown > 0.0 {
                         continue;
                     }
-                    let Some(target) = self.nearest_enemy(dep.pos, dep.range) else {
+                    let Some(target) = self.nearest_enemy(dep.pos, stats.range) else {
                         continue;
                     };
                     let target_pos = self.enemies[target].pos;
                     if !self.terrain.line_clear(dep.pos, target_pos) {
                         continue;
                     }
-                    let stats = weapon.base();
                     let dir = (target_pos - dep.pos).normalize_or_zero();
                     let shot = Shot {
                         weapon,
                         stats,
-                        hit: Hit {
-                            damage: dep.damage,
-                            heavy: dep.heavy,
-                            elements: dep.elements,
-                            secondary: false,
-                        },
-                        twin: false,
+                        hit,
+                        twin,
                         double: false,
                         overload: false,
                         cluster: false,
                     };
                     self.fire(&shot, dep.pos, dir, target, events);
+                    if twin && let Some(second) = self.second_target(dep.pos, stats.range, target) {
+                        let to = (self.enemies[second].pos - dep.pos).normalize_or_zero();
+                        self.fire(&shot, dep.pos, to, second, events);
+                    }
                     let dep = &mut self.deployables[d];
-                    dep.cooldown = stats.cooldown;
+                    dep.cooldown = stats.cooldown * rate;
                     dep.since_fired = 0;
                     dep.yaw = math::yaw_of(dir);
                     events.push(GameEvent::Fired {
                         weapon,
                         at: dep.pos,
                     });
+                }
+                DeployableKind::Dome { overcharge } => {
+                    if !overcharge || !dep.ttl.is_multiple_of(DOME_PULSE) {
+                        continue;
+                    }
+                    let zap = Hit {
+                        damage: dep.damage,
+                        heavy: dep.heavy,
+                        elements: dep.elements,
+                        secondary: true,
+                    };
+                    let mut struck = false;
+                    for e in self.enemies_near(dep.pos, dep.range) {
+                        self.damage_enemy(e, zap, events);
+                        struck = true;
+                    }
+                    if struck {
+                        self.deployables[d].since_fired = 0;
+                    }
                 }
                 DeployableKind::Barrier => {
                     if !dep.ttl.is_multiple_of(BARRIER_PULSE) {

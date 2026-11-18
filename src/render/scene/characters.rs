@@ -20,12 +20,19 @@ impl Painter<'_, '_> {
         flash: f32,
         weapon: Option<WeaponId>,
     ) {
-        let root = at(pos, y) * Mat4::rotation_y(yaw);
-        let mut layers = vec![if moving {
-            Layer::full("walk", walk)
-        } else {
-            Layer::full("idle", self.time)
-        }];
+        // Facing, the walk/idle mix and the lean come from the smoothed
+        // pose; `yaw` and `moving` are the raw values it eases toward.
+        let _ = (yaw, moving);
+        let pose = self.pose;
+        let root = at(pos, y) * Mat4::rotation_y(pose.yaw) * Mat4::rotation_x(0.11 * pose.lean);
+        let mut layers = vec![Layer::full("idle", self.time)];
+        if pose.motion > 0.01 {
+            layers.push(Layer {
+                clip: "walk",
+                time: walk,
+                weight: pose.motion,
+            });
+        }
         if weapon.is_some() {
             layers.push(Layer::full("aim", 0.0));
         }
@@ -54,8 +61,7 @@ impl Painter<'_, '_> {
 }
 
 impl Painter<'_, '_> {
-    /// The astronaut in a class's colours: the suit takes a share of the
-    /// class colour and the visor and lamps glow in it.
+    /// A class suit; the visor and lamps glow in the class colour.
     pub(super) fn suit(
         &mut self,
         class: ClassId,
@@ -64,10 +70,11 @@ impl Painter<'_, '_> {
         flash: f32,
         outline: Option<u8>,
     ) -> Posed {
+        // The suits are painted in their class colours; only the glow
+        // (visor and lamps) takes the class colour here.
         let c = class.info().color;
-        let tint = mix3([1.0; 3], c, 0.45);
         let model = &class.info().model;
-        self.character_tinted(model, root, layers, flash, outline, tint, c)
+        self.character_tinted(model, root, layers, flash, outline, [1.0; 3], c)
     }
 }
 

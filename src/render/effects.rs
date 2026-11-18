@@ -346,7 +346,7 @@ impl Effects {
                                 }
                             }
                         }
-                        AbilityKind::Barrier | AbilityKind::Turret => {
+                        AbilityKind::Barrier | AbilityKind::Dome => {
                             glow.emit(&ParticleBurst {
                                 position: [to[0], 0.4, to[1]],
                                 position_jitter: if kind == AbilityKind::Barrier {

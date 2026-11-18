@@ -389,6 +389,32 @@ fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
                     );
                 }
             }
+            DeployableKind::Dome { overcharge } => {
+                // A translucent shell rising out of the ground, its rim
+                // traced in light; it flickers out as it expires.
+                let r = d.range * rise;
+                let tint = if overcharge {
+                    [0.55, 0.8, 1.0]
+                } else {
+                    [0.4, 0.95, 0.6]
+                };
+                if !fading {
+                    let shimmer = 0.07 + 0.03 * (time * 3.0).sin() + 0.08 * zap;
+                    p.halo(at(d.pos, 0.0) * s(r, r * 0.7, r), tint, shimmer);
+                    p.halo(
+                        at(d.pos, 0.0) * s(r * 0.96, r * 0.66, r * 0.96),
+                        tint,
+                        shimmer * 0.5,
+                    );
+                    let segments = 28;
+                    for k in 0..segments {
+                        let a = k as f32 / segments as f32 * std::f32::consts::TAU + time * 0.4;
+                        let q = d.pos + V2::new(a.cos(), a.sin()) * r;
+                        p.glow(at(q, 0.06) * s(0.09, 0.04, 0.09), tint);
+                    }
+                    p.point([d.pos[0], 1.6, d.pos[1]], tint, 1.4 + zap, r + 2.0);
+                }
+            }
             DeployableKind::Turret { weapon, mobile } => {
                 let root = at(d.pos, 0.0);
                 // A mobile sentry stands on little legs.

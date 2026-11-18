@@ -1077,6 +1077,15 @@ def ability_turret(c, v):
     return reverb(c, mix(unfold, servo, ready), 0.6, 0.2)
 
 
+
+def ability_dome(c, v):
+    d = 1.6
+    hum = mix(c.sine(110, d), c.sine(110.8, d) * 0.8, c.sine(220, d) * 0.3) * adsr(c, d, 0.25, 0.3, 0.6, 0.6)
+    rise = c.sine(c.expo(0.5, 300, 1200), 0.5) * env(c, 0.5, 0.05, 0.4) * 0.3
+    shimmer = hp(c.noise(d), 4000) * adsr(c, d, 0.3, 0.2, 0.4, 0.6) * 0.15
+    return reverb(c, mix(lp(hum, 900) * 0.8, rise, shimmer, thump(c, 140, 60, 0.2, 0.15) * 0.6), 1.2, 0.3)
+
+
 # --- Ambience loops --------------------------------------------------------------------------------
 
 
@@ -1540,6 +1549,7 @@ EFFECTS: list[tuple[str, Callable, int]] = [
     ("ability_blink", ability_blink, 1),
     ("ability_barrier", ability_barrier, 1),
     ("ability_turret", ability_turret, 1),
+    ("ability_dome", ability_dome, 1),
 ]
 
 AMBIENCE = [

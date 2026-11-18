@@ -382,7 +382,7 @@ impl Audio {
                         AbilityKind::Bore => "ability_bore",
                         AbilityKind::Blink => "ability_blink",
                         AbilityKind::Barrier => "ability_barrier",
-                        AbilityKind::Turret => "ability_turret",
+                        AbilityKind::Dome => "ability_dome",
                     };
                     self.play(clip, 0.75, Some(from), 0);
                 }

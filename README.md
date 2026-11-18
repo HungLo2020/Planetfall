@@ -45,7 +45,7 @@ Rebind keys and buttons under Settings → Controls.
   Progress autosaves, and quitting mid-drop resumes the drop later.
 - **Four classes**: Striker, Prospector, Warden and Engineer, each with a
   signature weapon, familiar weapons, an active ability (blink, bore,
-  barrier, turret) and a passive. Switch in the ship's locker room; every
+  barrier, shield dome) and a passive. Switch in the ship's locker room; every
   class keeps its own level, unlocks and starting weapon.
 - **Tutorial**: a ship AI walks a new commander from the barebones ship through
   the nav console, the first FTL jump and drop, mining, level-ups, a weapon
@@ -74,9 +74,9 @@ Rebind keys and buttons under Settings → Controls.
   lumite and voidstone ore; eight enemy types by role (husks, skitters,
   bloaters, brutes, ranged spitters, jamming disruptors, burrowers and
   flyers) driven by a flow field, elites with five affixes and five bosses;
-  twelve auto-firing weapons across eleven archetypes (bolts, scatter, arcs,
-  mortars, drones, flamer with heat, ricochet, mines, melee, homing and
-  gravity) in four slots (new picks at levels 5, 10 and 15); rarity-rolled
+  thirteen auto-firing weapons across twelve archetypes (bolts, scatter, arcs,
+  mortars, drones, sentry turrets, flamer with heat, ricochet, mines, melee,
+  homing and gravity), each offered only the upgrades that change it in four slots (new picks at levels 5, 10 and 15); rarity-rolled
   upgrades with elements (fire, acid, cold, shock) that combine (shatter,
   thermal shock, conductive water, acid fuel, spore ignition) and legendary
   behaviour changes; supply caches; a threat

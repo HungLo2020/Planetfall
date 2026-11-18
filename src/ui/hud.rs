@@ -54,7 +54,7 @@ pub fn ability_icon(kind: AbilityKind) -> &'static str {
         AbilityKind::Blink => "ability-blink",
         AbilityKind::Bore => "ability-bore",
         AbilityKind::Barrier => "ability-barrier",
-        AbilityKind::Turret => "ability-turret",
+        AbilityKind::Dome => "ability-dome",
     }
 }
 

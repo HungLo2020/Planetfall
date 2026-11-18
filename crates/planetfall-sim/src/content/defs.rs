@@ -150,6 +150,51 @@ pub enum WeaponBehavior {
     /// A slow orb that becomes a vortex at the target, pulling enemies in
     /// and grinding them within `radius`.
     Gravity,
+    /// Keeps `count` sentry turrets planted near you (re-planting the
+    /// farthest when you move on); each fires a bolt every `cooldown` at
+    /// the nearest enemy within `range`, with every upgrade on the weapon.
+    Sentry,
+}
+
+/// Per-weapon upgrade wording (see [`WeaponDef::upgrades`]).
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WeaponUpgrades {
+    pub damage: Option<String>,
+    pub fire_rate: Option<String>,
+    pub count: Option<String>,
+    pub range: Option<String>,
+    pub area: Option<String>,
+    pub pierce: Option<String>,
+}
+
+impl WeaponUpgrades {
+    /// The wording for a weapon stat, or `None` when the weapon does not
+    /// take it. Stats that are not plain weapon stats return `None` too.
+    pub fn get(&self, stat: ModStat) -> Option<&str> {
+        match stat {
+            ModStat::Damage => self.damage.as_deref(),
+            ModStat::FireRate => self.fire_rate.as_deref(),
+            ModStat::Count => self.count.as_deref(),
+            ModStat::Range => self.range.as_deref(),
+            ModStat::Area => self.area.as_deref(),
+            ModStat::Pierce => self.pierce.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+/// Whether a stat is gated by [`WeaponDef::upgrades`].
+pub fn listed_stat(stat: ModStat) -> bool {
+    matches!(
+        stat,
+        ModStat::Damage
+            | ModStat::FireRate
+            | ModStat::Count
+            | ModStat::Range
+            | ModStat::Area
+            | ModStat::Pierce
+    )
 }
 
 /// Upgrade rarity. Higher rarities scale amounts and unlock elements
@@ -256,6 +301,15 @@ pub struct WeaponDef {
     pub volume: f32,
     pub color: [f32; 3],
     pub stats: WeaponStats,
+    /// The upgrade types this weapon takes, each with the wording shown on
+    /// it (`{amount}` is replaced). An upgrade type left out is never
+    /// offered for this weapon. Elements and specials are not listed here.
+    #[serde(default)]
+    pub upgrades: WeaponUpgrades,
+    /// Most projectiles (or pellets, drones...) upgrades can raise `count`
+    /// to; weapons whose every projectile is a homing blast need a cap.
+    #[serde(default)]
+    pub max_count: Option<u32>,
     #[serde(default)]
     pub element: Option<ElementDef>,
 }
@@ -298,6 +352,8 @@ pub enum Special {
     Echo,
     MoltenBore,
     ArcFence,
+    /// Dome: enemies inside take shock damage.
+    Overcharge,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -834,8 +890,9 @@ pub enum AbilityKind {
     Barrier,
     /// Teleport ahead, damaging enemies along the path.
     Blink,
-    /// A turret that fires a weapon at the nearest enemy.
-    Turret,
+    /// A shield dome around you: less damage inside, enemy shots stopped
+    /// at its edge and the horde slowed while inside.
+    Dome,
 }
 
 /// Ability numbers at one tier. Which fields matter depends on the kind.

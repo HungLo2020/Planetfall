@@ -274,8 +274,12 @@ impl Run {
             match info.target {
                 ModTarget::Weapon => {
                     for w in &p.weapons {
-                        let fits = info.behaviors.is_empty()
-                            || info.behaviors.contains(&w.kind.info().behavior);
+                        let weapon = w.kind.info();
+                        let fits = (info.behaviors.is_empty()
+                            || info.behaviors.contains(&weapon.behavior))
+                            // Plain stat upgrades only for weapons they change.
+                            && (!crate::content::listed_stat(info.stat)
+                                || weapon.upgrades.get(info.stat).is_some());
                         if fits && room(w.stacks(m)) {
                             pool.push((Upgrade::WeaponMod(w.kind, m), info.weight));
                         }

@@ -12,6 +12,11 @@
 # model: held model (a name from assets/models or models.toml),
 # turned by model_yaw degrees; color: linear
 # RGB of projectiles and muzzle light; sound: clip name in assets/sounds.
+# upgrades: the upgrade types this weapon takes (damage, fire_rate, count,
+# range, area, pierce), each with the wording shown for it; types left out
+# are never offered for it.
+# max_count: the most projectiles (pellets, jumps, shells, drones, mines,
+# bounces) upgrades can raise `count` to.
 
 [[weapon]]
 id = "pulse-blaster"
@@ -26,6 +31,8 @@ sound = "blaster"
 volume = 0.35
 color = [0.5, 0.95, 1.0]
 stats = { cooldown = 0.42, damage = 11.0, range = 13.0, count = 1, speed = 26.0, radius = 0.25, pierce = 0 }
+upgrades = { damage = "+{amount}% bolt damage", fire_rate = "Fires {amount}% faster", count = "+{amount} bolts per volley", range = "+{amount}% range", pierce = "Bolts pierce {amount} more enemies" }
+max_count = 4
 
 [[weapon]]
 id = "scattergun"
@@ -39,6 +46,8 @@ sound = "scatter"
 volume = 0.5
 color = [1.0, 0.7, 0.25]
 stats = { cooldown = 0.85, damage = 8.0, range = 9.0, count = 5, speed = 22.0, radius = 0.22, pierce = 1 }
+upgrades = { damage = "+{amount}% pellet damage", fire_rate = "Pumps {amount}% faster", count = "+{amount} pellets per blast", range = "+{amount}% reach", pierce = "Pellets pierce {amount} more enemies" }
+max_count = 10
 
 [[weapon]]
 id = "arc-caster"
@@ -52,6 +61,8 @@ sound = "arc"
 volume = 0.45
 color = [0.6, 0.75, 1.0]
 stats = { cooldown = 1.3, damage = 13.0, range = 9.0, count = 3, speed = 0.0, radius = 5.0, pierce = 0 }
+upgrades = { damage = "+{amount}% lightning damage", fire_rate = "Discharges {amount}% faster", count = "+{amount} chain jumps", range = "+{amount}% reach", area = "Lightning jumps {amount}% farther" }
+max_count = 7
 
 [[weapon]]
 id = "plasma-mortar"
@@ -66,6 +77,8 @@ sound = "mortar"
 volume = 0.5
 color = [0.55, 1.0, 0.45]
 stats = { cooldown = 2.2, damage = 32.0, range = 14.0, count = 1, speed = 0.9, radius = 2.6, pierce = 0 }
+upgrades = { damage = "+{amount}% blast damage", fire_rate = "Reloads {amount}% faster", count = "+{amount} shells per salvo", range = "+{amount}% range", area = "+{amount}% blast radius" }
+max_count = 4
 
 [[weapon]]
 id = "orbit-drones"
@@ -80,6 +93,8 @@ sound = "drone"
 volume = 0.3
 color = [0.6, 0.9, 1.0]
 stats = { cooldown = 0.45, damage = 14.0, range = 2.8, count = 3, speed = 2.8, radius = 0.75, pierce = 0 }
+upgrades = { damage = "+{amount}% drone damage", fire_rate = "Drones spin and strike {amount}% faster", count = "+{amount} drones", range = "Orbit {amount}% wider", area = "+{amount}% drone size" }
+max_count = 7
 
 [[weapon]]
 id = "seam-cutter"
@@ -93,6 +108,8 @@ sound = "cutter"
 volume = 0.4
 color = [1.0, 0.62, 0.2]
 stats = { cooldown = 0.62, damage = 16.0, range = 9.0, count = 1, speed = 30.0, radius = 0.3, pierce = 2 }
+upgrades = { damage = "+{amount}% beam damage", fire_rate = "Cuts {amount}% faster", count = "+{amount} beams per volley", range = "+{amount}% range", pierce = "Beams cut through {amount} more enemies" }
+max_count = 4
 
 [[weapon]]
 id = "torch"
@@ -106,6 +123,8 @@ sound = "flamer"
 volume = 0.35
 color = [1.0, 0.55, 0.15]
 stats = { cooldown = 0.12, damage = 3.2, range = 5.0, count = 1, speed = 1.0, radius = 0.5, pierce = 0 }
+upgrades = { damage = "+{amount}% flame damage", fire_rate = "Bursts {amount}% faster", range = "+{amount}% flame length", area = "+{amount}% wider cone" }
+max_count = 2
 
 [[weapon]]
 id = "ripper"
@@ -118,6 +137,8 @@ sound = "ricochet"
 volume = 0.4
 color = [0.85, 0.9, 1.0]
 stats = { cooldown = 1.1, damage = 15.0, range = 13.0, count = 4, speed = 18.0, radius = 0.35, pierce = 0 }
+upgrades = { damage = "+{amount}% disc damage", fire_rate = "Throws {amount}% faster", count = "+{amount} bounces", range = "+{amount}% range" }
+max_count = 8
 
 [[weapon]]
 id = "mine-layer"
@@ -131,6 +152,8 @@ sound = "mine"
 volume = 0.35
 color = [1.0, 0.3, 0.25]
 stats = { cooldown = 1.4, damage = 40.0, range = 14.0, count = 6, speed = 1.0, radius = 2.6, pierce = 0 }
+upgrades = { damage = "+{amount}% blast damage", fire_rate = "Lays mines {amount}% faster", count = "+{amount} mines on the field", area = "+{amount}% blast radius" }
+max_count = 10
 
 [[weapon]]
 id = "breaker"
@@ -143,6 +166,8 @@ sound = "swing"
 volume = 0.5
 color = [1.0, 0.85, 0.4]
 stats = { cooldown = 0.9, damage = 30.0, range = 2.4, count = 1, speed = 1.0, radius = 1.0, pierce = 0 }
+upgrades = { damage = "+{amount}% smash damage", fire_rate = "Swings {amount}% faster", range = "+{amount}% reach", area = "+{amount}% wider sweep" }
+max_count = 2
 
 [[weapon]]
 id = "seeker"
@@ -155,7 +180,10 @@ model_scale = 1.0
 sound = "seeker"
 volume = 0.4
 color = [0.95, 0.75, 0.35]
-stats = { cooldown = 1.6, damage = 18.0, range = 16.0, count = 2, speed = 12.0, radius = 1.4, pierce = 0 }
+stats = { cooldown = 1.9, damage = 16.0, range = 15.0, count = 2, speed = 12.0, radius = 1.25, pierce = 0 }
+upgrades = { damage = "+{amount}% missile damage", fire_rate = "Launches {amount}% faster", count = "+{amount} missiles per volley", range = "+{amount}% lock-on range", area = "+{amount}% blast radius" }
+# Every missile is a homing blast: extra payload tops out at five.
+max_count = 5
 
 [[weapon]]
 id = "singularity"
@@ -169,4 +197,21 @@ sound = "gravity"
 volume = 0.45
 color = [0.6, 0.4, 1.0]
 stats = { cooldown = 4.0, damage = 9.0, range = 14.0, count = 1, speed = 9.0, radius = 3.4, pierce = 0 }
+upgrades = { damage = "+{amount}% crushing damage", fire_rate = "Recharges {amount}% faster", range = "+{amount}% throw range", area = "+{amount}% pull radius" }
+max_count = 2
 
+[[weapon]]
+id = "sentry"
+name = "Sentry Turrets"
+description = "Plants turrets that shoot the nearest hostile; they follow when you move on."
+behavior = "sentry"
+model = "blaster"
+model_scale = 0.6
+model_yaw = 180.0
+sound = "blaster"
+volume = 0.25
+color = [0.45, 1.0, 0.55]
+# count: turrets planted; cooldown: each turret's time between shots.
+stats = { cooldown = 0.5, damage = 9.0, range = 11.0, count = 2, speed = 28.0, radius = 0.25, pierce = 0 }
+upgrades = { damage = "+{amount}% turret damage", fire_rate = "Turrets fire {amount}% faster", count = "+{amount} turrets", range = "+{amount}% turret range", pierce = "Turret bolts pierce {amount} more enemies" }
+max_count = 5

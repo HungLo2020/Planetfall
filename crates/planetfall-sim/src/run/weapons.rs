@@ -121,6 +121,11 @@ impl Run {
             if info.behavior == WeaponBehavior::Orbit {
                 continue;
             }
+            // The Sentry plants turrets; they do the shooting.
+            if info.behavior == WeaponBehavior::Sentry {
+                self.tend_sentries(player, slot, cooldown);
+                continue;
+            }
             let flamer = info.behavior == WeaponBehavior::Flamer;
             if flamer && !self.flamer_ready(player, slot) {
                 continue;
@@ -161,7 +166,7 @@ impl Run {
     }
 
     /// The nearest enemy in range other than `not` (with line of sight).
-    fn second_target(&mut self, from: V2, range: f32, not: usize) -> Option<usize> {
+    pub(super) fn second_target(&mut self, from: V2, range: f32, not: usize) -> Option<usize> {
         let near = self.enemies_near(from, range);
         near.into_iter()
             .filter(|&i| i != not && self.terrain.line_clear(from, self.enemies[i].pos))
@@ -206,6 +211,10 @@ impl Run {
             WeaponBehavior::Arc => self.fire_arc(shot, origin, target, events),
             WeaponBehavior::Mortar => self.fire_mortar(shot, origin, target),
             WeaponBehavior::Orbit => {}
+            // A sentry turret fires one bolt per shot (`count` is turrets).
+            WeaponBehavior::Sentry => {
+                self.spawn_projectile(ProjectileKind::Bolt, shot, origin, dir);
+            }
             _ => self.fire_arsenal(shot, origin, dir, target, events),
         }
     }
@@ -450,7 +459,9 @@ impl Run {
         let p = &mut self.players[player];
         let w = &p.weapons[slot];
         let (kind, stats, elements) = (w.kind, w.stats(), w.elements());
-        p.drone_angle = (p.drone_angle + stats.speed * DT) % std::f32::consts::TAU;
+        // Fire-rate upgrades spin the ring faster as well as re-striking sooner.
+        let spin = kind.base().cooldown / stats.cooldown.max(1e-3);
+        p.drone_angle = (p.drone_angle + stats.speed * spin * DT) % std::f32::consts::TAU;
         let hit = Hit {
             damage: stats.damage * p.damage_multiplier,
             heavy: p.heavy_damage,

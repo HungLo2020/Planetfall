@@ -11,7 +11,8 @@
 #   "barrier" (a wall of shock posts ahead: count posts, duration, damage
 #           per second to enemies touching them),
 #   "blink" (teleport up to range metres, damaging enemies on the way),
-#   "turret" (deploy a turret firing `weapon` for duration seconds).
+#   "dome" (a shield dome of radius `range` for `duration` seconds; `damage`
+#   is the shock of an overcharged dome every half second).
 #   tiers[n] applies from class level ability_levels[n].
 # passive: stat effects (see perks.toml for effect names); each tier adds
 #   per_tier. Tiers apply from class level passive_levels[n].
@@ -99,15 +100,15 @@ unlocks = [
 id = "engineer"
 model = "suit-engineer"
 name = "Engineer"
-role = "Drones, turrets and repairs"
-description = "Builds turrets, repairs over time and recharges abilities faster."
-signature = "orbit-drones"
-familiar = ["plasma-mortar", "pulse-blaster", "mine-layer", "seeker"]
+role = "Turrets, shields and repairs"
+description = "Plants sentry turrets, shields the team and repairs over time."
+signature = "sentry"
+familiar = ["orbit-drones", "plasma-mortar", "mine-layer", "seeker"]
 color = [0.35, 0.9, 0.45]
-ability = { kind = "turret", name = "Sentry Turret", description = "Deploy a turret that fires at the nearest hostile.", tiers = [
-  { cooldown = 18.0, damage = 10.0, duration = 14.0, range = 11.0, weapon = "pulse-blaster" },
-  { cooldown = 16.0, damage = 14.0, duration = 18.0, range = 12.0, weapon = "pulse-blaster" },
-  { cooldown = 14.0, damage = 20.0, duration = 22.0, range = 13.0, weapon = "pulse-blaster" },
+ability = { kind = "dome", name = "Shield Dome", description = "Project a dome: inside it you take far less damage, enemy shots stop at its edge and the horde slows.", tiers = [
+  { cooldown = 20.0, damage = 8.0, duration = 6.0, range = 4.5 },
+  { cooldown = 18.0, damage = 11.0, duration = 7.0, range = 5.0 },
+  { cooldown = 16.0, damage = 15.0, duration = 8.0, range = 5.5 },
 ] }
 ability_levels = [1, 4, 8]
 passive = { name = "Field Repairs", description = "Regenerate health and recharge the ability faster.", effects = [
@@ -117,6 +118,6 @@ passive = { name = "Field Repairs", description = "Regenerate health and recharg
 ] }
 passive_levels = [1, 6, 10]
 unlocks = [
-  { level = 2, weapon = "pulse-blaster" },
+  { level = 2, weapon = "orbit-drones" },
   { level = 5, weapon = "plasma-mortar" },
 ]

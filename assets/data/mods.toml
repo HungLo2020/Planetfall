@@ -21,7 +21,8 @@
 #   overload      arc: every jump forks to a second enemy
 #   cluster       mortar: shells split into three bomblets
 #   second_ring   orbit: a second, wider ring turning the other way
-#   mobile_sentry turret: the turret walks with you
+#   mobile_sentry sentry: the turrets walk with you
+#   overcharge    dome: the dome shocks enemies inside it
 #   echo          blink: a second charge before the cooldown
 #   molten_bore   bore: wider, and sets everything in it on fire
 #   arc_fence     barrier: posts zap twice as far, with shock
@@ -63,7 +64,6 @@ description = "+{amount}% range"
 target = "weapon"
 stat = "range"
 amounts = [10.0, 16.0, 24.0, 35.0]
-behaviors = ["bolt", "scatter", "arc", "mortar"]
 weight = 2
 max_stacks = 4
 
@@ -74,7 +74,6 @@ description = "+{amount}% area"
 target = "weapon"
 stat = "area"
 amounts = [12.0, 20.0, 30.0, 45.0]
-behaviors = ["arc", "mortar", "orbit"]
 weight = 2
 max_stacks = 4
 
@@ -85,7 +84,6 @@ description = "Shots pierce {amount} more enemies"
 target = "weapon"
 stat = "pierce"
 amounts = [1.0, 1.0, 2.0, 3.0]
-behaviors = ["bolt", "scatter"]
 weight = 2
 max_stacks = 4
 
@@ -149,7 +147,7 @@ target = "weapon"
 stat = "special"
 special = "twin_barrel"
 amounts = [1.0, 1.0, 1.0, 1.0]
-behaviors = ["bolt"]
+behaviors = ["bolt", "sentry"]
 min_rarity = "legendary"
 weight = 3
 max_stacks = 1
@@ -241,12 +239,12 @@ max_stacks = 3
 [[mod]]
 id = "mobile-sentry"
 title = "Mobile Sentry"
-description = "Your turret follows you around"
-target = "ability"
+description = "Your turrets walk along with you"
+target = "weapon"
 stat = "special"
 special = "mobile_sentry"
 amounts = [1.0, 1.0, 1.0, 1.0]
-abilities = ["turret"]
+behaviors = ["sentry"]
 min_rarity = "legendary"
 weight = 3
 max_stacks = 1
@@ -288,4 +286,17 @@ amounts = [1.0, 1.0, 1.0, 1.0]
 abilities = ["barrier"]
 min_rarity = "legendary"
 weight = 3
+max_stacks = 1
+
+[[mod]]
+id = "overcharged-dome"
+title = "Overcharged Dome"
+description = "Your dome shocks every enemy inside it"
+target = "ability"
+stat = "special"
+special = "overcharge"
+amounts = [1.0, 1.0, 1.0, 1.0]
+min_rarity = "legendary"
+abilities = ["dome"]
+weight = 1
 max_stacks = 1

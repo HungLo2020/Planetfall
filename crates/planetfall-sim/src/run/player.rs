@@ -219,6 +219,12 @@ impl Run {
                 .contract
                 .has_mutator(MutatorEffect::GlassCannon)
                 .unwrap_or(1.0);
+        // A shield dome takes much of the blow.
+        let amount = if self.in_dome(self.players[i].pos) {
+            amount * (1.0 - super::abilities::DOME_PROTECTION)
+        } else {
+            amount
+        };
         let p = &mut self.players[i];
         let tuning = &content().tuning.player;
         let amount = amount * (1.0 - p.armor.clamp(0.0, tuning.armor_cap));

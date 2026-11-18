@@ -102,7 +102,7 @@ Every class has:
 | Prospector | greed, mining, tunnelling | heavy drill-lance | bore a straight tunnel through rock, damaging anything in it | faster mining, richer ore drops, fragile |
 | Warden | control, holding ground | arc shotgun | deploy a barrier wall | stronger turrets and barriers, extraction holds faster |
 | Striker | tempo, mobility, elites | twin blades / burst rifle | blink or grapple through enemies | bonus damage to elites, faster dash recovery |
-| Engineer | utility, drones, salvage | drone swarm | build a turret | repair over time, can hack beacons and salvage wrecks faster |
+| Engineer | utility, drones, salvage | sentry turrets | raise a shield dome | repair over time, can hack beacons and salvage wrecks faster |
 
 Names and kits are working ideas; each class should solve some planet
 hazards and mission types better than the others (section 9).
@@ -144,7 +144,7 @@ upgrades are where weapons become different weapons.
 ### 5.3 Weapon archetypes
 
 Today: bolt, scatter, arc, mortar, orbit. Planned: flamethrower and beam (heat
-build-up), ricochet (bounces off rock), deployables (turrets, mines), melee,
+build-up), ricochet (bounces off rock), deployables (sentry turrets, mines), melee,
 homing swarm, gravity well (pull and crush). Each archetype is code; each
 weapon in it is data.
 

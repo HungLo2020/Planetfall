@@ -54,7 +54,7 @@ Warden loses nothing.
 | Striker | Pulse Blaster | **Blink**: teleport ahead through enemies, damaging everything passed | **Hunter**: +25% damage to heavy enemies (100+ health, and elites), faster dash, slightly faster |
 | Prospector | Seam Cutter | **Bore**: drill a straight tunnel ahead, breaking rock (with drops) and shredding enemies in it | **Deep Seams**: +50% mining, 25% chance of extra ore per vein, -15 max health |
 | Warden | Scattergun | **Barrier**: a row of shock posts the horde cannot pass | **Hold the Line**: +25 max health, extraction zone fills 30% faster |
-| Engineer | Orbit Drones | **Sentry Turret**: a turret that fires at the nearest hostile | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
+| Engineer | Sentry Turrets | **Shield Dome**: a dome that cuts damage to you by 60%, slows enemies inside and blocks their shots | **Field Repairs**: regeneration, faster ability recharge, wider pickup range |
 
 - **Familiar weapons** (two per class) are offered three times as often in
   the weapon picks at dive levels 5, 10 and 15. Each can be chosen as the
@@ -255,7 +255,8 @@ drop is tuned around. The debrief shows the threat reached.
 | Scattergun | Warden signature. Short-range pellet fan | — |
 | Arc Caster | Chain lightning jumping between nearby enemies | Shock |
 | Plasma Mortar | Lobbed shells that burst in an area (arcs over walls) | Fire |
-| Orbit Drones | Engineer signature. Blades circling the player | — |
+| Sentry Turrets | Engineer signature. Plants one turret per count near you (re-planted when you move on) that fire with the weapon's upgrades | — |
+| Orbit Drones | Blades circling the player | — |
 | Torch | Flamethrower cone; builds heat and locks when it overheats. Ignites spores | Fire |
 | Ripper Disc | A disc that bounces between enemies and off walls | — |
 | Mine Layer | Drops proximity mines at your feet | — |
@@ -265,7 +266,7 @@ drop is tuned around. The debrief shows the threat reached.
 
 Familiar weapons per class: Striker (Scattergun, Arc Caster, Ripper Disc),
 Prospector (Scattergun, Plasma Mortar, Torch), Warden (Arc Caster, Orbit
-Drones, Breaker Maul), Engineer (Plasma Mortar, Pulse Blaster, Mine Layer,
+Drones, Breaker Maul), Engineer (Orbit Drones, Plasma Mortar, Mine Layer,
 Seeker Pod). The third and fourth familiar weapons are unlocked as starting
 weapons only by finding their blueprints.
 
@@ -282,8 +283,12 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
 +20/32/48/70% damage) and unlocks more:
 
 - **Weapon mods** (`mods.toml`): damage, fire rate, extra projectiles,
-  range, area, pierce. Every upgrade on a weapon also adds 6% damage (its
-  level, shown as Lv on the HUD).
+  range, area, pierce. A weapon is only offered the upgrades that change
+  it, each worded for that weapon (`upgrades` in `weapons.toml`: drones
+  spin faster, the Torch gets a wider cone). Every upgrade on a weapon also adds 6% damage (its
+  level, shown as pips on the weapon bar). Extra projectiles stop at each
+  weapon's `max_count` (the Seeker Pod tops out at five missiles), and fire
+  rate upgrades at +120%.
 - **Elements** (rare and up): Incendiary (burn damage over time), Corrosive
   (damage over time and +25% damage taken), Cryo (chill slows, then
   freezes), Capacitor (hits may arc to a neighbour). The Arc Caster and
@@ -297,7 +302,8 @@ the Luck perk shift them upward). Rarity sets the amount (e.g. Hotter Rounds
 - **Legendary behaviour changes**: Twin Barrel (bolts also fire at a second
   target), Double Blast (a second fan behind you), Overload (lightning
   forks), Cluster Shells (shells split into bomblets), Second Ring (a second
-  drone ring), and for abilities Mobile Sentry (the turret follows you),
+  drone ring), Mobile Sentry (sentry turrets follow you), and for
+  abilities Overcharged Dome (the dome zaps enemies inside),
   Echo Step (two blink charges), Molten Bore (wider, burning bore) and Arc
   Fence (barrier posts zap further, with shock).
 - **Ability mods**: Quick Charge, Amplifier, Extended.

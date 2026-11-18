@@ -146,11 +146,14 @@ impl CameraRig {
             self.offset = self.offset.lerp(offset, k);
             self.fov += (f.fov - self.fov) * k;
         }
+        // Trauma model: the offset grows faster than shake (power 1.5), so
+        // small bumps stay subtle while hits and quakes clearly jolt the view.
+        let trauma = shake.clamp(0.0, 1.5);
         let jitter = Vec3::new(
-            (time * 61.0).sin() * 0.35,
-            (time * 47.0).cos() * 0.2,
-            (time * 53.0).sin() * 0.35,
-        ) * shake;
+            (time * 23.0).sin() + 0.5 * (time * 37.0).sin(),
+            0.5 * (time * 29.0).cos(),
+            (time * 19.0).cos() + 0.5 * (time * 41.0).sin(),
+        ) * (0.42 * trauma * trauma.sqrt());
         let target = self.target + jitter;
         let eye = target + self.offset;
         let viewport = Viewport::new(width, height.max(1.0));

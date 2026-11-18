@@ -24,7 +24,9 @@ impl Run {
         let t = &content().tuning.arsenal;
         match shot.weapon.info().behavior {
             WeaponBehavior::Flamer => {
-                let cone = t.flamer_cone;
+                // Area upgrades widen the cone.
+                let widen = stats.radius / shot.weapon.base().radius.max(1e-3);
+                let cone = (t.flamer_cone * widen).min(1.4);
                 for i in self.enemies_near(origin, stats.range) {
                     let to = self.enemies[i].pos - origin;
                     let angle = math::angle_between(dir, to.normalize_or_zero());
@@ -64,8 +66,10 @@ impl Run {
                     let e = self.enemies[i];
                     let to = e.pos - origin;
                     let reach = stats.range + e.kind.info().radius;
-                    if to.length() > reach
-                        || math::angle_between(dir, to.normalize_or_zero()) > t.melee_arc
+                    // Area upgrades widen the sweep.
+                    let arc = (t.melee_arc * stats.radius / shot.weapon.base().radius.max(1e-3))
+                        .min(std::f32::consts::PI);
+                    if to.length() > reach || math::angle_between(dir, to.normalize_or_zero()) > arc
                     {
                         continue;
                     }

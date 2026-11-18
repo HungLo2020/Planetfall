@@ -35,7 +35,7 @@ use quasar_render_3d::{
 };
 use quasar_render_voxel::{HybridFrame, Stage};
 use quasar_ui::{TextRenderer, UiRenderer};
-use scene::{Painter, SUN_DIRECTION};
+use scene::{Painter, PlayerPose, SUN_DIRECTION};
 use std::path::Path;
 use vulkanic_gal::CommandBuffer;
 
@@ -76,6 +76,7 @@ pub struct Graphics {
     voxels: voxels::VoxelWorld,
     effects: effects::Effects,
     rig: CameraRig,
+    pose: PlayerPose,
     pub shadows_enabled: bool,
     pub bloom_enabled: bool,
 }
@@ -130,6 +131,7 @@ impl Graphics {
             voxels: voxels::VoxelWorld::new(),
             effects: effects::Effects::new(gal)?,
             rig: CameraRig::default(),
+            pose: PlayerPose::default(),
             shadows_enabled: true,
             bloom_enabled: true,
         })
@@ -155,6 +157,8 @@ impl Graphics {
             &self.skins,
             frame.time,
         );
+        self.pose.update(frame.game, frame.dt);
+        painter.pose = self.pose;
         let game = frame.game;
         let mut out = match (game.phase, &game.run) {
             (Phase::Ftl { ticks, to }, _) => scene::ftl(&mut painter, ticks, to),

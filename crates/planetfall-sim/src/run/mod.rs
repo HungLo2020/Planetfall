@@ -468,8 +468,12 @@ impl WeaponSlot {
         let mut s = self.kind.base();
         let growth = content().tuning.weapons.growth * self.mods.len() as f32;
         s.damage *= 1.0 + growth + self.sum(ModStat::Damage) / 100.0;
-        s.cooldown /= 1.0 + self.sum(ModStat::FireRate) / 100.0;
+        // Fire-rate upgrades top out at +120% (2.2x).
+        s.cooldown /= 1.0 + self.sum(ModStat::FireRate).min(120.0) / 100.0;
         s.count += self.sum(ModStat::Count).round() as u32;
+        if let Some(max) = self.kind.info().max_count {
+            s.count = s.count.min(max.max(self.kind.base().count));
+        }
         s.range *= 1.0 + self.sum(ModStat::Range) / 100.0;
         s.radius *= 1.0 + self.sum(ModStat::Area) / 100.0;
         s.pierce += self.sum(ModStat::Pierce).round() as u32;
@@ -506,9 +510,12 @@ impl WeaponSlot {
 pub enum DeployableKind {
     /// A shock post the horde cannot pass.
     Barrier,
-    /// Fires `weapon` at the nearest enemy in range; a mobile one follows
-    /// its owner.
+    /// A sentry planted by the owner's `weapon` (a Sentry weapon): fires
+    /// with that weapon's current stats; a mobile one follows its owner.
     Turret { weapon: WeaponId, mobile: bool },
+    /// A shield dome of radius `range` (an overcharged one shocks enemies
+    /// inside it).
+    Dome { overcharge: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

@@ -84,6 +84,9 @@ impl Run {
             let reach = info.radius + player_radius + 0.2;
             // Chill slows; a frozen enemy stands still and cannot attack.
             let mut speed = info.speed * e.speed_scale * (1.0 - 0.6 * e.chill.min(1.0));
+            if self.in_dome(e.pos) {
+                speed *= super::abilities::DOME_SLOW;
+            }
             if dist < reach || e.spawn_ticks > 0 || e.frozen > 0 {
                 speed = 0.0;
             }
@@ -466,6 +469,10 @@ impl Run {
             s.ttl = s.ttl.saturating_sub(1);
             s.pos += s.vel * DT;
             if s.ttl == 0 || self.terrain.solid_at(s.pos) {
+                return false;
+            }
+            // Shield domes stop enemy shots at their edge.
+            if self.in_dome(s.pos) {
                 return false;
             }
             if let Some(p) = (0..self.players.len())

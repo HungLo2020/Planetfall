@@ -69,6 +69,61 @@ enum Surface {
     Metal,
 }
 
+/// The player's look, smoothed across frames by the renderer: facing eases
+/// toward where you move or shoot instead of snapping between targets, walk
+/// and idle cross-fade, and the body leans into a run or dash.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PlayerPose {
+    pub yaw: f32,
+    /// 0 standing to 1 walking.
+    pub motion: f32,
+    /// Forward lean, 0 to 1.
+    pub lean: f32,
+    ready: bool,
+}
+
+impl PlayerPose {
+    pub fn update(&mut self, game: &Game, dt: f32) {
+        let (yaw, moving, dashing) = match (&game.run, game.phase) {
+            (Some(run), Phase::Surface | Phase::Lost { .. } | Phase::Ascent { .. }) => {
+                let pl = run.player();
+                // Face the most recent shot while standing still.
+                let yaw = if pl.moving {
+                    pl.yaw
+                } else {
+                    pl.weapons
+                        .iter()
+                        .filter(|w| w.since_fired < 30)
+                        .map(|w| w.aim)
+                        .next()
+                        .unwrap_or(pl.yaw)
+                };
+                (yaw, pl.moving, pl.dash_ticks > 0)
+            }
+            _ => (game.ship.player.yaw, game.ship.player.moving, false),
+        };
+        if !self.ready {
+            *self = PlayerPose {
+                yaw,
+                ready: true,
+                ..PlayerPose::default()
+            };
+        }
+        let k = |rate: f32| 1.0 - (-rate * dt).exp();
+        // About a third of a second for a full about-face.
+        self.yaw = math::turn_toward(self.yaw, yaw, 10.0 * dt);
+        self.motion += (f32::from(u8::from(moving)) - self.motion) * k(12.0);
+        let lean = if dashing {
+            1.0
+        } else if moving {
+            0.45
+        } else {
+            0.0
+        };
+        self.lean += (lean - self.lean) * k(10.0);
+    }
+}
+
 pub struct Painter<'a, 's> {
     cube: &'a Mesh,
     sphere: &'a Mesh,
@@ -81,6 +136,7 @@ pub struct Painter<'a, 's> {
     pub skinned: Vec<SkinRequest>,
     pub lights: Vec<Light>,
     pub time: f32,
+    pub pose: PlayerPose,
 }
 
 pub fn rot_z(a: f32) -> Mat4 {
@@ -125,6 +181,7 @@ impl<'a, 's> Painter<'a, 's> {
             transparent: Vec::with_capacity(512),
             lights: Vec::with_capacity(super::MAX_LIGHTS),
             time,
+            pose: PlayerPose::default(),
         }
     }
 

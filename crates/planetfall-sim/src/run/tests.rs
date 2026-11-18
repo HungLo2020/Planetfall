@@ -413,6 +413,73 @@ fn every_weapon_kills() {
     }
 }
 
+/// Sentry turrets: the weapon keeps one turret per `count`, count upgrades
+/// add turrets, and turrets left behind are re-planted near the player.
+fn turrets(run: &Run) -> Vec<&Deployable> {
+    run.deployables
+        .iter()
+        .filter(|d| matches!(d.kind, DeployableKind::Turret { .. }))
+        .collect()
+}
+
+#[test]
+fn sentries_follow_count_and_replant() {
+    let mut run = Run::new(config(5));
+    run.spawning_enabled = false;
+    let sentry = WeaponId::from_key("sentry").unwrap();
+    run.player_mut().weapons = vec![WeaponSlot::new(sentry, 0.0)];
+    step(&mut run, GameInput::default(), 120);
+    assert_eq!(turrets(&run).len(), sentry.base().count as usize);
+    let extra = ModId::from_key("extra-payload").unwrap();
+    run.player_mut().weapons[0]
+        .mods
+        .push((extra, Rarity::Common));
+    step(&mut run, GameInput::default(), 120);
+    assert_eq!(turrets(&run).len(), sentry.base().count as usize + 1);
+    // Walk away (teleport): the farthest turret follows.
+    let far = run.player().pos + V2::new(14.0, 0.0);
+    let far = if run.terrain.solid_at(far) {
+        run.player().pos - V2::new(14.0, 0.0)
+    } else {
+        far
+    };
+    run.player_mut().pos = far;
+    step(&mut run, GameInput::default(), 240);
+    let p = run.player().pos;
+    assert!(
+        turrets(&run).iter().any(|d| d.pos.distance(p) < 10.0),
+        "no turret re-planted"
+    );
+}
+
+/// The shield dome cuts damage to the player inside it.
+#[test]
+fn dome_protects_the_player() {
+    let mut run = Run::new(RunConfig {
+        players: vec![Loadout::basic(class("engineer"))],
+        ..config(6)
+    });
+    run.spawning_enabled = false;
+    let mut events = Vec::new();
+    run.player_mut().invulnerable_ticks = 0;
+    let full = run.player().health;
+    run.hurt_player(0, 10.0, &mut events);
+    let open = full - run.player().health;
+    step(
+        &mut run,
+        GameInput {
+            ability: true,
+            ..GameInput::default()
+        },
+        1,
+    );
+    run.player_mut().invulnerable_ticks = 0;
+    let before = run.player().health;
+    run.hurt_player(0, 10.0, &mut events);
+    let shielded = before - run.player().health;
+    assert!(shielded < open * 0.6, "dome took {shielded} of {open}");
+}
+
 /// Hazards: lava burns, thin air drains oxygen and hurts when empty, vents
 /// pulse, and quake rubble survives a save round trip.
 #[test]
@@ -481,25 +548,21 @@ fn legendary_specials_change_behaviour() {
         players: vec![Loadout::basic(class("engineer"))],
         ..config(2)
     });
+    let drones_id = WeaponId::from_key("orbit-drones").unwrap();
+    let sentry = WeaponId::from_key("sentry").unwrap();
+    run.player_mut().weapons = vec![WeaponSlot::new(drones_id, 0.0)];
     let drones = run.drone_positions(0).len();
+    assert!(drones > 0);
     run.player_mut().weapons[0]
         .mods
         .push((id("second-ring"), Rarity::Legendary));
     assert_eq!(run.drone_positions(0).len(), drones * 2);
-    // Mobile Sentry: the turret follows its owner.
-    run.player_mut()
-        .ability
-        .mods
-        .push((id("mobile-sentry"), Rarity::Legendary));
+    // Mobile Sentry: the turrets follow their owner.
+    let mut mobile = WeaponSlot::new(sentry, 0.0);
+    mobile.mods.push((id("mobile-sentry"), Rarity::Legendary));
+    run.player_mut().weapons = vec![mobile];
     run.spawning_enabled = false;
-    step(
-        &mut run,
-        GameInput {
-            ability: true,
-            ..GameInput::default()
-        },
-        1,
-    );
+    step(&mut run, GameInput::default(), 2);
     let start = run.deployables[0].pos;
     step(
         &mut run,
@@ -624,7 +687,8 @@ fn class_abilities_work() {
             _ => assert!(
                 run.deployables
                     .iter()
-                    .any(|d| matches!(d.kind, DeployableKind::Turret { .. }))
+                    .any(|d| matches!(d.kind, DeployableKind::Dome { .. })),
+                "{key}: no dome"
             ),
         }
         // Pressing again while recharging does nothing but report it.
@@ -638,30 +702,26 @@ fn class_abilities_work() {
         );
         assert!(events.contains(&GameEvent::AbilityNotReady));
         step(&mut run, GameInput::default(), 60 * 30);
-        assert!(run.deployables.is_empty(), "{key}: deployables expire");
+        assert!(
+            run.deployables
+                .iter()
+                .all(|d| matches!(d.kind, DeployableKind::Turret { .. })),
+            "{key}: deployables expire"
+        );
         assert_eq!(run.player().ability.cooldown, 0);
     }
 }
 
-/// Barrier posts stop the horde; turrets kill.
+/// The engineer's own sentry turrets kill.
 #[test]
-fn barriers_block_and_turrets_kill() {
+fn engineer_sentries_kill() {
     let mut run = Run::new(RunConfig {
         players: vec![Loadout::basic(class("engineer"))],
         ..config(4)
     });
     run.invulnerable = true;
-    // Strip the engineer's own weapon so only the turret can kill.
-    run.player_mut().weapons.clear();
-    step(
-        &mut run,
-        GameInput {
-            ability: true,
-            ..GameInput::default()
-        },
-        1,
-    );
     step(&mut run, GameInput::default(), 60 * 12);
+    assert!(!turrets(&run).is_empty(), "no turrets planted");
     assert!(run.kills > 0, "the turret killed nothing");
 }
 

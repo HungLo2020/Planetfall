@@ -21,7 +21,7 @@ pub use defs::{
     ObjectiveDef, ObjectiveKind, ObjectiveRole, OreChances, Palette, PassiveDef, PassiveEffect,
     PerkDef, PerkEffect, PlanetDef, Pulse, Ranged, Rarity, SiteDef, Spawn, Special, Spin,
     TerrainStyle, TradeTuning, Tuning, UpgradeDef, UpgradeEffect, VentKind, WeaponBehavior,
-    WeaponDef, WeaponStats,
+    WeaponDef, WeaponStats, WeaponUpgrades, listed_stat,
 };
 use quasar_config::content::{
     ContentFormat, ContentRecord, ContentRegistry, ContentSnapshot, Validator,
@@ -712,11 +712,11 @@ impl ContentRecord for ClassDef {
                 "weapon",
                 tier.weapon.as_deref(),
             );
-            if self.ability.kind == AbilityKind::Turret {
+            if self.ability.kind == AbilityKind::Dome {
                 v.check(
-                    tier.weapon.is_some() && tier.duration > 0.0,
+                    tier.duration > 0.0 && tier.range > 0.0,
                     &format!("ability.tiers[{i}]"),
-                    "turrets need a weapon and a duration",
+                    "a dome needs a duration and a radius",
                 );
             }
         }
@@ -1058,7 +1058,16 @@ impl Offer {
     pub fn description(self) -> String {
         match self.upgrade {
             Upgrade::NewWeapon(w) => w.info().description.clone(),
-            Upgrade::WeaponMod(_, m) | Upgrade::AbilityMod(m) => m
+            Upgrade::WeaponMod(w, m) => {
+                // Weapons word their own upgrades ("drones spin 20% faster").
+                let info = m.info();
+                w.info()
+                    .upgrades
+                    .get(info.stat)
+                    .unwrap_or(&info.description)
+                    .replace("{amount}", &number(m.amount(self.rarity)))
+            }
+            Upgrade::AbilityMod(m) => m
                 .info()
                 .description
                 .replace("{amount}", &number(m.amount(self.rarity))),
@@ -1092,7 +1101,7 @@ mod tests {
     fn builtin_content_is_valid_and_complete() {
         let c = Content::builtin();
         assert_eq!(c.planets.len(), 5);
-        assert_eq!(c.weapons.len(), 12);
+        assert_eq!(c.weapons.len(), 13);
         assert_eq!(c.enemies.iter().filter(|e| !e.boss).count(), 8);
         // Every planet has a boss pool of real bosses.
         for p in &c.planets {
