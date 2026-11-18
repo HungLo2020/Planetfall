@@ -196,7 +196,8 @@ fn hazards(p: &mut Painter<'_, '_>, run: &Run) {
                 };
                 p.model_tinted(names::VENT, at(h.pos, 0.0), color, math_scale3(color, 0.9));
                 // Building up to the next pulse.
-                let charge = 1.0 - h.timer as f32 / (t.vent_every * 60.0);
+                // Staggered vents start with more than one cycle to go.
+                let charge = (1.0 - h.timer as f32 / (t.vent_every * 60.0)).clamp(0.0, 1.0);
                 p.point([h.pos[0], 1.0, h.pos[1]], color, 0.6 + 2.0 * charge, 5.0);
                 if charge > 0.7 {
                     let segments = 18;

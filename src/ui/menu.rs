@@ -549,7 +549,7 @@ impl Menu {
         b.family = prompts.family;
         self.hints = prompts.menu_hints();
         match content {
-            Content::Screen(screen) => self.build_screen(b, screen, prompts, context),
+            Content::Screen(screen) => self.build_screen(b, screen, game, prompts, context),
             Content::LevelUp => self.level_up(b, game),
             Content::Terminal => {
                 // A different terminal starts on its first tab.
@@ -1812,6 +1812,7 @@ impl Menu {
         &mut self,
         b: &mut Builder,
         screen: Screen,
+        game: &Game,
         prompts: &Prompts,
         context: &MenuContext,
     ) {
@@ -2086,7 +2087,10 @@ impl Menu {
                     (Some(slot), false) => format!("Progress saves to slot {slot}."),
                     (None, _) => "This game is not being saved.".to_owned(),
                 };
-                let w = Self::window(b, 500.0, "pause", "Paused", &note);
+                let w = Self::window(b, 540.0, "pause", "Paused", &note);
+                if let (true, Some(run)) = (surface, game.run.as_ref()) {
+                    self.drop_details(b, w.body, run);
+                }
                 self.icon_button(
                     b,
                     w.body,
@@ -2181,6 +2185,81 @@ impl Menu {
                 self.footer(b, &w, "");
             }
         }
+    }
+
+    /// The pause screen's summary of the drop: planet, hazard, contract,
+    /// site, mutator and threat (kept off the HUD).
+    fn drop_details(&mut self, b: &mut Builder, body: NodeId, run: &planetfall_sim::run::Run) {
+        let m = &run.mission;
+        let info = run.planet.info();
+        b.section(body, "This drop");
+        let head = b.hrow(
+            body,
+            LayoutItem::size(Length::Fill, Length::Auto),
+            10.0,
+            0.0,
+        );
+        b.glyph(head, &format!("planet-{}", run.planet.key()), 32.0);
+        b.tinted_fit(head, info.name.to_uppercase(), TextStyle::Body, kit::TEXT);
+        if !run.tutorial {
+            b.chip(
+                head,
+                &format!("Hazard {} · {}", m.hazard, hazard_name(m.hazard)),
+                hazard_color(m.hazard),
+            );
+        }
+        let row = b.hrow(body, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
+        b.glyph(row, objective_icon(m.primary_kind()), 26.0);
+        b.paragraph(
+            row,
+            &m.contract.primary.describe(m.hazard),
+            TextStyle::Small,
+        );
+        if let Some(secondary) = m.contract.secondary {
+            let row = b.hrow(body, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
+            b.glyph(row, objective_icon(secondary.info().kind), 22.0);
+            b.paragraph(
+                row,
+                &format!("Optional: {}", secondary.describe(m.hazard)),
+                TextStyle::Small,
+            );
+        }
+        if !run.tutorial {
+            let tags = b.hrow(
+                body,
+                LayoutItem::size(Length::Fill, Length::Auto),
+                16.0,
+                0.0,
+            );
+            b.stat(
+                tags,
+                "site",
+                m.contract.site.name(),
+                TextStyle::Small,
+                Some(kit::DIM),
+            );
+            if let Some(mutator) = m.contract.mutator {
+                b.stat(
+                    tags,
+                    "mutator",
+                    mutator.name(),
+                    TextStyle::Small,
+                    Some(kit::GOOD),
+                );
+            }
+            b.stat(
+                tags,
+                "threat",
+                format!(
+                    "Threat {} · next in {}",
+                    run.threat_level(),
+                    super::hud::threat_eta(run)
+                ),
+                TextStyle::Small,
+                Some(kit::WARN),
+            );
+        }
+        b.rule(body);
     }
 
     /// The title screen: the logo and a left-aligned menu over the ship.

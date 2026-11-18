@@ -51,7 +51,12 @@ fn run() -> Result<(), String> {
         return cover(&asset_root, path);
     }
     if settings.headless {
-        return headless(&settings, Profile::default(), &asset_root);
+        // `--slot N` runs (or renders) a saved game headless, read-only.
+        let game = match settings.slot {
+            Some(slot) => storage.load_slot(slot)?.restore(settings.seed),
+            None => Game::new(Profile::default(), settings.seed),
+        };
+        return headless(&settings, game, &asset_root);
     }
     #[cfg(feature = "desktop")]
     {
@@ -153,10 +158,9 @@ fn menu_name(game: &Game) -> &'static str {
 /// Run the simulation without a window, optionally under the autopilot.
 fn headless(
     settings: &Settings,
-    profile: Profile,
+    mut game: Game,
     asset_root: &std::path::Path,
 ) -> Result<(), String> {
-    let mut game = Game::new(profile, settings.seed);
     let mut pilot = Autopilot::new();
     let mut history = History::default();
     let mut last_trace = String::new();

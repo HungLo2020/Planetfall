@@ -296,6 +296,17 @@ impl<'a, 's> Painter<'a, 's> {
         if self.lights.len() >= super::MAX_LIGHTS {
             return;
         }
+        // A bad light fails the whole frame in the renderer; a glitched
+        // effect should only lose its light.
+        if !p.iter().chain(&color).all(|v| v.is_finite())
+            || !intensity.is_finite()
+            || !range.is_finite()
+            || range <= 0.0
+        {
+            return;
+        }
+        let color = color.map(|c| c.max(0.0));
+        let intensity = intensity.max(0.0);
         self.lights.push(Light::Point {
             position: p,
             color,

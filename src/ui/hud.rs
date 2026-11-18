@@ -77,17 +77,6 @@ pub fn hazard_color(level: u8) -> Color {
     }
 }
 
-/// Hull colour: green when healthy, amber when hurt, red when critical.
-fn hull_color(fraction: f32) -> Color {
-    if fraction > 0.6 {
-        GOOD
-    } else if fraction > 0.3 {
-        WARN
-    } else {
-        BAD
-    }
-}
-
 pub fn build(cx: &HudContext) -> Layer {
     let mut b = Builder {
         family: cx.prompts.family,
@@ -103,11 +92,11 @@ pub fn build(cx: &HudContext) -> Layer {
             let Some(run) = &game.run else {
                 return b.finish_laid_out(cx.size, cx.scale, cx.measure);
             };
-            tracker(&mut b, root, run, &text);
+            top(&mut b, root, run);
+            objectives(&mut b, root, run, &text);
             cargo(&mut b, root, run);
-            vitals(&mut b, root, run);
             loadout(&mut b, root, run, &text);
-            bottom_offset = -132.0;
+            bottom_offset = -6.0;
             alerts(&mut b, root, run);
             boss_bar(&mut b, root, run);
             find_banner(&mut b, root, run);
@@ -172,7 +161,7 @@ pub fn build(cx: &HudContext) -> Layer {
         if !blocks.is_empty() {
             let column = b.panel(
                 root,
-                pinned(Anchor::Bottom, 640.0).with_offset(Vec2::new(0.0, bottom_offset)),
+                pinned(Anchor::Bottom, 540.0).with_offset(Vec2::new(0.0, bottom_offset)),
                 8.0,
                 0.0,
             );
@@ -183,8 +172,7 @@ pub fn build(cx: &HudContext) -> Layer {
                     12.0,
                     12.0,
                 );
-                b.style(card, kit::PANEL, Some((1.0, kit::ACCENT_SOFT)), 3.0);
-                b.brackets(card, kit::ACCENT_SOFT);
+                b.style(card, Color::rgba(8, 13, 20, 190), None, 3.0);
                 let tab = b.strut(
                     card,
                     LayoutItem::size(Length::fixed(3.0), Length::Fill),
@@ -196,7 +184,7 @@ pub fn build(cx: &HudContext) -> Layer {
                 if let Some(title) = title {
                     b.label(col, title, TextStyle::Small);
                 }
-                b.rich(col, &body, TextStyle::Body, 590.0);
+                b.rich(col, &body, TextStyle::Body, 490.0);
             }
         }
     }
@@ -266,242 +254,198 @@ fn ship(b: &mut Builder, root: NodeId, game: &Game) {
     );
 }
 
-/// Top centre: planet, hazard and timer; the objective and optional
-/// objective; the threat meter.
-fn tracker(b: &mut Builder, root: NodeId, run: &Run, text: &dyn Fn(&str) -> String) {
-    let card = b.card(
+/// Soft dark backing for frameless HUD text.
+const BACKING: Color = Color::rgba(2, 5, 10, 120);
+
+/// Top edge: a thin full-width XP bar with the level, and under it one
+/// centred line with the drop timer and the threat level.
+fn top(b: &mut Builder, root: NodeId, run: &Run) {
+    let p = run.player();
+    let column = b.column(
         root,
-        LayoutItem::size(Length::fixed(560.0), Length::Auto)
-            .with_anchor(Anchor::Top)
-            .with_margin(Edges::new(0.0, 14.0, 0.0, 0.0)),
-        6.0,
-        12.0,
-    );
-    let m = &run.mission;
-    let info = run.planet.info();
-    let head = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
-    b.glyph(head, &format!("planet-{}", run.planet.key()), 26.0);
-    b.tinted_fit(head, info.name.to_uppercase(), TextStyle::Body, kit::TEXT);
-    if !run.tutorial {
-        b.chip(
-            head,
-            &format!("Hazard {} · {}", m.hazard, hazard_name(m.hazard)),
-            hazard_color(m.hazard),
-        );
-    }
-    b.strut(
-        head,
-        LayoutItem::size(Length::Fill, Length::fixed(1.0)),
+        LayoutItem::size(Length::Fill, Length::Auto).with_anchor(Anchor::Top),
+        4.0,
         0.0,
-        1.0,
     );
+    let xp = b.hrow(
+        column,
+        LayoutItem::size(Length::Fill, Length::Auto),
+        8.0,
+        4.0,
+    );
+    b.style(xp, BACKING, None, 0.0);
+    b.tinted_fit(xp, format!("LV {}", p.level), TextStyle::Small, INFO);
+    b.bar(
+        xp,
+        Length::Fill,
+        7.0,
+        p.xp as f32 / p.xp_needed().max(1) as f32,
+        INFO,
+    );
+    let line = b.hrow(
+        column,
+        LayoutItem::size(Length::Auto, Length::Auto).with_align(Align::Center),
+        14.0,
+        5.0,
+    );
+    b.style(line, BACKING, None, 3.0);
     let secs = run.ticks / 60;
     b.stat(
-        head,
+        line,
         "timer",
         format!("{:02}:{:02}", secs / 60, secs % 60),
         TextStyle::Body,
         None,
     );
-    b.rule(card);
-
-    // Primary objective, or extraction once it is done.
-    let mut prompt = None;
-    let (icon, line, color, progress) = if !run.objective_done() {
-        let p = m.primary;
-        let progress = match m.primary_kind() {
-            ObjectiveKind::Boss | ObjectiveKind::Hunt => m
-                .target
-                .and_then(|id| run.enemies.iter().find(|e| e.id == id))
-                .map(|e| 1.0 - e.health.max(0.0) / e.max_health.max(1.0)),
-            ObjectiveKind::Rescue => None,
-            ObjectiveKind::Defend => m.rig.map(|r| r.drilled as f32 / r.need.max(1) as f32),
-            _ => Some(p.count as f32 / p.need.max(1) as f32),
+    if !run.tutorial {
+        let level = run.threat_level();
+        let color = if level >= 6 {
+            BAD
+        } else if level >= 3 {
+            WARN
+        } else {
+            kit::TEXT
         };
-        (
-            objective_icon(m.primary_kind()),
-            primary_status(run),
-            kit::TEXT,
-            progress,
-        )
-    } else {
-        match run.extraction {
-            Extraction::Idle => {
-                prompt = Some(text("{extract} call the extraction pod"));
-                ("check", "Objective complete".to_owned(), GOOD, None)
-            }
-            Extraction::Inbound { ticks, .. } => (
-                "pod",
-                format!("Extraction pod inbound · {}s", ticks.div_ceil(60)),
-                WARN,
-                None,
-            ),
-            Extraction::Waiting { hold, .. } => (
-                "pod",
-                "Hold the zone".to_owned(),
-                WARN,
-                Some(hold as f32 / extraction_hold().max(1) as f32),
-            ),
-            Extraction::Departed { .. } => ("check", "Extracted".to_owned(), GOOD, None),
-        }
-    };
+        b.stat(
+            line,
+            "threat",
+            level.to_string(),
+            TextStyle::Body,
+            Some(color),
+        );
+        b.bar(line, Length::fixed(56.0), 4.0, run.threat.fract(), BAD);
+    }
+}
+
+/// One frameless HUD line with a soft backing, aligned left or right.
+fn line(b: &mut Builder, column: NodeId, align: Align) -> NodeId {
     let row = b.hrow(
-        card,
-        LayoutItem::size(Length::Fill, Length::Auto),
-        10.0,
-        0.0,
+        column,
+        LayoutItem::size(Length::Auto, Length::Auto).with_align(align),
+        7.0,
+        4.0,
     );
-    b.glyph(row, icon, 34.0);
-    let col = b.column(
-        row,
-        LayoutItem::size(Length::Fill, Length::Auto).with_align(Align::Center),
+    b.style(row, BACKING, None, 3.0);
+    row
+}
+
+/// Top left: the objectives, one quiet line each.
+fn objectives(b: &mut Builder, root: NodeId, run: &Run, text: &dyn Fn(&str) -> String) {
+    let column = b.column(
+        root,
+        LayoutItem::size(Length::Auto, Length::Auto)
+            .with_anchor(Anchor::TopLeft)
+            .with_margin(Edges::new(16.0, 30.0, 0.0, 0.0)),
         4.0,
         0.0,
     );
-    b.tinted(col, &line, TextStyle::Body, color);
-    if let Some(prompt) = prompt {
-        b.rich(col, &prompt, TextStyle::Small, 460.0);
-    }
-    if let Some(f) = progress {
-        b.bar(
-            col,
-            Length::Fill,
-            6.0,
-            f,
-            if color == kit::TEXT { ACCENT } else { color },
-        );
+    let m = &run.mission;
+    let start = Align::Start;
+    if !run.objective_done() {
+        let row = line(b, column, start);
+        b.glyph(row, objective_icon(m.primary_kind()), 26.0);
+        b.label_fit(row, primary_status(run), TextStyle::Body);
+    } else {
+        match run.extraction {
+            Extraction::Idle => {
+                let row = line(b, column, start);
+                b.glyph(row, "check", 22.0);
+                b.tinted_fit(row, "Objective complete", TextStyle::Body, GOOD);
+                let row = line(b, column, start);
+                b.rich(
+                    row,
+                    &text("{extract} call extraction"),
+                    TextStyle::Small,
+                    260.0,
+                );
+            }
+            Extraction::Inbound { ticks, .. } => {
+                let row = line(b, column, start);
+                b.glyph(row, "pod", 24.0);
+                b.tinted_fit(
+                    row,
+                    format!("Pod inbound · {}s", ticks.div_ceil(60)),
+                    TextStyle::Body,
+                    WARN,
+                );
+            }
+            Extraction::Waiting { hold, .. } => {
+                let row = line(b, column, start);
+                b.glyph(row, "pod", 24.0);
+                b.tinted_fit(row, "Hold the zone", TextStyle::Body, WARN);
+                b.bar(
+                    row,
+                    Length::fixed(90.0),
+                    6.0,
+                    hold as f32 / extraction_hold().max(1) as f32,
+                    WARN,
+                );
+            }
+            Extraction::Departed { .. } => {
+                let row = line(b, column, start);
+                b.glyph(row, "check", 22.0);
+                b.tinted_fit(row, "Extracted", TextStyle::Body, GOOD);
+            }
+        }
     }
     if let (Some(secondary), Some(progress)) = (m.contract.secondary, m.secondary) {
-        let row = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
-        b.glyph(row, objective_icon(secondary.info().kind), 22.0);
+        let row = line(b, column, start);
+        b.glyph(row, objective_icon(secondary.info().kind), 18.0);
         if progress.done {
             b.tinted_fit(
                 row,
-                format!("Optional · {}", secondary.name()),
+                secondary.name(),
                 TextStyle::Small,
-                GOOD,
+                Color::rgba(110, 225, 120, 150),
             );
-            b.glyph(row, "check", 18.0);
+            b.glyph(row, "check", 16.0);
         } else {
-            b.label_fit(
+            b.tinted_fit(
                 row,
-                format!("Optional · {}", secondary.name()),
+                format!(
+                    "{}  {} / {}",
+                    secondary.name(),
+                    progress.count,
+                    progress.need
+                ),
                 TextStyle::Small,
-            );
-            b.label_fit(
-                row,
-                format!("{} / {}", progress.count, progress.need),
-                TextStyle::Small,
-            );
-        }
-    }
-    if !run.tutorial {
-        let level = run.threat_level();
-        let row = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
-        b.glyph(row, "threat", 22.0);
-        b.tinted_fit(
-            row,
-            format!("THREAT {level}"),
-            TextStyle::Small,
-            if level >= 6 { BAD } else { WARN },
-        );
-        b.bar(row, Length::Fill, 6.0, run.threat.fract(), BAD);
-        b.label_fit(row, format!("next {}", threat_eta(run)), TextStyle::Small);
-        let tags = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 6.0, 0.0);
-        b.stat(
-            tags,
-            "site",
-            m.contract.site.name(),
-            TextStyle::Small,
-            Some(DIM),
-        );
-        if let Some(mutator) = m.contract.mutator {
-            b.stat(
-                tags,
-                "mutator",
-                mutator.name(),
-                TextStyle::Small,
-                Some(GOOD),
+                DIM,
             );
         }
     }
 }
 
+/// Top right: what you carry (lost if you fall).
 fn cargo(b: &mut Builder, root: NodeId, run: &Run) {
-    let card = b.card(root, pinned(Anchor::TopRight, 230.0), 6.0, 12.0);
-    b.section(card, "Cargo");
+    let column = b.column(
+        root,
+        LayoutItem::size(Length::Auto, Length::Auto)
+            .with_anchor(Anchor::TopRight)
+            .with_margin(Edges::new(0.0, 30.0, 16.0, 0.0)),
+        4.0,
+        0.0,
+    );
+    let row = line(b, column, Align::End);
     for m in Material::ALL {
         let n = run.carried.get(m);
         if n > 0 || m != Material::Voidstone {
-            b.stat(
-                card,
-                material_icon(m),
-                n.to_string(),
-                TextStyle::Heading,
-                None,
-            );
+            b.stat(row, material_icon(m), n.to_string(), TextStyle::Body, None);
         }
     }
-    b.label(card, "Lost if you fall", TextStyle::Small);
 }
 
-/// Bottom left: class emblem, hull, XP, oxygen and statuses.
-fn vitals(b: &mut Builder, root: NodeId, run: &Run) {
+/// Bottom left: weapon slots with levels, the class ability and any
+/// statuses, in one compact bar.
+fn loadout(b: &mut Builder, root: NodeId, run: &Run, text: &dyn Fn(&str) -> String) {
     let p = run.player();
-    let card = b.card(root, pinned(Anchor::BottomLeft, 400.0), 6.0, 12.0);
-    let head = b.hrow(
-        card,
-        LayoutItem::size(Length::Fill, Length::Auto),
-        10.0,
+    let column = b.column(
+        root,
+        LayoutItem::size(Length::Auto, Length::Auto)
+            .with_anchor(Anchor::BottomLeft)
+            .with_margin(Edges::new(16.0, 0.0, 0.0, 16.0)),
+        6.0,
         0.0,
     );
-    b.glyph(head, &format!("class-{}", p.class.key()), 48.0);
-    let col = b.column(
-        head,
-        LayoutItem::size(Length::Fill, Length::Auto).with_align(Align::Center),
-        0.0,
-        0.0,
-    );
-    b.tinted(col, p.class.name().to_uppercase(), TextStyle::Body, ACCENT);
-    b.label(col, format!("Level {}", p.level), TextStyle::Small);
-    let meter = |b: &mut Builder, icon: &str, f: f32, color: Color, value: String, h: f32| {
-        let row = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
-        b.glyph(row, icon, 22.0);
-        b.bar(row, Length::Fill, h, f, color);
-        b.label_fit(row, value, TextStyle::Small);
-    };
-    let hull = p.health.max(0.0) / p.max_health.max(1.0);
-    meter(
-        b,
-        "health",
-        hull,
-        hull_color(hull),
-        format!("{:.0}/{:.0}", p.health.max(0.0), p.max_health),
-        14.0,
-    );
-    meter(
-        b,
-        "xp",
-        p.xp as f32 / p.xp_needed().max(1) as f32,
-        INFO,
-        format!("{}/{}", p.xp, p.xp_needed()),
-        8.0,
-    );
-    if run.thin_air() {
-        let max = content().tuning.hazards.oxygen_max;
-        let f = p.oxygen / max;
-        let color = if f > 0.25 {
-            Color::rgb(120, 200, 255)
-        } else {
-            BAD
-        };
-        let value = if p.oxygen <= 0.0 {
-            "EMPTY".to_owned()
-        } else {
-            format!("{:.0}%", f * 100.0)
-        };
-        meter(b, "oxygen", f, color, value, 8.0);
-    }
     let mut effects = Vec::new();
     if p.jammed > 0 {
         effects.push(("Jammed", Color::rgb(200, 120, 255)));
@@ -513,32 +457,29 @@ fn vitals(b: &mut Builder, root: NodeId, run: &Run) {
         effects.push(("Wet", Color::rgb(90, 150, 255)));
     }
     if !effects.is_empty() {
-        let row = b.hrow(card, LayoutItem::size(Length::Fill, Length::Auto), 6.0, 0.0);
+        let row = b.hrow(
+            column,
+            LayoutItem::size(Length::Auto, Length::Auto),
+            6.0,
+            0.0,
+        );
         for (name, color) in effects {
             b.chip(row, name, color);
         }
     }
-}
-
-/// Bottom centre: weapon slots with levels and the class ability.
-fn loadout(b: &mut Builder, root: NodeId, run: &Run, text: &dyn Fn(&str) -> String) {
-    let p = run.player();
     let bar = b.hrow(
-        root,
-        LayoutItem::size(Length::Auto, Length::Auto)
-            .with_anchor(Anchor::Bottom)
-            .with_margin(Edges::new(0.0, 0.0, 0.0, 16.0)),
-        10.0,
-        10.0,
+        column,
+        LayoutItem::size(Length::Auto, Length::Auto),
+        8.0,
+        8.0,
     );
-    b.style(bar, kit::PANEL, Some((1.0, kit::LINE)), 3.0);
-    b.brackets(bar, kit::ACCENT_SOFT);
+    b.style(bar, BACKING, None, 3.0);
     let slots = content().tuning.weapons.max_carried;
     for i in 0..slots {
         let slot = b.column(
             bar,
-            LayoutItem::size(Length::fixed(64.0), Length::Auto),
-            4.0,
+            LayoutItem::size(Length::fixed(50.0), Length::Auto),
+            3.0,
             0.0,
         );
         match p.weapons.get(i) {
@@ -550,90 +491,85 @@ fn loadout(b: &mut Builder, root: NodeId, run: &Run, text: &dyn Fn(&str) -> Stri
                 } else {
                     kit::ACCENT_SOFT
                 };
-                b.icon(slot, w.kind.key(), 64.0, frame);
+                b.icon(slot, w.kind.key(), 50.0, frame);
                 if flamer {
                     b.bar(
                         slot,
                         Length::Fill,
-                        5.0,
+                        4.0,
                         w.heat,
                         if w.overheated { BAD } else { WARN },
                     );
                 } else {
-                    let level = (w.level() as u32).min(8);
-                    b.pips(slot, level.min(8), 8, ACCENT, 5.0);
+                    b.pips(slot, (w.level() as u32).min(8), 8, ACCENT, 4.0);
                 }
             }
             None => {
                 b.block(
                     slot,
-                    64.0,
-                    64.0,
+                    50.0,
+                    50.0,
                     kit::PANEL_INSET,
                     Some((1.0, kit::LINE)),
                     4.0,
                 );
                 b.strut(
                     slot,
-                    LayoutItem::size(Length::Fill, Length::fixed(5.0)),
+                    LayoutItem::size(Length::Fill, Length::fixed(4.0)),
                     0.0,
-                    5.0,
+                    4.0,
                 );
             }
         }
     }
-    b.block(bar, 1.0, 70.0, kit::LINE, None, 0.0);
+    b.block(bar, 1.0, 56.0, kit::LINE, None, 0.0);
     let ability = &p.class.info().ability;
     let slot = b.column(
         bar,
-        LayoutItem::size(Length::fixed(170.0), Length::Auto),
-        4.0,
+        LayoutItem::size(Length::fixed(50.0), Length::Auto),
+        3.0,
         0.0,
     );
-    b.strut(
-        slot,
-        LayoutItem::size(Length::fixed(170.0), Length::fixed(0.0)),
-        170.0,
-        0.0,
-    );
-    let row = b.hrow(slot, LayoutItem::size(Length::Fill, Length::Auto), 8.0, 0.0);
     let ready = p.ability.charges > 0;
     b.icon(
-        row,
+        slot,
         ability_icon(ability.kind),
-        56.0,
+        50.0,
         if ready { GOOD } else { kit::LINE },
     );
-    let col = b.column(
-        row,
-        LayoutItem::size(Length::Fill, Length::Auto).with_align(Align::Center),
+    let total = p.ability.cooldown_total.max(1);
+    b.bar(
+        slot,
+        Length::Fill,
+        4.0,
+        (total - p.ability.cooldown.min(total)) as f32 / total as f32,
+        if ready { GOOD } else { INFO },
+    );
+    let info = b.column(
+        bar,
+        LayoutItem::size(Length::Auto, Length::Auto).with_align(Align::Center),
         2.0,
         0.0,
     );
-    b.label(col, ability.name.to_uppercase(), TextStyle::Small);
     if ready {
         let charges = if p.ability.max_charges > 1 {
             format!(" ×{}", p.ability.charges)
         } else {
             String::new()
         };
-        b.tinted(col, format!("READY{charges}"), TextStyle::Small, GOOD);
-        b.rich(col, &text("{ability}"), TextStyle::Small, 100.0);
+        b.rich(
+            info,
+            &text(&format!("{{ability}} READY{charges}")),
+            TextStyle::Small,
+            140.0,
+        );
     } else {
-        b.label(
-            col,
+        b.label_fit(
+            info,
             format!("{}s", p.ability.cooldown.div_ceil(60)),
             TextStyle::Small,
         );
     }
-    let total = p.ability.cooldown_total.max(1);
-    b.bar(
-        slot,
-        Length::Fill,
-        5.0,
-        (total - p.ability.cooldown.min(total)) as f32 / total as f32,
-        if ready { GOOD } else { INFO },
-    );
 }
 
 fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
@@ -641,11 +577,15 @@ fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
         return;
     }
     let item = |y: f32| {
-        LayoutItem::size(Length::fixed(440.0), Length::Auto)
+        LayoutItem::size(Length::fixed(420.0), Length::Auto)
             .with_anchor(Anchor::Top)
             .with_offset(Vec2::new(0.0, y))
     };
-    let mut y = 236.0;
+    let mut y = if run.mission.target.is_some() {
+        132.0
+    } else {
+        74.0
+    };
     if run.surge.warning > 0 {
         b.alert(
             root,
@@ -655,10 +595,10 @@ fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
             &format!("SURGE INCOMING · {}s", run.surge.warning.div_ceil(60)),
             "A wave is coming from every side.",
         );
-        y += 84.0;
+        y += 80.0;
     } else if run.surge.active > 0 {
         b.alert(root, item(y), BAD, "surge", "SURGE", "Hold on.");
-        y += 84.0;
+        y += 80.0;
     }
     if run.quake.warning > 0 {
         b.alert(
@@ -672,7 +612,7 @@ fn alerts(b: &mut Builder, root: NodeId, run: &Run) {
     }
 }
 
-/// A boss or hunted elite gets a health bar of its own.
+/// A boss or hunted elite gets a health bar of its own, under the timer.
 fn boss_bar(b: &mut Builder, root: NodeId, run: &Run) {
     let Some(e) = run
         .mission
@@ -683,19 +623,13 @@ fn boss_bar(b: &mut Builder, root: NodeId, run: &Run) {
     };
     let card = b.hrow(
         root,
-        LayoutItem::size(Length::fixed(600.0), Length::Auto)
-            .with_anchor(Anchor::Bottom)
-            .with_offset(Vec2::new(0.0, -128.0)),
-        12.0,
+        LayoutItem::size(Length::fixed(560.0), Length::Auto)
+            .with_anchor(Anchor::Top)
+            .with_offset(Vec2::new(0.0, 72.0)),
         10.0,
+        6.0,
     );
-    b.style(
-        card,
-        kit::PANEL,
-        Some((1.0, Color::rgba(200, 110, 255, 160))),
-        3.0,
-    );
-    b.brackets(card, Color::rgb(200, 110, 255));
+    b.style(card, BACKING, None, 3.0);
     b.glyph(
         card,
         if e.kind.info().boss {
@@ -703,24 +637,24 @@ fn boss_bar(b: &mut Builder, root: NodeId, run: &Run) {
         } else {
             "obj-hunt"
         },
-        40.0,
+        30.0,
     );
     let col = b.column(
         card,
         LayoutItem::size(Length::Fill, Length::Auto).with_align(Align::Center),
-        4.0,
+        3.0,
         0.0,
     );
     b.tinted(
         col,
         e.kind.info().name.to_uppercase(),
-        TextStyle::Body,
+        TextStyle::Small,
         Color::rgb(220, 160, 255),
     );
     b.bar(
         col,
         Length::Fill,
-        12.0,
+        9.0,
         e.health.max(0.0) / e.max_health.max(1.0),
         BAD,
     );
@@ -737,12 +671,12 @@ fn find_banner(b: &mut Builder, root: NodeId, run: &Run) {
     let view = super::find_view(find);
     let banner = b.column(
         root,
-        LayoutItem::size(Length::fixed(400.0), Length::Auto)
+        LayoutItem::size(Length::fixed(380.0), Length::Auto)
             .with_anchor(Anchor::TopRight)
             .with_margin(Edges::new(0.0, 0.0, 16.0, 0.0))
-            .with_offset(Vec2::new(0.0, 214.0)),
+            .with_offset(Vec2::new(0.0, 74.0)),
         4.0,
-        10.0,
+        8.0,
     );
     b.style(
         banner,
@@ -750,7 +684,6 @@ fn find_banner(b: &mut Builder, root: NodeId, run: &Run) {
         Some((2.0, super::rarity_color(view.rarity))),
         3.0,
     );
-    b.brackets(banner, super::rarity_text(view.rarity));
     b.item_view(banner, &view, true);
     b.label(
         banner,
@@ -814,7 +747,7 @@ fn primary_status(run: &Run) -> String {
 }
 
 /// Time until the next threat level at the current rate ("38s").
-fn threat_eta(run: &Run) -> String {
+pub fn threat_eta(run: &Run) -> String {
     let t = &content().tuning.threat;
     let rate = if matches!(run.extraction, Extraction::Idle) {
         t.per_minute

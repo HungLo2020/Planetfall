@@ -16,8 +16,17 @@ bipyramids) with flat normals.
 
 Output is deterministic: running the script twice produces identical bytes.
 
+The models in `assets/models` are the source of truth and may be
+hand-authored or replaced (the class suits are): this script only writes
+models that do not exist yet, unless it is asked for specific names (which
+it rebuilds) or `--force` (which rebuilds every model it knows). Hand-made
+characters must keep the rig of their kind (joint names and clip names, see
+`HUMANOID`, `SKITTER`, `BLOATER` and the `*_clips` functions) to animate.
+
 Usage:
-    python3 DevUtils/assets/generate_models.py [--out assets/models]
+    python3 DevUtils/assets/generate_models.py                 # add missing models
+    python3 DevUtils/assets/generate_models.py husk drop-pod   # rebuild these
+    python3 DevUtils/assets/generate_models.py --force         # rebuild everything
 """
 
 from __future__ import annotations
@@ -1441,15 +1450,32 @@ MODELS = {
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=REPO / "assets" / "models")
+    parser.add_argument("names", nargs="*", help="build only these models, replacing them")
+    parser.add_argument("--force", action="store_true", help="replace every existing model")
     args = parser.parse_args()
+    wanted = set(args.names)
+    unknown = wanted - set(SKINNED) - set(MODELS)
+    if unknown:
+        raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
+
+    def should_write(name: str, path: Path) -> bool:
+        if wanted:
+            return name in wanted
+        return args.force or not path.exists()
+
+    def shown(path: Path) -> Path:
+        return path.relative_to(REPO) if path.is_relative_to(REPO) else path
+
     for name, (build, parents, clips) in SKINNED.items():
         path = args.out / f"{name}.glb"
-        write_skinned_glb(path, build(), parents, clips())
-        print(f"wrote {path.relative_to(REPO) if path.is_relative_to(REPO) else path} (skinned)")
+        if should_write(name, path):
+            write_skinned_glb(path, build(), parents, clips())
+            print(f"wrote {shown(path)} (skinned)")
     for name, build in MODELS.items():
         path = args.out / f"{name}.glb"
-        write_glb(path, build())
-        print(f"wrote {path.relative_to(REPO) if path.is_relative_to(REPO) else path}")
+        if should_write(name, path):
+            write_glb(path, build())
+            print(f"wrote {shown(path)}")
 
 
 if __name__ == "__main__":

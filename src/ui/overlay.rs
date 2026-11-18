@@ -58,6 +58,38 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
         return;
     }
     let p = &run.player();
+    // Hull (and oxygen on thin air) under the player's feet, so the eye
+    // never has to leave the action to check health.
+    if p.alive()
+        && let Some(s) = camera.project([p.pos[0], 0.0, p.pos[1]])
+    {
+        let (bw, y) = (76.0, s[1] + 16.0);
+        let f = (p.health / p.max_health.max(1.0)).clamp(0.0, 1.0);
+        let fill = if f > 0.6 {
+            rgba(110, 225, 120, 0.95)
+        } else if f > 0.3 {
+            rgba(255, 196, 64, 0.95)
+        } else {
+            rgba(255, 92, 72, 0.98)
+        };
+        let thin = run.thin_air();
+        let height = if thin { 13.0 } else { 9.0 };
+        c.rect(
+            Rect::new(s[0] - bw * 0.5 - 2.0, y - 2.0, bw + 4.0, height + 1.0),
+            rgba(0, 0, 0, 0.6),
+        );
+        c.rect(Rect::new(s[0] - bw * 0.5, y, bw * f, 6.0), fill);
+        if thin {
+            let max = planetfall_sim::content::content().tuning.hazards.oxygen_max;
+            let o = (p.oxygen / max).clamp(0.0, 1.0);
+            let color = if o > 0.25 {
+                rgba(120, 200, 255, 0.95)
+            } else {
+                rgba(255, 92, 72, 0.95)
+            };
+            c.rect(Rect::new(s[0] - bw * 0.5, y + 8.0, bw * o, 3.0), color);
+        }
+    }
     // Mining progress over the block being drilled.
     if let Some(m) = p.mining {
         let center = Terrain::center_of(m.tile.0, m.tile.1);

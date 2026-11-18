@@ -107,9 +107,9 @@ impl Graphics {
         // Item icons for the HUD and menus.
         let mut textures_2d = Textures::default();
         crate::ui::icons::load(asset_root).map_err(error)?;
-        let atlas = quasar_render_2d::Image::load_png(crate::ui::icons::image_path(asset_root))
-            .map_err(|e| error(e.to_string()))?;
-        ui.set_texture(crate::ui::icons::ATLAS, textures_2d.insert(atlas));
+        if let Some(atlas) = crate::ui::icons::atlas() {
+            ui.set_texture(crate::ui::icons::ATLAS, textures_2d.insert(atlas));
+        }
         let logo = quasar_render_2d::Image::load_png(crate::ui::icons::logo_path(asset_root))
             .map_err(|e| error(e.to_string()))?;
         ui.set_texture(crate::ui::icons::LOGO, textures_2d.insert(logo));

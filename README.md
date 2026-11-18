@@ -129,7 +129,7 @@ cargo run --no-default-features -- --headless --autoplay
 ```
 
 Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
-`--slot N` (load slot N, skipping the menu), `--no-save`,
+`--slot N` (load slot N, skipping the menu; with `--headless` it runs or renders that save read-only), `--no-save`,
 `--trace` (print the tick of every phase and menu change), `--menu main|saves|settings|controls|pause|gear|trade` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
@@ -156,7 +156,7 @@ single rolling `Latest` GitHub Release that Basalt installs from (see
   and how Quasar is used.
 - [Gameplay](docs/gameplay.md): the loop, tutorial, planets, weapons, enemies,
   upgrades and tuning.
-- [Assets](docs/assets.md): generated models and sounds, third-party licenses,
+- [Assets](docs/assets.md): models, sounds and icons (hand-authored or generated), third-party licenses,
   regeneration.
 - [Basalt integration](docs/basalt.md): data layout, packaging, catalog entry
   ([planetfall.json](planetfall.json)) and the compliance checklist.
@@ -186,8 +186,11 @@ to this README.
   `PROFILE_VERSION` and extend `Profile::migrate` when the save format changes.
 - Before finishing a change run `python3 DevUtils/verify.py` (add `--gpu` for
   visual changes and inspect the screenshots). Keep docs in `docs/` accurate.
-- Models and sounds are generated: edit `DevUtils/assets/*.py` and regenerate
-  rather than hand-editing files in `assets/models` or `assets/sounds`.
+- The files in `assets/` are the source of truth and may be hand-authored or
+  replaced (the class suits are). `DevUtils/assets/*.py` only creates assets
+  that do not exist yet: never run them with `--force`, and never remake a
+  named asset unless asked to, since that replaces hand-made work. A
+  hand-made character must keep its kind's joint and clip names to animate.
 - Project skills live in `.agents/skills/` (`.claude/skills` links there):
   `package-release`, `regenerate-assets`, and `commit-and-release` (commit,
   push, wait for CI, dispatch Release, verify the published zip). Run

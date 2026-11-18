@@ -20,8 +20,15 @@ hearing and loudness-matched so the game's volumes stay meaningful. Music and
 ambience loops are long, so they are encoded as Ogg Vorbis with ffmpeg
 (libvorbis), which the game decodes natively.
 
+The files in `assets/sounds` are the source of truth and may be replaced by
+hand-made recordings or edits: this script only makes sounds that have no
+file yet, unless it is asked for specific names (which it remakes, removing
+their old files and variants) or `--force` (which remakes everything).
+
 Usage:
-    python3 DevUtils/assets/generate_sounds.py [--out assets/sounds] [--only NAME...]
+    python3 DevUtils/assets/generate_sounds.py                 # add missing sounds
+    python3 DevUtils/assets/generate_sounds.py blaster alarm   # remake these
+    python3 DevUtils/assets/generate_sounds.py --force         # remake everything
 """
 
 from __future__ import annotations
@@ -297,13 +304,34 @@ def trim(x, rate=RATE, floor_db: float = -54.0):
 
 
 class Writer:
-    def __init__(self, out: Path, only: set[str] | None) -> None:
+    def __init__(self, out: Path, only: set[str], force: bool) -> None:
         self.out = out
         self.only = only
+        self.force = force
         self.written: list[str] = []
+        self.kept = 0
+
+    def files(self, name: str) -> list[Path]:
+        """Every file of a sound: `name.wav`/`.ogg` and its `name.vN` variants."""
+        return [
+            f
+            for f in [*self.out.glob(f"{name}.*"), *self.out.glob(f"{name}.v*.*")]
+            if f.suffix in (".wav", ".ogg") and (f.stem == name or f.stem.startswith(f"{name}.v"))
+        ]
 
     def wanted(self, name: str) -> bool:
-        return self.only is None or name in self.only
+        """Named sounds are always remade; otherwise only missing ones are,
+        unless `--force`. Sounds being remade lose their old files first."""
+        if self.only:
+            write = name in self.only
+        else:
+            write = self.force or not self.files(name)
+        if write:
+            for old in set(self.files(name)):
+                old.unlink()
+        elif not self.only:
+            self.kept += 1
+        return write
 
     def wav(self, path: Path, data, rate: int):
         stereo = data.ndim == 2
@@ -1534,15 +1562,15 @@ MUSIC = [
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=REPO / "assets" / "sounds")
-    parser.add_argument("--only", nargs="*", help="generate only these names")
+    parser.add_argument("names", nargs="*", help="remake only these sounds, replacing them")
+    parser.add_argument("--force", action="store_true", help="remake every sound")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    only = set(args.only) if args.only else None
-    if only is None:
-        # Start clean so renamed or dropped sounds do not linger.
-        for old in [*args.out.glob("*.wav"), *args.out.glob("*.ogg")]:
-            old.unlink()
-    w = Writer(args.out, only)
+    known = {n for n, _, _ in EFFECTS} | {n for n, _ in AMBIENCE} | {n for n, _ in MUSIC}
+    unknown = set(args.names) - known
+    if unknown:
+        raise SystemExit(f"unknown sounds: {', '.join(sorted(unknown))}")
+    w = Writer(args.out, set(args.names), args.force)
     for name, make, variants in EFFECTS:
         w.sound(name, make, variants)
     for name, make in AMBIENCE:
@@ -1553,7 +1581,7 @@ def main() -> None:
         if w.wanted(name):
             w.save_ogg(name, make(), MUSIC_RATE, peak_db=-1.0, quality=5)
             print(f"  {name}", flush=True)
-    print(f"wrote {len(w.written)} files to {args.out}")
+    print(f"wrote {len(w.written)} files to {args.out}, kept {w.kept} existing sounds")
 
 
 if __name__ == "__main__":

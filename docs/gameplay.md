@@ -214,8 +214,11 @@ the banked haul (×1 to ×3.6) and class XP. Hazard 1 is for learning; hazard
 2 is meant to be a real fight, and 4 and 5 need a geared, practised player.
 Hits leave you only 0.4 s of invulnerability and armour absorbs at most 40%.
 Hazard *n* unlocks after completing a primary objective at hazard *n - 1*.
-The HUD shows the objectives, the hazard, site and mutator, and a health bar
-for the boss or hunted elite; beacons mark what still needs doing.
+The HUD keeps the centre clear: a small pill at the top shows the drop
+timer and threat level, and cargo and objectives sit as quiet lines in the
+top-right corner. The planet, hazard, site and mutator show for a few
+seconds after landing and on the pause screen. A boss or hunted elite gets
+a health bar of its own, and beacons mark what still needs doing.
 
 ## Escalation: why you leave
 
