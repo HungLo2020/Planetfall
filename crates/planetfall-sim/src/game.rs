@@ -150,7 +150,7 @@ impl Game {
         self.tutorial.as_ref().map(|t| t.step)
     }
 
-    fn notify(&mut self, text: impl Into<String>) {
+    pub(crate) fn notify(&mut self, text: impl Into<String>) {
         self.notice = Some(Notice {
             text: text.into(),
             ticks: 210,
@@ -165,6 +165,9 @@ impl Game {
             if n.ticks == 0 {
                 self.notice = None;
             }
+        }
+        if let Some(Command::Cheat(cheat)) = input.command {
+            self.cheat(cheat);
         }
         match self.phase {
             Phase::Ship => self.update_ship(input),

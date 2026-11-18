@@ -71,6 +71,13 @@ pub enum GameEvent {
         at: V2,
         height: f32,
     },
+    /// A block being mined cracked further: `stage` 1 to 3 of its wear
+    /// (drawn as cracks that spread until it breaks).
+    BlockCracked {
+        at: V2,
+        material: Option<Material>,
+        stage: u8,
+    },
     BlockBroken {
         at: V2,
         material: Option<Material>,

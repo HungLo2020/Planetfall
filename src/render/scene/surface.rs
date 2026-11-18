@@ -28,7 +28,7 @@ pub fn surface<'a>(
     let time = p.time;
     p.lights.push(sun(SUN_DIRECTION, palette.sun, 0.85));
     let wide = !matches!(game.phase, Phase::Surface | Phase::Lost { .. });
-    let mining = terrain(p, run, view_center, if wide { 6 } else { 0 });
+    terrain(p, run, view_center, if wide { 6 } else { 0 });
     let hide_player = matches!(game.phase, Phase::Descent { .. } | Phase::Ascent { .. });
     pods(p, game, run);
     caches(p, run);
@@ -60,7 +60,7 @@ pub fn surface<'a>(
                 drop: game.profile.stats.drops,
             },
             palette: Some((run.planet, palette)),
-            overlays: mining.into_iter().collect(),
+            overlays: Vec::new(),
             fog: Some(Fog {
                 color: palette.sky.map(crate::render::srgb_to_linear),
                 start: 38.0,
@@ -464,7 +464,7 @@ fn deployables(p: &mut Painter<'_, '_>, run: &Run) {
 
 /// Decorations on the voxel terrain (pebbles, ore crystals and their glow)
 /// and the overlay marking the block being drilled.
-fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option<OverlayBox> {
+fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) {
     let (cx, cy) = Terrain::tile_of(center);
     let mut glows: Vec<(f32, [f32; 3], [f32; 3])> = Vec::new();
     let style = &run.planet.info().terrain;
@@ -554,20 +554,19 @@ fn terrain(p: &mut Painter<'_, '_>, run: &Run, center: V2, extra: i32) -> Option
         let pulse = 1.0 + (p.time * 2.0 + pos[0]).sin() * 0.15;
         p.point(pos, color, 1.6 * pulse, 7.0);
     }
-    // The block being drilled: an outline that heats up with progress.
-    run.player().mining.map(|m| {
-        let k = m.progress.clamp(0.0, 1.0);
-        let jitter = (p.time * 50.0).sin() * 0.01 * (1.0 + k);
-        let mut column = voxels::block_box(
-            m.tile.0,
-            0,
-            m.tile.1,
-            0.02 + jitter.abs(),
-            [1.0, 0.75 - 0.5 * k, 0.3 - 0.25 * k, 1.0],
+    // The drill bit biting into the block: a flickering hot spot on the
+    // face (the block itself shows its wear as cracks).
+    let pl = run.player();
+    if let Some(m) = pl.mining {
+        let center = Terrain::center_of(m.tile.0, m.tile.1);
+        let face = pl.pos + (center - pl.pos).normalize_or_zero() * 0.75;
+        let flicker = 0.7 + 0.3 * (p.time * 61.0).sin().abs();
+        p.glow(
+            at(face, 0.9) * s(0.16 * flicker, 0.16 * flicker, 0.16 * flicker),
+            [1.0, 0.7, 0.35],
         );
-        column.max.y += 1.0;
-        column
-    })
+        p.point([face[0], 1.0, face[1]], [1.0, 0.6, 0.3], 1.2 * flicker, 3.0);
+    }
 }
 
 fn pods(p: &mut Painter<'_, '_>, game: &Game, run: &Run) {

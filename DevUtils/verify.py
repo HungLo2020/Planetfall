@@ -87,8 +87,9 @@ def main() -> None:
                  "--screenshot", str(shots / f"menu-{menu}.png")],
             )
         # The locker's gear tab and the station market, opened on the ship
-        # once the autopilot has found some gear.
-        for menu in ["gear", "trade"]:
+        # once the autopilot has found some gear, and the developer console
+        # on a drop.
+        for menu in ["gear", "trade", "console"]:
             step(
                 f"screenshot {menu}",
                 ["cargo", "run", "--release", "--locked", "--", "--headless", "--autoplay", "--ticks",

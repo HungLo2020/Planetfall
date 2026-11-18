@@ -147,21 +147,34 @@ impl Run {
                 }
                 self.block_broken(i, at, broken.was, events);
             }
-            None if !main => {}
             None => {
                 let max = tile.max_hp();
-                let remaining = match self.terrain.tile(x, y) {
+                let wear = |hp: f32| if max > 0.0 { 1.0 - hp / max } else { 0.0 };
+                let hp = |t: Tile| match t {
                     Tile::Rock { hp } | Tile::Ore { hp, .. } => hp,
                     _ => 0.0,
                 };
-                self.players[i].mining = Some(Mining {
-                    tile: (x, y),
-                    progress: if max > 0.0 {
-                        1.0 - remaining / max
-                    } else {
-                        0.0
-                    },
-                });
+                let (before, after) = (wear(hp(tile)), wear(hp(self.terrain.tile(x, y))));
+                // Cracks show from the first bite (stage 1) and spread at each
+                // third of the way through (stages 2 and 3).
+                let stage = |w: f32| (w * 3.0).floor().min(2.0) as u8 + 1;
+                if stage(after) > stage(before) {
+                    let material = match tile {
+                        Tile::Ore { material, .. } => Some(material),
+                        _ => None,
+                    };
+                    events.push(GameEvent::BlockCracked {
+                        at,
+                        material,
+                        stage: stage(after),
+                    });
+                }
+                if main {
+                    self.players[i].mining = Some(Mining {
+                        tile: (x, y),
+                        progress: after,
+                    });
+                }
             }
         }
     }

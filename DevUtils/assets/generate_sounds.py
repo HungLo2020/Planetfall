@@ -749,6 +749,14 @@ def block_break(c, v):
     return reverb(c, mix(crack, crumble, body, thump(c, 120, 45, 0.25, 0.2) * 0.8), 0.9, 0.2)
 
 
+def block_crack(c, v):
+    # A sharp split and a short trickle of grit: the block gives a little.
+    d = 0.45
+    snap = hp(c.noise(0.03), 1400) * env(c, 0.03, 0.0002, 0.03) * 1.2
+    grit = lp(c.crackle(d, 220 + 30 * v, 0.004), 3200) * env(c, d, 0.002, 0.3)
+    return reverb(c, mix(snap, grit, thump(c, 180 + 15 * v, 70, 0.12, 0.08) * 0.6), 0.5, 0.15)
+
+
 def ore_break(c, v):
     base = block_break(c, v) * 0.8
     shatter = mix(*[at(c, 0.01 * k, chime(c, 1800 + 450 * k + 100 * v, 0.6, 2.9, 1.5, 0.4) * 0.25) for k in range(4)])
@@ -1494,6 +1502,7 @@ EFFECTS: list[tuple[str, Callable, int]] = [
     ("mine_hit", mine_hit, 4),
     ("mine_hit_ore", mine_hit_ore, 3),
     ("block_break", block_break, 4),
+    ("block_crack", block_crack, 3),
     ("ore_break", ore_break, 3),
     ("pickup_xp", pickup_xp, 3),
     ("pickup_ferrite", pickup_ferrite, 2),

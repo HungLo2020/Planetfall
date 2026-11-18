@@ -44,7 +44,7 @@ use quasar_render_3d::{
     PostSettings, ShadingModel, SurfaceDraw3D, SurfaceMaterial, SurfaceTransparentDraw3D,
     VignetteSettings,
 };
-use quasar_render_voxel::{Fog, OverlayBox};
+use quasar_render_voxel::Fog;
 
 /// Everything the 3D passes need for one frame.
 pub struct SceneOutput<'a> {

@@ -33,9 +33,12 @@ cargo run --release
 | Pause / back | Esc | Start / B |
 | Menus | Arrows, Enter, mouse | D-pad, A, B |
 | Fullscreen | F11 | — |
+| Developer console (testing) | / | — |
 
 Weapons aim and fire automatically. Walk into rock to drill through it.
-Rebind keys and buttons under Settings → Controls.
+Rebind keys and buttons under Settings → Controls. Press `/` for the developer
+console (`/give weapon sentry`, `/give upgrade sentry mobile-sentry`, `/spawn`,
+`/god`, `/help`), with Tab completion and suggestions as you type.
 
 ### What is in this first pass
 
@@ -70,7 +73,7 @@ Rebind keys and buttons under Settings → Controls.
 - **Surface runs**: organic voxel caves of minable 1 m blocks, chamfered and
   chipped like cut stone and stepping up in terraces (winding tunnels,
   looping chambers, a pillared set-piece arena, ore seams, per-planet floor
-  patches and props); ferrite,
+  patches and props, and blocks that crack in three stages as you drill); ferrite,
   lumite and voidstone ore; eight enemy types by role (husks, skitters,
   bloaters, brutes, ranged spitters, jamming disruptors, burrowers and
   flyers) driven by a flow field, elites with five affixes and five bosses;
@@ -130,7 +133,7 @@ cargo run --no-default-features -- --headless --autoplay
 
 Other flags: `--seed N`, `--fresh` (new unsaved game, skipping the menu),
 `--slot N` (load slot N, skipping the menu; with `--headless` it runs or renders that save read-only), `--no-save`,
-`--trace` (print the tick of every phase and menu change), `--menu main|saves|settings|controls|pause|gear|trade` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
+`--trace` (print the tick of every phase and menu change), `--menu main|saves|settings|controls|pause|gear|trade|console` (screenshot a menu; gear and trade open the locker's gear tab or the station market on the ship, console the developer console mid-command), `--frames N`, `--asset-root DIR`, and Quasar's common `--fullscreen`,
 `--windowed`, `--resolution WxH`, `--no-audio`, `--audio-device`, `--log-level`.
 
 ## Build, verify and package

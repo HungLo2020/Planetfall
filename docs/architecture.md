@@ -16,8 +16,9 @@ Planetfall/
 │   ├── controls.rs          keyboard/mouse + gilrs controllers → GameInput
 │   ├── audio.rs             quasar-audio buses, spatial SFX with variants, footsteps, crossfaded music
 │   ├── render/              frame pipeline, voxels, skinning, scene/ building
-│   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay; kit.rs is the
-│                            shared look (windows, buttons, chips, bars, key caps)
+│   └── ui/                  quasar-ui HUD, menus, terminals, 2D overlay, developer
+│                            console; kit.rs is the shared look (windows, buttons,
+│                            chips, bars, key caps)
 ├── assets/data/             content and tuning as TOML (weapons, enemies, ...)
 ├── assets/                  models, sounds, fonts, Basalt artwork
 ├── DevUtils/                generators, verification and packaging scripts
@@ -36,7 +37,7 @@ headless crates (`quasar-config` parses the content TOML from strings).
 |---|---|
 | `game` | Top-level state machine: `Ship → Ftl → Ship (orbit) → Descent → Surface → Ascent/Lost → Ship (debrief)`; terminals; build mode; tutorial driver; banking cargo; `quasar_sim::Simulation` impl |
 | `ship` | Voxel hull from built modules plus the player's edits, walking/collision, stations (nav console, fabricator, locker room, drop pod, modules), module assembly, free-form building rules |
-| `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, shield domes, sentry turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
+| `run` | One drop (no cosmetic state: particles are presentation). Players are a list (`players[0]` is local; `update_players` takes one input each) so co-op can follow. Split by system: `player` (movement, dash, mining), `abilities` (class abilities, barrier posts, shield domes, sentry turrets), `weapons`, `arsenal` (flamer heat, ricochet, mines, melee, homing, gravity), `hazards` (lava and water ground, spore clouds, vents, oxygen, quakes), `enemies`, `spawner` (threat level, surges, elites, weighted spawn tables), `loot` (pickups, caches, rarity rolls, upgrade and weapon-pick offers), `weapons` also resolves hits: element statuses, shock arcs and legendary specials, `extraction`, `cheats` (console commands on a drop), `mission` (objective progress and set pieces: boss arena, survivor, drill rig, wreck, glowcaps, relays; contract modifiers); `tests` |
 | `cavegen` | Cave layout: chamber graph, winding tunnels, noise alcoves and smoothing, set-piece arena, connectivity repair, ore seams and floor patches (value noise is local; see QUASAR-ISSUES) |
 | `terrain` | The cave committed to a voxel volume (ground blocks for patches, lava and water; quake rubble saved in order with mined blocks), mining edits, circle collision, voxel raycast line of sight, horde flow field |
 | `voxel` | Block IDs and the shared volume shape (one block per voxel: planet blocks are `terrain::TILE` = 1 m, ship blocks `ship::TILE` = 2 m; ground at `y = -1`, walls from `y = 0`) |
@@ -47,6 +48,7 @@ headless crates (`quasar-config` parses the content TOML from strings).
 | `tutorial` | Step definitions and prompt text |
 | `content` | The content registry: definitions parsed and validated from `assets/data/*.toml`, string-keyed IDs (`WeaponId`, `EnemyId`, `PlanetId`, `PerkId`, `UpgradeId`, `ClassId`, `ModId`), class levels, `Offer` (an `Upgrade` at a `Rarity`) |
 | `autoplay` | An autopilot that plays the entire loop, including building (headless runs, soak tests, CI) |
+| `cheats` | Developer console commands: parsing and validation against the game, Minecraft-style suggestions, and applying them through `Command::Cheat` (`run::cheats` for drop commands) |
 | `math` | Ground-plane conventions (`V2` = glam `Vec2`, +Z-facing yaw) over `quasar-math` |
 | `events` | `GameEvent`s emitted per tick for sound, effects and saving |
 
@@ -168,7 +170,11 @@ Each frame:
 5. `render/voxels.rs` swaps the grid between ship and planet and re-meshes
    chunks whose revision changed (mined rock, placed blocks). Planet rock is
    meshed by `render/sculpt.rs`, which chamfers and chips every exposed edge
-   (keeping seams with neighbours closed); ground and liquids stay flat. The
+   (keeping seams with neighbours closed); ground and liquids stay flat.
+   Partly mined columns (`Terrain::wear`) are swapped for renderer-only
+   cracked copies of their blocks at three wear stages (cracked texture
+   layers, deeper chips, darker stone); a chunk re-meshes when the wear in
+   or beside it changes. The
    ship is laid out in 2 m tiles but drawn in the same 1 m blocks: each ship
    voxel is refined into 2×2×2 renderer-only pieces (a full wall course under
    a 0.2 m cap, so walls stay 1.2 m; lamp quarters) and re-meshed whole when

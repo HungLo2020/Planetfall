@@ -20,6 +20,7 @@
 
 mod abilities;
 mod arsenal;
+mod cheats;
 mod enemies;
 mod extraction;
 mod hazards;

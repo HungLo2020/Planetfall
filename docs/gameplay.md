@@ -158,7 +158,11 @@ Every drop is a fresh 120 x 120 cave of 1 m blocks on one flat floor level
 a coarser 60 x 60 grid and `terrain.rs` refines it block by block, chipping
 ragged bites out of every wall, splitting veins into ore blocks and raising
 wall columns two or three blocks tall (taller deeper in, so rock steps up in
-terraces). You drill a tunnel about two blocks wide.
+terraces). You drill a tunnel about two blocks wide. A block being drilled
+shows its wear instead of a progress bar: cracks open at the first bite,
+spread a third of the way through and split it wide at two thirds, its
+corners crumbling and the stone darkening, each stage with a crack, a kick
+and a spray of chips. Half-drilled rock keeps its cracks.
 
 - **Chambers and tunnels.** The landing chamber sits in the middle; the
   mission sites are spread around it and a dozen or so organic chambers fill
@@ -255,7 +259,7 @@ drop is tuned around. The debrief shows the threat reached.
 | Scattergun | Warden signature. Short-range pellet fan | — |
 | Arc Caster | Chain lightning jumping between nearby enemies | Shock |
 | Plasma Mortar | Lobbed shells that burst in an area (arcs over walls) | Fire |
-| Sentry Turrets | Engineer signature. Plants one turret per count near you (re-planted when you move on) that fire with the weapon's upgrades | — |
+| Sentry Turrets | Engineer signature. Plants one turret per count near you (re-planted when you move on) that fire with the weapon's upgrades. With Mobile Sentry they patrol a turning ring around you, spaced evenly however many there are, and path around rock to keep up | — |
 | Orbit Drones | Blades circling the player | — |
 | Torch | Flamethrower cone; builds heat and locks when it overheats. Ignites spores | Fire |
 | Ripper Disc | A disc that bounces between enemies and off walls | — |
@@ -378,6 +382,28 @@ where it would wall any station off from you; deck can only be removed if the
 hull stays in one piece; the original room floors stay. Blocks you placed are
 refunded when removed; original hull walls can be knocked out (for free, no
 refund) to open rooms or build outward. Edits are saved with the profile.
+
+## Developer console
+
+Press `/` (keyboard) for a command line for testing; the game holds still
+while it is open and each command applies on one tick through
+`Command::Cheat`, so it is deterministic. Suggestions list what fits the
+word being typed (Tab completes, Up/Down chooses, Up/Down on an empty list
+browses history); a command is checked against the game before it runs
+(`planetfall_sim::cheats`).
+
+| Command | Does |
+|---|---|
+| `/give weapon <weapon>` | A weapon in a free slot |
+| `/give upgrade <carried-weapon> <upgrade> [rarity] [count]` | Upgrades on a carried weapon (only those that fit it) |
+| `/give ability <ability-upgrade> [rarity] [count]` | Upgrades on the class ability |
+| `/give perk <perk> [rarity] [count]` | Field or class perks |
+| `/give material <material> [amount]`, `/give credits <amount>` | Bank materials or credits |
+| `/give xp <amount>` | Dive XP (levels up) |
+| `/remove <carried-weapon>` | Drop a weapon |
+| `/spawn <enemy> [count]`, `/kill`, `/threat <level>` | Enemies and escalation |
+| `/heal`, `/god` | Refill health; toggle taking no damage |
+| `/help` | List commands |
 
 ## Tuning and adding content
 

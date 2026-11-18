@@ -9,6 +9,7 @@
 
 use crate::render::sculpt::Carve;
 use planetfall_sim::content::{Palette, PlanetId};
+use planetfall_sim::terrain::WALL_LAYERS;
 use planetfall_sim::voxel::{self, AIR, Blocks};
 use quasar_frame::{Gpu, GraphicsResult, RenderTarget, error};
 use quasar_math::{DVec3, IVec3, Mat4, Vec3};
@@ -51,7 +52,18 @@ mod tex {
     pub const PATCH: u32 = 14;
     pub const LAVA: u32 = 15;
     pub const WATER: u32 = 16;
-    pub const COUNT: u32 = 17;
+    /// Layers drawn from scratch; the cracked copies follow.
+    pub const BASE: u32 = 17;
+    /// Stone looks that get cracked copies for mining wear.
+    pub const CRACKABLE: [u32; 5] = [ROCK, ROCK_TOP, FERRITE, LUMITE, VOIDSTONE];
+    pub const COUNT: u32 = BASE + 3 * CRACKABLE.len() as u32;
+
+    /// The copy of `base` (one of [`CRACKABLE`]) cracked to wear `stage`
+    /// (1 to 3).
+    pub fn cracked(base: u32, stage: u8) -> u32 {
+        let index = CRACKABLE.iter().position(|&b| b == base).unwrap_or(0) as u32;
+        BASE + (u32::from(stage) - 1) * CRACKABLE.len() as u32 + index
+    }
 }
 
 /// Renderer-only block IDs after the simulation's (ship detail pieces).
@@ -61,6 +73,23 @@ const WINDOW_LOW: u16 = voxel::BLOCK_COUNT + 2;
 const WINDOW_CAP: u16 = voxel::BLOCK_COUNT + 3;
 /// Four lamp quarters, `x | z << 1`.
 const LAMP_QUARTER: u16 = voxel::BLOCK_COUNT + 4;
+/// Minable stone, by its simulation block and side look.
+const WEARABLE: [(u16, u32); 4] = [
+    (voxel::ROCK, tex::ROCK),
+    (voxel::FERRITE_ORE, tex::FERRITE),
+    (voxel::LUMITE_ORE, tex::LUMITE),
+    (voxel::VOIDSTONE_ORE, tex::VOIDSTONE),
+];
+/// Cracked copies of [`WEARABLE`] blocks, three wear stages each:
+/// `WORN + (stage - 1) * 4 + index`. The renderer swaps them in for blocks
+/// that are partly mined.
+const WORN: u16 = LAMP_QUARTER + 4;
+
+/// The cracked block for `block` at wear `stage` (1 to 3), if it is minable.
+fn worn(block: u16, stage: u8) -> Option<u16> {
+    let index = WEARABLE.iter().position(|&(b, _)| b == block)?;
+    Some(WORN + (u16::from(stage.clamp(1, 3)) - 1) * WEARABLE.len() as u16 + index as u16)
+}
 
 /// The ship is laid out (and built) in 2 m tiles but drawn with the same
 /// 1 m blocks as the planets: every ship voxel becomes 2×2×2 fine ones.
@@ -246,6 +275,17 @@ impl Content {
             );
             debug_assert_eq!(added, LAMP_QUARTER + q);
         }
+        for stage in 1..=3u8 {
+            for (block, side) in WEARABLE {
+                let added = catalog.add(
+                    BlockDef::cube("worn", tex::cracked(side, stage)).with_materials(sides(
+                        tex::cracked(side, stage),
+                        tex::cracked(tex::ROCK_TOP, stage),
+                    )),
+                );
+                debug_assert_eq!(Some(added), worn(block, stage));
+            }
+        }
         let opaque = opaque_table(&catalog);
         let carve = (0..catalog.defs().len() as u16)
             .map(|id| match id {
@@ -253,7 +293,8 @@ impl Content {
                 | voxel::FERRITE_ORE
                 | voxel::LUMITE_ORE
                 | voxel::VOIDSTONE_ORE
-                | voxel::BEDROCK => Carve::Stone,
+                | voxel::BEDROCK => Carve::Stone(0),
+                _ if id >= WORN => Carve::Stone(((id - WORN) / WEARABLE.len() as u16 + 1) as u8),
                 _ => Carve::Flat,
             })
             .collect();
@@ -265,11 +306,39 @@ impl Content {
         }
     }
 
-    fn mesh(&self, blocks: &Blocks, chunk: IVec3, sculpted: bool) -> MeshBuffers {
+    fn mesh(&self, blocks: &Blocks, chunk: IVec3, sculpted: bool, wear: &Wear) -> MeshBuffers {
         let mut snapshot = Snapshot::new();
         blocks
             .volume
             .snapshot(blocks.block, chunk, 1, &mut snapshot);
+        if sculpted && !wear.is_empty() {
+            // Swap partly mined wall columns for their cracked copies.
+            let pad = snapshot.pad() as i32;
+            let origin = chunk * EDGE;
+            let mut data = snapshot.data().to_vec();
+            let mut changed = false;
+            for (&(x, y), &stage) in wear {
+                for layer in 0..WALL_LAYERS {
+                    let local = voxel::voxel(x, y, layer) - origin;
+                    if (0..3).any(|a| local[a] < -pad || local[a] >= EDGE + pad) {
+                        continue;
+                    }
+                    let index = snapshot.index(
+                        (local.x + pad) as usize,
+                        (local.y + pad) as usize,
+                        (local.z + pad) as usize,
+                    );
+                    if let Some(cracked) = worn(data[index], stage) {
+                        data[index] = cracked;
+                        changed = true;
+                    }
+                }
+            }
+            if changed {
+                let (edge, coord) = (snapshot.edge(), snapshot.coord());
+                snapshot.fill_with(edge, pad as u32, coord, data);
+            }
+        }
         if sculpted {
             return crate::render::sculpt::Sculptor {
                 catalog: &self.catalog,
@@ -325,7 +394,7 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
     let mix = |a: [f32; 3], b: [f32; 3], t: f32| -> [f32; 3] {
         std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
     };
-    (0..tex::COUNT)
+    let mut layers: Vec<Vec<u8>> = (0..tex::BASE)
         .map(|layer| {
             let mut pixels = Vec::with_capacity((TEXELS * TEXELS * 4) as usize);
             for y in 0..TEXELS {
@@ -493,12 +562,98 @@ fn texture_layers(palette: &Palette) -> Vec<Vec<u8>> {
             }
             pixels
         })
-        .collect()
+        .collect();
+    // Mining wear: copies of the stone looks with cracks that spread and
+    // widen stage by stage (ore cracks show the crystal glinting inside).
+    for stage in 1..=3u8 {
+        for base in tex::CRACKABLE {
+            let mask = crack_mask(stage, base);
+            let vein = match base {
+                tex::FERRITE => Some([0.95, 0.6, 0.3]),
+                tex::LUMITE => Some([0.5, 1.0, 1.0]),
+                tex::VOIDSTONE => Some([0.75, 0.4, 1.0]),
+                _ => None,
+            };
+            let mut pixels = layers[base as usize].clone();
+            for (i, texel) in pixels.chunks_exact_mut(4).enumerate() {
+                let shade = match (mask[i], vein) {
+                    (2, Some(v)) => {
+                        texel[..3].copy_from_slice(&v.map(encode));
+                        continue;
+                    }
+                    (2, None) => 0.28,
+                    (1, _) => 0.62,
+                    _ => continue,
+                };
+                for c in &mut texel[..3] {
+                    *c = (f32::from(*c) * shade) as u8;
+                }
+            }
+            debug_assert_eq!(layers.len() as u32, tex::cracked(base, stage));
+            layers.push(pixels);
+        }
+    }
+    layers
+}
+
+/// Crack pattern for wear `stage` on a texture tile: 2 for the crack itself,
+/// 1 for its shadowed rim. Cracks are random walks from a few seeds; later
+/// stages keep the earlier cracks, lengthen them and add more.
+fn crack_mask(stage: u8, base: u32) -> Vec<u8> {
+    let n = TEXELS as i32;
+    let mut mask = vec![0u8; (n * n) as usize];
+    let mut mark = |x: i32, y: i32, v: u8| {
+        if (0..n).contains(&x) && (0..n).contains(&y) {
+            let i = (y * n + x) as usize;
+            mask[i] = mask[i].max(v);
+        }
+    };
+    let cracks = 1 + 2 * u32::from(stage);
+    for k in 0..cracks {
+        let salt = base * 7 + 900;
+        let (mut x, mut y) = (
+            4.0 + hash(k, 0, salt) * (n - 8) as f32,
+            4.0 + hash(k, 1, salt) * (n - 8) as f32,
+        );
+        let mut heading = hash(k, 2, salt) * std::f32::consts::TAU;
+        // Cracks 0-2 open at stage 1, 3-4 at stage 2, 5-6 at stage 3; each
+        // grows longer at every later stage along the same path.
+        let first = match k {
+            0..=2 => 1,
+            3..=4 => 2,
+            _ => 3,
+        };
+        let length = 4 + 5 * (u32::from(stage) + 1 - first);
+        for step in 0..length {
+            heading += (hash(k, step + 3, salt) - 0.5) * 1.1;
+            x += heading.cos();
+            y += heading.sin();
+            let (cx, cy) = (x.round() as i32, y.round() as i32);
+            mark(cx, cy, 2);
+            if stage == 3 && step % 2 == 0 {
+                mark(cx + 1, cy, 2);
+            }
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                mark(cx + dx, cy + dy, 1);
+            }
+        }
+    }
+    mask
 }
 
 fn materials(gal: &Gpu, palette: &Palette) -> GraphicsResult<VoxelMaterials> {
     let defs: Vec<MaterialDef> = (0..tex::COUNT)
-        .map(|layer| match layer {
+        .map(|layer| {
+            // Cracked copies glow like the stone they copy.
+            if layer >= tex::BASE {
+                let index = (layer - tex::BASE) as usize % tex::CRACKABLE.len();
+                tex::CRACKABLE[index]
+            } else {
+                layer
+            }
+        })
+        .zip(0..tex::COUNT)
+        .map(|(look, layer)| match look {
             tex::LUMITE => MaterialDef::layer(layer).with_emissive([0.05, 0.2, 0.25]),
             tex::VOIDSTONE => MaterialDef::layer(layer).with_emissive([0.12, 0.04, 0.2]),
             tex::LAMP => MaterialDef::layer(layer).with_emissive([2.4, 2.0, 1.4]),
@@ -514,6 +669,42 @@ fn materials(gal: &Gpu, palette: &Palette) -> GraphicsResult<VoxelMaterials> {
     )
 }
 
+/// Mining wear stage (1 to 3) of partly mined tiles.
+pub type Wear = BTreeMap<(i32, i32), u8>;
+
+/// A fingerprint of the wear in or beside each chunk (a chunk's mesh also
+/// depends on its one-voxel border), so cracking re-meshes only those.
+fn wear_marks(wear: &Wear) -> BTreeMap<(i32, i32, i32), u64> {
+    let mut marks = BTreeMap::new();
+    for (&(x, y), &stage) in wear {
+        let mut chunks: Vec<(i32, i32, i32)> = Vec::new();
+        for layer in 0..WALL_LAYERS {
+            let v = voxel::voxel(x, y, layer);
+            for (dx, dy) in [-1, 0, 1]
+                .into_iter()
+                .flat_map(|a| [-1, 0, 1].map(|b| (a, b)))
+            {
+                for dz in -1..=1 {
+                    let c = (
+                        (v.x + dx).div_euclid(EDGE),
+                        (v.y + dy).div_euclid(EDGE),
+                        (v.z + dz).div_euclid(EDGE),
+                    );
+                    if !chunks.contains(&c) {
+                        chunks.push(c);
+                    }
+                }
+            }
+        }
+        let mark = (x as u64 & 0xffff) << 24 ^ (y as u64 & 0xffff) << 8 ^ u64::from(stage);
+        for c in chunks {
+            let m: &mut u64 = marks.entry(c).or_default();
+            *m = m.rotate_left(7) ^ mark.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+    marks
+}
+
 /// The voxel renderer plus what is uploaded to it.
 pub struct VoxelWorld {
     renderer: Option<VoxelRenderer>,
@@ -521,8 +712,8 @@ pub struct VoxelWorld {
     /// The world on the grid and the palette its materials were built with.
     key: Option<WorldKey>,
     palette: Option<PlanetId>,
-    /// Revision each uploaded chunk was meshed at.
-    uploaded: BTreeMap<(i32, i32, i32), u64>,
+    /// Revision and wear mark each uploaded chunk was meshed at.
+    uploaded: BTreeMap<(i32, i32, i32), (u64, u64)>,
     /// The ship in 1 m blocks and the ship revision it was refined at.
     ship: Option<(u64, Blocks)>,
     pending_submissions: Vec<u64>,
@@ -577,6 +768,7 @@ impl VoxelWorld {
         palette: Option<(PlanetId, Palette)>,
         blocks: &Blocks,
         revisions: impl Iterator<Item = (IVec3, u64)>,
+        wear: &Wear,
     ) -> GraphicsResult<()> {
         // Planet palettes are baked into the material layers.
         let wanted = match palette {
@@ -622,27 +814,30 @@ impl VoxelWorld {
                     renderer.remove(ChunkKey::new(GRID, IVec3::new(x, y, z)));
                 }
                 for chunk in fine.volume.chunk_coords() {
-                    let mesh = self.content.mesh(&fine, chunk, false);
+                    let mesh = self.content.mesh(&fine, chunk, false, wear);
                     let key = ChunkKey::new(GRID, chunk);
                     renderer.upload(gal, key, ChunkPlacement::new(chunk * EDGE), &mesh)?;
-                    self.uploaded.insert((chunk.x, chunk.y, chunk.z), revision);
+                    self.uploaded
+                        .insert((chunk.x, chunk.y, chunk.z), (revision, 0));
                 }
                 self.ship = Some((revision, fine));
             }
             return Ok(());
         }
+        let marks = wear_marks(wear);
         for (chunk, revision) in revisions {
             let id = (chunk.x, chunk.y, chunk.z);
-            if self.uploaded.get(&id) == Some(&revision) {
+            let mark = marks.get(&id).copied().unwrap_or(0);
+            if self.uploaded.get(&id) == Some(&(revision, mark)) {
                 continue;
             }
-            let mesh = self
-                .content
-                .mesh(blocks, chunk, matches!(key, WorldKey::Planet { .. }));
+            let mesh =
+                self.content
+                    .mesh(blocks, chunk, matches!(key, WorldKey::Planet { .. }), wear);
             let key = ChunkKey::new(GRID, chunk);
             renderer.remove(key);
             renderer.upload(gal, key, ChunkPlacement::new(chunk * EDGE), &mesh)?;
-            self.uploaded.insert(id, revision);
+            self.uploaded.insert(id, (revision, mark));
         }
         Ok(())
     }

@@ -12,7 +12,7 @@ use crate::ui::{Layer, build_text, hud, overlay};
 use planetfall_sim::autoplay::Autopilot;
 use planetfall_sim::events::GameEvent;
 use planetfall_sim::save::{SaveGame, SlotMeta};
-use planetfall_sim::{Command, Game, Phase, Profile};
+use planetfall_sim::{Command, Game, GameInput, Phase, Profile};
 use quasar_app::{
     AppConfig, AppContext, Application, DesktopApplication, Flow, RenderPolicy, TimingConfig,
 };
@@ -158,6 +158,9 @@ pub fn run(launch: Launch) -> Result<(), String> {
         last_phase: None,
         keyboard_bindings: Default::default(),
         pending_bindings: None,
+        console: Default::default(),
+        console_open: false,
+        console_command: None,
     };
     app.install_bindings(bindings);
     app.pending_bindings = None;
@@ -209,6 +212,11 @@ struct App {
     keyboard_bindings: quasar_input::Bindings,
     /// Rebound keyboard bindings for the runner to install (`take_bindings`).
     pending_bindings: Option<quasar_input::Bindings>,
+    /// Developer console (`/`), whether it is open, and a command it sent
+    /// for the next tick.
+    console: crate::ui::console::Console,
+    console_open: bool,
+    console_command: Option<Command>,
 }
 
 impl App {
@@ -534,6 +542,10 @@ impl App {
                 GameEvent::Quake { .. } => self.shake = self.shake.max(1.2),
                 GameEvent::SporeBlast { .. } => self.shake = self.shake.max(0.7),
                 GameEvent::PlayerHurt { .. } => self.shake = self.shake.max(0.6),
+                // A little kick as a drilled block cracks further.
+                GameEvent::BlockCracked { stage, .. } => {
+                    self.shake = self.shake.max(0.12 + 0.06 * f32::from(*stage));
+                }
                 GameEvent::Landed | GameEvent::PodLanded { .. } => self.shake = self.shake.max(1.0),
                 GameEvent::Liftoff | GameEvent::FtlStarted { .. } => {
                     self.shake = self.shake.max(0.5)
@@ -606,6 +618,31 @@ impl Application for App {
                 surface: surface_phase,
             });
         }
+        // The developer console takes every key while open.
+        if self.console_open {
+            use crate::ui::console::ConsoleAction;
+            match self.console.update(c.input, &self.game) {
+                Some(ConsoleAction::Close) => self.console_open = false,
+                Some(ConsoleAction::Run(command)) => self.console_command = Some(command),
+                None => {}
+            }
+            c.input.consume_all();
+            self.controls.clear();
+            self.controls.end_frame();
+            return Ok(Flow::Continue);
+        }
+        if c.input.pressed(quasar_input::Key::Slash)
+            && self.screens.is_empty()
+            && !self.menu.is_open()
+            && self.autopilot.is_none()
+        {
+            self.console.open();
+            self.console_open = true;
+            c.input.consume_all();
+            self.controls.clear();
+            self.controls.end_frame();
+            return Ok(Flow::Continue);
+        }
         let content = self.content();
         self.menu.show(
             content,
@@ -669,9 +706,21 @@ impl Application for App {
         if !self.screens.is_empty() {
             return Ok(Flow::Deferred);
         }
-        let input = match &mut self.autopilot {
-            Some(pilot) => pilot.input(&self.game),
-            None => self.controls.take_game_input(c.input),
+        // The game holds still under the console, but steps once to apply
+        // each command typed into it.
+        let input = if self.console_open {
+            match self.console_command.take() {
+                Some(command) => GameInput {
+                    command: Some(command),
+                    ..GameInput::default()
+                },
+                None => return Ok(Flow::Deferred),
+            }
+        } else {
+            match &mut self.autopilot {
+                Some(pilot) => pilot.input(&self.game),
+                None => self.controls.take_game_input(c.input),
+            }
         };
         self.prev = Some(crate::interp::Snapshot::capture(&self.game));
         self.game.update(&input);
@@ -793,6 +842,10 @@ impl App {
     fn render_frame(&mut self, _c: &mut AppContext<'_>) -> Result<Flow, AppError> {
         let menu_open = self.menu.is_open();
         let hud = self.hud(menu_open && self.content() != Some(Content::Terminal));
+        let console = self.console_open.then(|| {
+            self.console
+                .build(&self.game, self.time, self.size, self.scale, &self.measure)
+        });
         let (Some(gal), Some(surface), Some(graphics)) =
             (&mut self.gal, &mut self.surface, &mut self.graphics)
         else {
@@ -805,6 +858,9 @@ impl App {
         }
         if let Some(menu) = self.menu.layer() {
             layers.push(menu);
+        }
+        if let Some(console) = &console {
+            layers.push(console);
         }
         let game = &self.game;
         let time = self.time;

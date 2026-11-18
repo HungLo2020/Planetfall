@@ -230,6 +230,33 @@ impl Effects {
                         glow.emit(&glints(at, 1.0, ore_glow(m), 4))?;
                     }
                 }
+                GameEvent::BlockCracked {
+                    at,
+                    material,
+                    stage,
+                } => {
+                    // A spray of chips and a puff of grit that grows with
+                    // each stage, as the block starts to give.
+                    let k = f32::from(stage);
+                    let mut burst = chips(at, 1.0, rock, 6 + 4 * u32::from(stage), 0.14 + 0.03 * k);
+                    burst.position_jitter = 0.45;
+                    dust.emit(&burst)?;
+                    dust.emit(&ParticleBurst {
+                        position: [at[0], 0.9, at[1]],
+                        position_jitter: 0.5,
+                        count: 3 + 2 * u32::from(stage),
+                        direction: [0.0, -1.0, 0.0],
+                        spread: 1.2,
+                        speed: [0.3, 1.0],
+                        life: [0.5, 1.0],
+                        size: [0.25, 0.6],
+                        color_start: [rock[0], rock[1], rock[2], 0.35],
+                        color_end: [rock[0], rock[1], rock[2], 0.0],
+                    })?;
+                    if let Some(m) = material {
+                        glow.emit(&glints(at, 1.0, ore_glow(m), 3 + 2 * u32::from(stage)))?;
+                    }
+                }
                 GameEvent::BlockBroken { at, material } => {
                     let mut burst = chips(at, 1.2, rock, 26, 0.22);
                     burst.position_jitter = 0.7;

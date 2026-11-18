@@ -45,8 +45,8 @@ const GAME_HELP: &str = "Planetfall options:
   --cover FILE           Render 900x1200 Basalt cover art to FILE and exit
   --trace                Print the tick of every phase, menu, build, surge and tutorial change
   --menu NAME            With --screenshot: draw the main, saves, settings, controls or pause
-                         screen, or open the locker's gear tab (gear) or the station market
-                         (trade) on the ship
+                         screen, open the locker's gear tab (gear) or the station market
+                         (trade) on the ship, or the developer console (console) mid-command
   --asset-root DIR       Load models/sounds/fonts from DIR
   --fresh                Start a new unsaved game, skipping the main menu
   --slot N               Load save slot N (1-5), skipping the main menu
@@ -115,11 +115,12 @@ impl Settings {
                     let name = value("--menu")?;
                     if ![
                         "main", "saves", "pause", "settings", "controls", "gear", "trade",
+                        "console",
                     ]
                     .contains(&name.as_str())
                     {
                         return Err(format!(
-                            "--menu must be main, saves, settings, controls, pause, gear or trade, got {name:?}"
+                            "--menu must be main, saves, settings, controls, pause, gear, trade or console, got {name:?}"
                         ));
                     }
                     settings.menu = Some(name);

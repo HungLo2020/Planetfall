@@ -34,8 +34,9 @@ fn hash(a: i32, b: i32, c: i32, salt: u32) -> f32 {
 pub enum Carve {
     /// Flat cube faces (ground, liquids).
     Flat,
-    /// Chamfered and chipped stone.
-    Stone,
+    /// Chamfered and chipped stone, with its mining wear (0 = intact,
+    /// 1 to 3 = cracking): worn blocks chip deeper and darken.
+    Stone(u8),
 }
 
 pub struct Sculptor<'a> {
@@ -114,7 +115,10 @@ impl Sculptor<'_> {
                             .into_iter()
                             .filter(|f| *f != closed[0])
                             .all(|f| !solid(across + f.normal()))
-                            && carve_of(blocks.at(across.x, across.y, across.z)) == Carve::Stone;
+                            && matches!(
+                                carve_of(blocks.at(across.x, across.y, across.z)),
+                                Carve::Stone(_)
+                            );
                         if !matches {
                             pinned |= 1 << k;
                         }
@@ -126,7 +130,28 @@ impl Sculptor<'_> {
                         open,
                         materials: def.materials,
                         layer: def.layer,
-                        stone: carve == Carve::Stone,
+                        stone: matches!(carve, Carve::Stone(_)),
+                        wear: match carve {
+                            Carve::Stone(w) => w,
+                            Carve::Flat => 0,
+                        },
+                        // Every block touching a lattice point chips it by
+                        // the worst wear among them, so neighbours' cuts
+                        // still meet.
+                        corner_wear: std::array::from_fn(|k| {
+                            let k = k as i32;
+                            let c = cell + IVec3::new(k & 1, k >> 1 & 1, k >> 2 & 1);
+                            (0..8)
+                                .map(|o| {
+                                    let t = c - IVec3::new(o & 1, o >> 1 & 1, o >> 2 & 1);
+                                    match carve_of(blocks.at(t.x, t.y, t.z)) {
+                                        Carve::Stone(w) => w,
+                                        Carve::Flat => 0,
+                                    }
+                                })
+                                .max()
+                                .unwrap_or(0)
+                        }),
                     };
                     block_info.emit(blocks, &mut out);
                 }
@@ -146,6 +171,10 @@ struct BlockInfo {
     materials: [u32; 6],
     layer: Layer,
     stone: bool,
+    /// This block's mining wear (0..=3).
+    wear: u8,
+    /// The worst wear around each corner (bit order as `pinned`).
+    corner_wear: [u8; 8],
 }
 
 impl BlockInfo {
@@ -159,11 +188,15 @@ impl BlockInfo {
         // same way and their chamfers meet without gaps.
         let w = self.world + corner;
         let n = hash(w.x, w.y, w.z, 17);
-        if n > 0.88 {
+        let base = if n > 0.88 {
             0.3 + (n - 0.88) * 1.2
         } else {
             0.07 + n * 0.13
-        }
+        };
+        // Mining wear knocks the corners off further, stage by stage.
+        let wear = self.corner_wear[(corner.x | corner.y << 1 | corner.z << 2) as usize];
+        let extra = [0.0, 0.05, 0.12, 0.2][usize::from(wear.min(3))];
+        (base + extra * (0.6 + 0.8 * hash(w.x, w.y, w.z, 23))).min(0.46)
     }
 
     fn is_open(&self, face: Face) -> bool {
@@ -190,7 +223,7 @@ impl BlockInfo {
     fn tint(&self) -> u32 {
         let w = self.world;
         let tone = if self.stone {
-            0.82 + 0.18 * hash(w.x, w.y, w.z, 3)
+            (0.82 + 0.18 * hash(w.x, w.y, w.z, 3)) * (1.0 - 0.08 * f32::from(self.wear))
         } else {
             0.93 + 0.07 * hash(w.x, w.y, w.z, 5)
         };

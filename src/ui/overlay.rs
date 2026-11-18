@@ -6,7 +6,6 @@ use crate::render::camera::Camera;
 use planetfall_sim::game::{ASCENT_TICKS, DESCENT_TICKS, FTL_TICKS, LOST_TICKS};
 use planetfall_sim::math::V2;
 use planetfall_sim::run::Extraction;
-use planetfall_sim::terrain::Terrain;
 use planetfall_sim::{Game, Phase};
 use quasar_render_2d::{Canvas, Color, Rect};
 
@@ -88,21 +87,6 @@ pub fn draw(c: &mut Canvas, camera: &Camera, game: &Game, time: f32) {
                 rgba(255, 92, 72, 0.95)
             };
             c.rect(Rect::new(s[0] - bw * 0.5, y + 8.0, bw * o, 3.0), color);
-        }
-    }
-    // Mining progress over the block being drilled.
-    if let Some(m) = p.mining {
-        let center = Terrain::center_of(m.tile.0, m.tile.1);
-        if let Some(s) = camera.project([center[0], 2.9, center[1]]) {
-            let bw = 64.0;
-            c.rect(
-                Rect::new(s[0] - bw * 0.5 - 2.0, s[1] - 2.0, bw + 4.0, 10.0),
-                rgba(0, 0, 0, 0.6),
-            );
-            c.rect(
-                Rect::new(s[0] - bw * 0.5, s[1], bw * m.progress, 6.0),
-                rgba(255, 170, 70, 0.95),
-            );
         }
     }
     // Health bars over wounded enemies, and always over heavies; bigger

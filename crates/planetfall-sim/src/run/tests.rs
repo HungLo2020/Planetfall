@@ -452,6 +452,47 @@ fn sentries_follow_count_and_replant() {
     );
 }
 
+/// Mobile sentries share a ring around the player evenly, however many
+/// there are, and keep up as the player walks off.
+#[test]
+fn mobile_sentries_spread_and_follow() {
+    let mut run = Run::new(config(5));
+    run.spawning_enabled = false;
+    let sentry = WeaponId::from_key("sentry").unwrap();
+    let mut slot = WeaponSlot::new(sentry, 0.0);
+    slot.mods
+        .push((ModId::from_key("mobile-sentry").unwrap(), Rarity::Legendary));
+    for _ in 0..4 {
+        slot.mods
+            .push((ModId::from_key("extra-payload").unwrap(), Rarity::Common));
+    }
+    run.player_mut().weapons = vec![slot];
+    step(&mut run, GameInput::default(), 600);
+    let list = turrets(&run);
+    assert_eq!(list.len(), 5);
+    for (i, a) in list.iter().enumerate() {
+        for b in &list[i + 1..] {
+            assert!(a.pos.distance(b.pos) > 0.8, "turrets bunched up");
+        }
+    }
+    let start = run.player().pos;
+    step(
+        &mut run,
+        GameInput {
+            movement: V2::new(1.0, 0.0),
+            ..GameInput::default()
+        },
+        240,
+    );
+    let p = run.player().pos;
+    assert!(p.distance(start) > 3.0, "player did not move");
+    step(&mut run, GameInput::default(), 120);
+    assert!(
+        turrets(&run).iter().all(|d| d.pos.distance(p) < 4.0),
+        "turrets fell behind"
+    );
+}
+
 /// The shield dome cuts damage to the player inside it.
 #[test]
 fn dome_protects_the_player() {

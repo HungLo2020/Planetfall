@@ -40,6 +40,8 @@ pub enum Command {
     Fuse(Rarity),
     /// Trade station: trade one lot of a material for credits (or back).
     TradeMaterial { material: Material, buy: bool },
+    /// Developer console: a test command (see [`crate::cheats`]).
+    Cheat(crate::cheats::Cheat),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

@@ -9,6 +9,7 @@
 
 pub mod autoplay;
 pub mod cavegen;
+pub mod cheats;
 pub mod content;
 pub mod events;
 pub mod game;

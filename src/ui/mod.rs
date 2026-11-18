@@ -1,5 +1,6 @@
 //! In-game UI built on `quasar-ui`: shaped fonts, the HUD and interactive menus.
 
+pub mod console;
 pub mod hud;
 pub mod icons;
 pub mod kit;

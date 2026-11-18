@@ -228,6 +228,20 @@ impl Terrain {
         self.tile(x, y).solid()
     }
 
+    /// Partly mined blocks and how far through their toughness each one is
+    /// (0..1), for drawing cracks.
+    pub fn wear(&self) -> impl Iterator<Item = ((i32, i32), f32)> + '_ {
+        self.damage.iter().map(|(&(x, y), &d)| {
+            let max = Tile::from_block(self.blocks.get(voxel::voxel(x, y, 0))).max_hp();
+            let wear = if max > 0.0 {
+                (d / max).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            ((x, y), wear)
+        })
+    }
+
     /// Damage a minable block. Returns the broken tile when it gives way.
     pub fn mine(&mut self, x: i32, y: i32, amount: f32) -> Option<Broken> {
         let tile = self.tile(x, y);

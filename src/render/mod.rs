@@ -194,6 +194,10 @@ impl Graphics {
                     world.palette,
                     run.terrain.blocks(),
                     run.terrain.chunk_revisions(),
+                    &run.terrain
+                        .wear()
+                        .map(|(tile, wear)| (tile, 1 + (wear * 3.0).floor().min(2.0) as u8))
+                        .collect(),
                 )?,
                 _ => {
                     let ship = &game.ship;
@@ -208,6 +212,7 @@ impl Graphics {
                             .chunk_coords()
                             .into_iter()
                             .map(|c| (c, ship.revision)),
+                        &voxels::Wear::new(),
                     )?
                 }
             }

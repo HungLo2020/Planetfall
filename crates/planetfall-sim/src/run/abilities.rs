@@ -23,6 +23,10 @@ const DOME_PULSE: u32 = 30;
 const SENTRY_LEASH: f32 = 10.0;
 /// Seconds between plantings.
 const SENTRY_REPLANT: f32 = 0.8;
+/// Base radius of the ring mobile sentries patrol around their owner.
+const SENTRY_RING: f32 = 1.6;
+/// How fast that ring turns, in radians per second.
+const SENTRY_PATROL_TURN: f32 = 0.6;
 
 impl Run {
     /// Player `i` pressed the ability button.
@@ -333,6 +337,60 @@ impl Run {
         self.players[player].weapons[slot].cooldown = SENTRY_REPLANT;
     }
 
+    /// A mobile sentry patrols a ring around its owner: the owner's mobile
+    /// turrets share the ring evenly and it turns slowly, so they circle in
+    /// formation. The way there goes around rock along the horde's flow field
+    /// (which leads to the players), and a turret cut off for too long jumps
+    /// back beside its owner.
+    fn patrol_sentry(&mut self, d: usize) {
+        let dep = self.deployables[d];
+        let owner = self.players[dep.owner].pos;
+        let ring: Vec<usize> = (0..self.deployables.len())
+            .filter(|&o| {
+                let other = &self.deployables[o];
+                other.owner == dep.owner
+                    && matches!(other.kind, DeployableKind::Turret { mobile: true, .. })
+            })
+            .collect();
+        let n = ring.len().max(1);
+        let index = ring.iter().position(|&o| o == d).unwrap_or(0);
+        let radius = SENTRY_RING + 0.15 * n as f32;
+        let turn = self.ticks as f32 * DT * SENTRY_PATROL_TURN;
+        let a = std::f32::consts::TAU * index as f32 / n as f32 + turn;
+        let mut goal = owner + V2::new(a.cos(), a.sin()) * radius;
+        // Inside rock (the owner is digging a tunnel): close in on the owner.
+        if self.terrain.solid_at(goal) || !self.terrain.line_clear(owner, goal) {
+            goal = owner + V2::new(a.cos(), a.sin()) * 0.6;
+        }
+        let far = dep.pos.distance(owner);
+        if far > SENTRY_LEASH * 1.5 {
+            // Hopelessly cut off: redeploy beside the owner.
+            let (pos, _) = self.terrain.resolve_circle(goal, 0.35);
+            self.deployables[d].pos = pos;
+            return;
+        }
+        let to = goal - dep.pos;
+        let dist = to.length();
+        if dist < 0.2 {
+            return;
+        }
+        let toward = if self.terrain.line_clear(dep.pos, goal) {
+            to
+        } else if self.terrain.line_clear(dep.pos, owner) {
+            owner - dep.pos
+        } else {
+            self.flow
+                .as_ref()
+                .and_then(|f| f.next_waypoint(&self.terrain, dep.pos))
+                .map_or(owner - dep.pos, |w| w - dep.pos)
+        };
+        // Hurry when left behind, settle gently near the ring.
+        let speed = if far > radius * 2.0 { 9.0 } else { 6.0 };
+        let step = toward.normalize_or_zero() * (speed * DT).min(dist);
+        let (pos, _) = self.terrain.resolve_circle(dep.pos + step, 0.35);
+        self.deployables[d].pos = pos;
+    }
+
     /// Age deployables; turrets shoot (and mobile ones follow their owner)
     /// and barrier posts zap what touches them.
     pub(super) fn update_deployables(&mut self, events: &mut Vec<GameEvent>) {
@@ -359,22 +417,7 @@ impl Run {
                     let twin = w.has(Special::TwinBarrel);
                     let rate = owner.cooldown_multiplier;
                     if mobile {
-                        // Mobile sentries trot along, spread around their owner.
-                        let index = self.deployables[..d]
-                            .iter()
-                            .filter(|o| {
-                                o.owner == dep.owner
-                                    && matches!(o.kind, DeployableKind::Turret { .. })
-                            })
-                            .count();
-                        let a = index as f32 * 2.1 + 0.6;
-                        let goal = owner.pos + V2::new(a.cos(), a.sin()) * 1.8;
-                        let to = goal - dep.pos;
-                        if to.length() > 0.4 {
-                            let step = to.normalize_or_zero() * 6.0_f32.min(to.length() / DT) * DT;
-                            let (pos, _) = self.terrain.resolve_circle(dep.pos + step, 0.35);
-                            self.deployables[d].pos = pos;
-                        }
+                        self.patrol_sentry(d);
                     }
                     let dep = self.deployables[d];
                     let cooldown = (dep.cooldown - DT).max(0.0);

@@ -313,6 +313,7 @@ impl Audio {
                     };
                     self.play(name, 0.4, Some(at), 4);
                 }
+                GameEvent::BlockCracked { at, .. } => self.play("block_crack", 0.4, Some(at), 3),
                 GameEvent::BlockBroken { at, material } => {
                     let name = if material.is_some() {
                         "ore_break"

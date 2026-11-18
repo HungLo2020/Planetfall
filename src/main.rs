@@ -281,7 +281,16 @@ fn headless(
             let menu_screen = settings
                 .menu
                 .as_deref()
-                .filter(|m| !matches!(*m, "gear" | "trade"));
+                .filter(|m| !matches!(*m, "gear" | "trade" | "console"));
+            // `--menu console`: the console after a command, mid-way through
+            // the next one (on a drop, with the sentries handed over).
+            let console = (settings.menu.as_deref() == Some("console")).then(|| {
+                ui::console::Console::preview(
+                    &mut game,
+                    &["/give weapon sentry", "/give upgrade sentry mobile-sentry"],
+                    "/give upgrade sentry ",
+                )
+            });
             let size = settings.resolution.unwrap_or((1600, 900));
             let (measure, text) = ui::build_text(asset_root)?;
             let scale = size.1 as f32 / 900.0;
@@ -344,6 +353,11 @@ fn headless(
             let mut menu_layer = menu.take_layer();
             if let Some(l) = &mut menu_layer {
                 layout(l, &measure, size, scale);
+                layers.push(l);
+            }
+            let console_layer = console
+                .map(|c| c.build(&game, 0.0, (size.0 as f32, size.1 as f32), scale, &measure));
+            if let Some(l) = &console_layer {
                 layers.push(l);
             }
             let overlay = |c: &mut quasar_render_2d::Canvas, camera: &render::camera::Camera| {
